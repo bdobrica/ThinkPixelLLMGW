@@ -60,6 +60,41 @@ CACHE_MODEL_SIZE=500
 CACHE_MODEL_TTL=15m
 ```
 
+### Redis Configuration
+
+#### Connection Settings
+```bash
+# Redis server address (default: localhost:6379)
+REDIS_ADDRESS=localhost:6379
+
+# Redis password (default: empty/no auth)
+REDIS_PASSWORD=
+
+# Redis database number 0-15 (default: 0)
+REDIS_DB=0
+```
+
+#### Pool Settings
+```bash
+# Maximum number of socket connections (default: 10)
+REDIS_POOL_SIZE=10
+
+# Minimum number of idle connections (default: 2)
+REDIS_MIN_IDLE_CONNS=2
+```
+
+#### Timeout Settings
+```bash
+# Dial timeout for establishing new connections (default: 5s)
+REDIS_DIAL_TIMEOUT=5s
+
+# Timeout for socket reads (default: 3s)
+REDIS_READ_TIMEOUT=3s
+
+# Timeout for socket writes (default: 3s)
+REDIS_WRITE_TIMEOUT=3s
+```
+
 ## Example Configurations
 
 ### Development Environment
@@ -77,6 +112,12 @@ CACHE_API_KEY_SIZE=100
 CACHE_API_KEY_TTL=1m
 CACHE_MODEL_SIZE=50
 CACHE_MODEL_TTL=5m
+
+# Redis (local)
+REDIS_ADDRESS=localhost:6379
+REDIS_PASSWORD=
+REDIS_POOL_SIZE=5
+REDIS_MIN_IDLE_CONNS=1
 ```
 
 ### Production Environment
@@ -96,6 +137,15 @@ CACHE_API_KEY_SIZE=2000
 CACHE_API_KEY_TTL=5m
 CACHE_MODEL_SIZE=1000
 CACHE_MODEL_TTL=15m
+
+# Redis (production)
+REDIS_ADDRESS=redis.example.com:6379
+REDIS_PASSWORD=secure_redis_password
+REDIS_POOL_SIZE=20
+REDIS_MIN_IDLE_CONNS=5
+REDIS_DIAL_TIMEOUT=5s
+REDIS_READ_TIMEOUT=3s
+REDIS_WRITE_TIMEOUT=3s
 ```
 
 ### High-Traffic Environment

@@ -12,7 +12,8 @@ type Config struct {
 	HTTPPort string
 	Database DatabaseConfig
 	Cache    CacheConfig
-	// TODO: add Redis address, encryption keys, etc.
+	Redis    RedisConfig
+	// TODO: add S3 config, encryption keys, JWT secret, etc.
 }
 
 // DatabaseConfig holds database connection settings
@@ -30,6 +31,18 @@ type CacheConfig struct {
 	APIKeyCacheTTL  time.Duration
 	ModelCacheSize  int
 	ModelCacheTTL   time.Duration
+}
+
+// RedisConfig holds Redis connection settings
+type RedisConfig struct {
+	Address      string
+	Password     string
+	DB           int
+	PoolSize     int
+	MinIdleConns int
+	DialTimeout  time.Duration
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
 }
 
 // Load reads configuration from environment variables (and, later, other sources).
@@ -59,6 +72,16 @@ func Load() (*Config, error) {
 			APIKeyCacheTTL:  getEnvDuration("CACHE_API_KEY_TTL", 5*time.Minute),
 			ModelCacheSize:  getEnvInt("CACHE_MODEL_SIZE", 500),
 			ModelCacheTTL:   getEnvDuration("CACHE_MODEL_TTL", 15*time.Minute),
+		},
+		Redis: RedisConfig{
+			Address:      getEnvString("REDIS_ADDRESS", "localhost:6379"),
+			Password:     getEnvString("REDIS_PASSWORD", ""),
+			DB:           getEnvInt("REDIS_DB", 0),
+			PoolSize:     getEnvInt("REDIS_POOL_SIZE", 10),
+			MinIdleConns: getEnvInt("REDIS_MIN_IDLE_CONNS", 2),
+			DialTimeout:  getEnvDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
+			ReadTimeout:  getEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
+			WriteTimeout: getEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
 		},
 	}
 
@@ -91,4 +114,12 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	}
 	
 	return duration
+}
+
+func getEnvString(key string, defaultValue string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	return val
 }
