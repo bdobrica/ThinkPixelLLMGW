@@ -95,6 +95,17 @@ REDIS_READ_TIMEOUT=3s
 REDIS_WRITE_TIMEOUT=3s
 ```
 
+### Provider Configuration
+```bash
+# How often to reload providers from database (default: 5m)
+# Set to 0 to disable auto-reload (manual reload via API only)
+PROVIDER_RELOAD_INTERVAL=5m
+
+# Default timeout for provider requests (default: 60s)
+# This is the maximum time to wait for a provider response
+PROVIDER_REQUEST_TIMEOUT=60s
+```
+
 ## Example Configurations
 
 ### Development Environment
@@ -118,6 +129,10 @@ REDIS_ADDRESS=localhost:6379
 REDIS_PASSWORD=
 REDIS_POOL_SIZE=5
 REDIS_MIN_IDLE_CONNS=1
+
+# Provider settings
+PROVIDER_RELOAD_INTERVAL=1m
+PROVIDER_REQUEST_TIMEOUT=30s
 ```
 
 ### Production Environment
@@ -146,6 +161,10 @@ REDIS_MIN_IDLE_CONNS=5
 REDIS_DIAL_TIMEOUT=5s
 REDIS_READ_TIMEOUT=3s
 REDIS_WRITE_TIMEOUT=3s
+
+# Provider settings
+PROVIDER_RELOAD_INTERVAL=5m
+PROVIDER_REQUEST_TIMEOUT=60s
 ```
 
 ### High-Traffic Environment

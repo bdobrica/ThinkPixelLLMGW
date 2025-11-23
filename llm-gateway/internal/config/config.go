@@ -9,10 +9,11 @@ import (
 
 // Config holds configuration for the gateway.
 type Config struct {
-	HTTPPort string
-	Database DatabaseConfig
-	Cache    CacheConfig
-	Redis    RedisConfig
+	HTTPPort  string
+	Database  DatabaseConfig
+	Cache     CacheConfig
+	Redis     RedisConfig
+	Provider  ProviderConfig
 	// TODO: add S3 config, encryption keys, JWT secret, etc.
 }
 
@@ -43,6 +44,12 @@ type RedisConfig struct {
 	DialTimeout  time.Duration
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+}
+
+// ProviderConfig holds provider-related settings
+type ProviderConfig struct {
+	ReloadInterval time.Duration // How often to reload providers from database
+	RequestTimeout time.Duration // Default timeout for provider requests
 }
 
 // Load reads configuration from environment variables (and, later, other sources).
@@ -82,6 +89,10 @@ func Load() (*Config, error) {
 			DialTimeout:  getEnvDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
 			ReadTimeout:  getEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
 			WriteTimeout: getEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
+		},
+		Provider: ProviderConfig{
+			ReloadInterval: getEnvDuration("PROVIDER_RELOAD_INTERVAL", 5*time.Minute),
+			RequestTimeout: getEnvDuration("PROVIDER_REQUEST_TIMEOUT", 60*time.Second),
 		},
 	}
 
