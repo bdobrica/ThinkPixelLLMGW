@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"gateway/internal/models"
+	"llm_gateway/internal/models"
 )
 
 // ProviderRepository handles provider database operations

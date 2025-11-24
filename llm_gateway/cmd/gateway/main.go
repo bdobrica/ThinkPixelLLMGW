@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"gateway/internal/config"
-	"gateway/internal/httpapi"
+	"llm_gateway/internal/config"
+	"llm_gateway/internal/httpapi"
 )
 
 func main() {

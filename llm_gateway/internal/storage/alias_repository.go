@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"gateway/internal/models"
+	"llm_gateway/internal/models"
 )
 
 // ModelAliasRepository handles model alias database operations

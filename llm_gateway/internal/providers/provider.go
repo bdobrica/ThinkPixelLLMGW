@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/bdobrica/ThinkPixelLLMGW/llm-gateway/internal/models"
+	"llm_gateway/internal/models"
 )
 
 // ChatRequest represents a normalized internal request to a provider.

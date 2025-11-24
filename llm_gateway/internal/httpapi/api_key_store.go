@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"gateway/internal/auth"
-	"gateway/internal/models"
-	"gateway/internal/storage"
+	"llm_gateway/internal/auth"
+	"llm_gateway/internal/models"
+	"llm_gateway/internal/storage"
 )
 
 // DatabaseAPIKeyStore implements APIKeyStore using the database repository

@@ -4,12 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 
-	"gateway/internal/models"
+	"llm_gateway/internal/models"
 )
 
 // APIKeyRepository handles API key database operations with caching

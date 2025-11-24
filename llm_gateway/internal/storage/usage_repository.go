@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"gateway/internal/models"
+	"llm_gateway/internal/models"
 )
 
 // UsageRepository handles usage record database operations

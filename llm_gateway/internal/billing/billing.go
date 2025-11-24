@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
-	"gateway/internal/storage"
+	"llm_gateway/internal/storage"
 )
 
 // Service tracks costs and enforces budgets.

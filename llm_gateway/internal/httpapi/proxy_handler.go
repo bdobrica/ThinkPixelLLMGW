@@ -12,10 +12,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"gateway/internal/logging"
-	"gateway/internal/models"
-	"gateway/internal/providers"
-	"gateway/internal/storage"
+	"llm_gateway/internal/logging"
+	"llm_gateway/internal/models"
+	"llm_gateway/internal/providers"
+	"llm_gateway/internal/storage"
 )
 
 // handleChat is the entry point for OpenAI-compatible chat completions.
@@ -30,6 +30,7 @@ import (
 //  7. Resolve model → provider + providerModel
 //  8. Call provider
 //  9. Log + update billing
+//
 // 10. Return provider response
 func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()

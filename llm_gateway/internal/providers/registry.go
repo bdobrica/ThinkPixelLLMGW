@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"gateway/internal/storage"
+	"llm_gateway/internal/storage"
 )
 
 // ProviderRegistry manages all provider instances and resolves models to providers

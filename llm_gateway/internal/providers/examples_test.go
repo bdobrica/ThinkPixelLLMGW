@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"gateway/internal/providers"
+	"llm_gateway/internal/providers"
 )
 
 // Example usage of the provider system
@@ -107,7 +107,7 @@ func ExampleCustomProvider() {
 	}
 	
 	// 2. Implement the Provider interface
-	func (p *MyCustomProvider) ID() string { return p.id }
+	func (p *MyCustomProvider) ID(); string { return p.id }
 	func (p *MyCustomProvider) Name() string { return p.name }
 	func (p *MyCustomProvider) Type() string { return "mycustom" }
 	

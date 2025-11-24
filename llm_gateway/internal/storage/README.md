@@ -14,7 +14,7 @@ import (
 	"log"
 	"time"
 	
-	"gateway/internal/storage"
+	"github.com/bdobrica/ThinkPixelLLMGW/llm-gateway/internal/storage"
 )
 
 func main() {

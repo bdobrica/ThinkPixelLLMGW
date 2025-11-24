@@ -2,18 +2,18 @@ package httpapi
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net/http"
-	"time"
 
-	"gateway/internal/billing"
-	"gateway/internal/config"
-	"gateway/internal/logging"
-	"gateway/internal/metrics"
-	"gateway/internal/models"
-	"gateway/internal/providers"
-	"gateway/internal/ratelimit"
-	"gateway/internal/storage"
+	"llm_gateway/internal/billing"
+	"llm_gateway/internal/config"
+	"llm_gateway/internal/logging"
+	"llm_gateway/internal/metrics"
+	"llm_gateway/internal/models"
+	"llm_gateway/internal/providers"
+	"llm_gateway/internal/ratelimit"
+	"llm_gateway/internal/storage"
 )
 
 // Dependencies aggregates all services the HTTP layer needs.
@@ -52,14 +52,21 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	}
 
 	// Initialize Redis client
-	redisClient, err := storage.NewRedisClient(cfg.Redis.Address, storage.RedisOptions{
-		Password:     cfg.Redis.Password,
-		DB:           cfg.Redis.DB,
-		PoolSize:     cfg.Redis.PoolSize,
-		MinIdleConns: cfg.Redis.MinIdleConns,
-		DialTimeout:  cfg.Redis.DialTimeout,
-		ReadTimeout:  cfg.Redis.ReadTimeout,
-		WriteTimeout: cfg.Redis.WriteTimeout,
+	redisClient, err := storage.NewRedisClient(storage.RedisConfig{
+		Address:         cfg.Redis.Address,
+		Password:        cfg.Redis.Password,
+		DB:              cfg.Redis.DB,
+		PoolSize:        cfg.Redis.PoolSize,
+		MinIdleConns:    cfg.Redis.MinIdleConns,
+		DialTimeout:     cfg.Redis.DialTimeout,
+		ReadTimeout:     cfg.Redis.ReadTimeout,
+		WriteTimeout:    cfg.Redis.WriteTimeout,
+		MaxConnAge:      cfg.Redis.MaxConnAge,
+		PoolTimeout:     cfg.Redis.PoolTimeout,
+		IdleTimeout:     cfg.Redis.IdleTimeout,
+		MaxRetries:      cfg.Redis.MaxRetries,
+		MinRetryBackoff: cfg.Redis.MinRetryBackoff,
+		MaxRetryBackoff: cfg.Redis.MaxRetryBackoff,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize Redis: %w", err)
@@ -69,13 +76,21 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	apiKeyRepo := storage.NewAPIKeyRepository(db)
 
 	// Initialize encryption for provider credentials
-	// TODO: Load encryption key from environment/config
-	// For now, use a placeholder (THIS MUST BE CHANGED IN PRODUCTION)
-	encryptionKey := []byte("CHANGE_THIS_32_BYTE_SECRET_KEY!")
-	if len(encryptionKey) != 32 {
-		return nil, nil, fmt.Errorf("encryption key must be exactly 32 bytes")
+	// Use encryption key from config
+	encryptionKeyHex := cfg.EncryptionKey
+	if encryptionKeyHex == "" {
+		encryptionKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" // Default for dev
 	}
-	encryption, err := storage.NewEncryption(encryptionKey)
+
+	// Validate it's valid hex and 64 chars (32 bytes)
+	if len(encryptionKeyHex) != 64 {
+		return nil, nil, fmt.Errorf("encryption key must be 64 hex characters (32 bytes)")
+	}
+	if _, err := hex.DecodeString(encryptionKeyHex); err != nil {
+		return nil, nil, fmt.Errorf("encryption key must be valid hex: %w", err)
+	}
+
+	encryption, err := storage.NewEncryption(encryptionKeyHex)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize encryption: %w", err)
 	}
@@ -91,20 +106,21 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	}
 
 	// Initialize rate limiter
-	rateLimiter := ratelimit.NewRateLimiter(redisClient, ratelimit.RateLimiterConfig{
-		Window:     60 * time.Second, // 1 minute window
-		MaxRetries: 3,
-	})
+	rateLimiter := ratelimit.NewRateLimiter(redisClient.Client())
 
 	// Initialize billing service
-	billingService := billing.NewRedisBillingService(billing.RedisBillingConfig{
-		Redis:        redisClient,
-		DB:           db,
-		SyncInterval: 5 * time.Minute, // Sync to database every 5 minutes
-	})
+	billingService := billing.NewRedisBillingService(
+		redisClient.Client(),
+		db,
+		cfg.Billing.SyncInterval,
+	)
 
 	// Initialize logging buffer
-	logBuffer := logging.NewRedisBuffer(redisClient, "gateway:logs", 100000) // 100K max entries
+	logBuffer := logging.NewRedisBuffer(redisClient.Client(), logging.RedisBufferConfig{
+		QueueKey:  "gateway:logs",
+		MaxSize:   cfg.Logging.BufferMaxSize,
+		BatchSize: 1000,
+	})
 
 	// Create dependencies
 	deps := &Dependencies{

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gateway/internal/logging"
+	"llm_gateway/internal/logging"
 )
 
 // RedisLoggingSink implements logging.Sink using Redis buffer

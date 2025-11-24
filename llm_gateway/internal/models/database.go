@@ -97,31 +97,6 @@ func (m *Model) CalculateCost(inputTokens, outputTokens, cachedTokens, reasoning
 	return cost
 }
 
-// Provider represents an LLM provider configuration
-type Provider struct {
-	ID                   uuid.UUID       `db:"id"`
-	Name                 string          `db:"name"`
-	DisplayName          string          `db:"display_name"`
-	ProviderType         string          `db:"provider_type"`
-	EncryptedCredentials json.RawMessage `db:"encrypted_credentials"`
-	Config               json.RawMessage `db:"config"`
-	Enabled              bool            `db:"enabled"`
-	CreatedAt            time.Time       `db:"created_at"`
-	UpdatedAt            time.Time       `db:"updated_at"`
-}
-
-// ModelAlias represents a custom alias for a model
-type ModelAlias struct {
-	ID            uuid.UUID       `db:"id"`
-	Alias         string          `db:"alias"`
-	TargetModelID uuid.UUID       `db:"target_model_id"`
-	ProviderID    *uuid.UUID      `db:"provider_id"`
-	CustomConfig  json.RawMessage `db:"custom_config"`
-	Enabled       bool            `db:"enabled"`
-	CreatedAt     time.Time       `db:"created_at"`
-	UpdatedAt     time.Time       `db:"updated_at"`
-}
-
 // KeyMetadata represents flexible metadata for an API key
 type KeyMetadata struct {
 	ID           uuid.UUID `db:"id"`
