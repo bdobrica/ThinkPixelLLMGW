@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	
+
 	"github.com/google/uuid"
-	
+
 	"gateway/internal/models"
 )
 
@@ -29,7 +29,7 @@ func (r *ProviderRepository) GetByName(ctx context.Context, name string) (*model
 		FROM providers
 		WHERE name = $1
 	`
-	
+
 	err := r.db.conn.GetContext(ctx, &provider, query, name)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -37,7 +37,7 @@ func (r *ProviderRepository) GetByName(ctx context.Context, name string) (*model
 		}
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
-	
+
 	return &provider, nil
 }
 
@@ -50,7 +50,7 @@ func (r *ProviderRepository) GetByID(ctx context.Context, id uuid.UUID) (*models
 		FROM providers
 		WHERE id = $1
 	`
-	
+
 	err := r.db.conn.GetContext(ctx, &provider, query, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -58,7 +58,7 @@ func (r *ProviderRepository) GetByID(ctx context.Context, id uuid.UUID) (*models
 		}
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
-	
+
 	return &provider, nil
 }
 
@@ -70,13 +70,13 @@ func (r *ProviderRepository) List(ctx context.Context) ([]*models.Provider, erro
 		FROM providers
 		ORDER BY name
 	`
-	
+
 	var providers []*models.Provider
 	err := r.db.conn.SelectContext(ctx, &providers, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
-	
+
 	return providers, nil
 }
 
@@ -88,21 +88,21 @@ func (r *ProviderRepository) Create(ctx context.Context, provider *models.Provid
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING created_at, updated_at
 	`
-	
+
 	if provider.ID == uuid.Nil {
 		provider.ID = uuid.New()
 	}
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		provider.ID, provider.Name, provider.BaseURL, provider.APIVersion,
 		provider.RequiresAuth, provider.SupportedFeatures, provider.Config,
 	).Scan(&provider.CreatedAt, &provider.UpdatedAt)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create provider: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -115,20 +115,20 @@ func (r *ProviderRepository) Update(ctx context.Context, provider *models.Provid
 		WHERE id = $1
 		RETURNING updated_at
 	`
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		provider.ID, provider.Name, provider.BaseURL, provider.APIVersion,
 		provider.RequiresAuth, provider.SupportedFeatures, provider.Config,
 	).Scan(&provider.UpdatedAt)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ErrProviderNotFound
 		}
 		return fmt.Errorf("failed to update provider: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -139,15 +139,15 @@ func (r *ProviderRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete provider: %w", err)
 	}
-	
+
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rows == 0 {
 		return ErrProviderNotFound
 	}
-	
+
 	return nil
 }

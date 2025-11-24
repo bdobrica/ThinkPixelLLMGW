@@ -35,19 +35,19 @@ type StreamEvent struct {
 type Provider interface {
 	// ID returns the unique identifier for this provider instance
 	ID() string
-	
+
 	// Name returns the display name of this provider
 	Name() string
-	
+
 	// Type returns the provider type (openai, vertexai, bedrock, etc.)
 	Type() string
-	
+
 	// Chat sends a chat completion request to the provider
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
-	
+
 	// ValidateCredentials checks if the provider credentials are valid
 	ValidateCredentials(ctx context.Context) error
-	
+
 	// Close performs cleanup when the provider is no longer needed
 	Close() error
 }
@@ -82,7 +82,7 @@ type ProviderConfig struct {
 type Factory interface {
 	// CreateProvider creates a new provider instance
 	CreateProvider(config ProviderConfig) (Provider, error)
-	
+
 	// SupportedTypes returns the list of supported provider types
 	SupportedTypes() []string
 }
@@ -91,16 +91,16 @@ type Factory interface {
 type Registry interface {
 	// ResolveModel resolves a model or alias name to a provider and model name
 	ResolveModel(ctx context.Context, modelNameOrAlias string) (Provider, string, error)
-	
+
 	// GetProvider retrieves a provider by ID
 	GetProvider(ctx context.Context, providerID string) (Provider, error)
-	
+
 	// ListProviders returns all active providers
 	ListProviders(ctx context.Context) ([]Provider, error)
-	
+
 	// Reload reloads all providers from the database
 	Reload(ctx context.Context) error
-	
+
 	// Close closes all providers and cleans up resources
 	Close() error
 }

@@ -15,10 +15,10 @@ type CacheEntry struct {
 
 // LRUCache is a thread-safe LRU cache with TTL support
 type LRUCache struct {
-	mu          sync.RWMutex
-	capacity    int
-	ttl         time.Duration
-	items       map[string]*list.Element
+	mu           sync.RWMutex
+	capacity     int
+	ttl          time.Duration
+	items        map[string]*list.Element
 	evictionList *list.List
 }
 
@@ -39,7 +39,7 @@ func (c *LRUCache) Get(key string) (interface{}, bool) {
 
 	if elem, found := c.items[key]; found {
 		entry := elem.Value.(*CacheEntry)
-		
+
 		// Check if expired
 		if time.Now().After(entry.ExpiresAt) {
 			c.removeElement(elem)
@@ -142,7 +142,7 @@ func (c *LRUCache) CleanupExpired() int {
 	for elem := c.evictionList.Back(); elem != nil; elem = next {
 		next = elem.Prev()
 		entry := elem.Value.(*CacheEntry)
-		
+
 		if now.After(entry.ExpiresAt) {
 			c.removeElement(elem)
 			removed++

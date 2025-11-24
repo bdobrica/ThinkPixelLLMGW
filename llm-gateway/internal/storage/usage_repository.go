@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"time"
-	
+
 	"github.com/google/uuid"
-	
+
 	"gateway/internal/models"
 )
 
@@ -30,15 +30,15 @@ func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at
 	`
-	
+
 	if record.ID == uuid.Nil {
 		record.ID = uuid.New()
 	}
-	
+
 	if record.RequestTimestamp.IsZero() {
 		record.RequestTimestamp = time.Now()
 	}
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		record.ID, record.APIKeyID, record.ModelID, record.ProviderID,
@@ -46,11 +46,11 @@ func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord
 		record.TotalTokens, record.CostUSD, record.RequestMetadata,
 		record.ResponseMetadata,
 	).Scan(&record.CreatedAt)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create usage record: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -67,13 +67,13 @@ func (r *UsageRepository) GetByAPIKey(ctx context.Context, apiKeyID uuid.UUID, s
 		ORDER BY request_timestamp DESC
 		LIMIT $4 OFFSET $5
 	`
-	
+
 	var records []*models.UsageRecord
 	err := r.db.conn.SelectContext(ctx, &records, query, apiKeyID, startTime, endTime, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get usage records: %w", err)
 	}
-	
+
 	return records, nil
 }
 
@@ -90,13 +90,13 @@ func (r *UsageRepository) GetByModel(ctx context.Context, modelID uuid.UUID, sta
 		ORDER BY request_timestamp DESC
 		LIMIT $4 OFFSET $5
 	`
-	
+
 	var records []*models.UsageRecord
 	err := r.db.conn.SelectContext(ctx, &records, query, modelID, startTime, endTime, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get usage records: %w", err)
 	}
-	
+
 	return records, nil
 }
 
@@ -109,13 +109,13 @@ func (r *UsageRepository) GetTotalCostByAPIKey(ctx context.Context, apiKeyID uui
 		  AND request_timestamp >= $2 
 		  AND request_timestamp < $3
 	`
-	
+
 	var totalCost float64
 	err := r.db.conn.GetContext(ctx, &totalCost, query, apiKeyID, startTime, endTime)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get total cost: %w", err)
 	}
-	
+
 	return totalCost, nil
 }
 
@@ -131,14 +131,14 @@ func (r *UsageRepository) GetTotalTokensByAPIKey(ctx context.Context, apiKeyID u
 		  AND request_timestamp >= $2 
 		  AND request_timestamp < $3
 	`
-	
+
 	var promptTokens, completionTokens, totalTokens int
 	err := r.db.conn.QueryRowxContext(ctx, query, apiKeyID, startTime, endTime).
 		Scan(&promptTokens, &completionTokens, &totalTokens)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to get total tokens: %w", err)
 	}
-	
+
 	return promptTokens, completionTokens, totalTokens, nil
 }
 
@@ -160,13 +160,13 @@ func (r *MonthlyUsageSummaryRepository) GetByAPIKeyAndMonth(ctx context.Context,
 		FROM monthly_usage_summary
 		WHERE api_key_id = $1 AND year = $2 AND month = $3
 	`
-	
+
 	var summary models.MonthlyUsageSummary
 	err := r.db.conn.GetContext(ctx, &summary, query, apiKeyID, year, month)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monthly usage summary: %w", err)
 	}
-	
+
 	return &summary, nil
 }
 
@@ -187,22 +187,22 @@ func (r *MonthlyUsageSummaryRepository) Upsert(ctx context.Context, summary *mod
 			updated_at = NOW()
 		RETURNING created_at, updated_at
 	`
-	
+
 	if summary.ID == uuid.Nil {
 		summary.ID = uuid.New()
 	}
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		summary.ID, summary.APIKeyID, summary.Year, summary.Month,
 		summary.TotalRequests, summary.TotalPromptTokens, summary.TotalCompletionTokens,
 		summary.TotalTokens, summary.TotalCostUSD,
 	).Scan(&summary.CreatedAt, &summary.UpdatedAt)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to upsert monthly usage summary: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -216,13 +216,13 @@ func (r *MonthlyUsageSummaryRepository) GetByAPIKey(ctx context.Context, apiKeyI
 		ORDER BY year DESC, month DESC
 		LIMIT $2 OFFSET $3
 	`
-	
+
 	var summaries []*models.MonthlyUsageSummary
 	err := r.db.conn.SelectContext(ctx, &summaries, query, apiKeyID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monthly usage summaries: %w", err)
 	}
-	
+
 	return summaries, nil
 }
 
@@ -256,11 +256,11 @@ func (r *MonthlyUsageSummaryRepository) RefreshSummary(ctx context.Context, apiK
 			total_cost_usd = EXCLUDED.total_cost_usd,
 			updated_at = NOW()
 	`
-	
+
 	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, year, month)
 	if err != nil {
 		return fmt.Errorf("failed to refresh monthly usage summary: %w", err)
 	}
-	
+
 	return nil
 }

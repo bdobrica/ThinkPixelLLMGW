@@ -22,14 +22,14 @@ func NewBedrockProvider(config ProviderConfig) (Provider, error) {
 	if !ok || region == "" {
 		region = "us-east-1" // default region
 	}
-	
+
 	// TODO: Initialize AWS SDK client
 	// This would involve:
 	// 1. Loading AWS credentials from config.Credentials (access_key_id, secret_access_key)
 	//    OR using IAM role if running on AWS infrastructure
 	// 2. Creating AWS config using aws-sdk-go-v2/config
 	// 3. Creating BedrockRuntime client for inference
-	
+
 	return &BedrockProvider{
 		id:     config.ID,
 		name:   config.Name,
@@ -60,7 +60,7 @@ func (p *BedrockProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespo
 	// 2. Using the BedrockRuntime client to call InvokeModel or InvokeModelWithResponseStream
 	// 3. Converting Bedrock response back to our standard format
 	// 4. Calculating cost based on token usage
-	
+
 	return nil, fmt.Errorf("AWS Bedrock provider not yet implemented")
 }
 
@@ -69,7 +69,7 @@ func (p *BedrockProvider) ValidateCredentials(ctx context.Context) error {
 	// TODO: Implement credential validation
 	// This would involve making a simple API call (e.g., ListFoundationModels)
 	// to verify the credentials are valid
-	
+
 	return fmt.Errorf("AWS Bedrock credential validation not yet implemented")
 }
 
@@ -86,7 +86,7 @@ Example configuration for Bedrock provider in database:
 	"provider_type": "bedrock",
 	"encrypted_credentials": {
 		"access_key_id": "AKIA...",
-		"secret_access_key": "..." 
+		"secret_access_key": "..."
 		// OR leave empty to use IAM role from EC2 instance metadata
 	},
 	"config": {
@@ -113,4 +113,3 @@ Note: Bedrock models have different request/response formats:
 - Titan models use Amazon format
 The provider needs to handle format conversion based on model ID
 */
-

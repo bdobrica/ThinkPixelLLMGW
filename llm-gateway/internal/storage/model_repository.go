@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	
+
 	"github.com/google/uuid"
-	
+
 	"gateway/internal/models"
 )
 
@@ -30,7 +30,7 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 	if cached, found := r.cache.Get(name); found {
 		return cached.(*models.Model), nil
 	}
-	
+
 	// Query database
 	var model models.Model
 	query := `
@@ -47,7 +47,7 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 		FROM models
 		WHERE name = $1
 	`
-	
+
 	err := r.db.conn.GetContext(ctx, &model, query, name)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -56,10 +56,10 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 		}
 		return nil, fmt.Errorf("failed to get model: %w", err)
 	}
-	
+
 	// Cache the result
 	r.cache.Set(name, &model)
-	
+
 	return &model, nil
 }
 
@@ -80,7 +80,7 @@ func (r *ModelRepository) getByAlias(ctx context.Context, alias string) (*models
 		INNER JOIN model_aliases ma ON m.id = ma.model_id
 		WHERE ma.alias = $1
 	`
-	
+
 	var model models.Model
 	err := r.db.conn.GetContext(ctx, &model, query, alias)
 	if err != nil {
@@ -89,11 +89,11 @@ func (r *ModelRepository) getByAlias(ctx context.Context, alias string) (*models
 		}
 		return nil, fmt.Errorf("failed to get model by alias: %w", err)
 	}
-	
+
 	// Cache by both alias and actual name
 	r.cache.Set(alias, &model)
 	r.cache.Set(model.Name, &model)
-	
+
 	return &model, nil
 }
 
@@ -114,7 +114,7 @@ func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Mo
 		FROM models
 		WHERE id = $1
 	`
-	
+
 	err := r.db.conn.GetContext(ctx, &model, query, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -122,7 +122,7 @@ func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Mo
 		}
 		return nil, fmt.Errorf("failed to get model: %w", err)
 	}
-	
+
 	return &model, nil
 }
 
@@ -143,13 +143,13 @@ func (r *ModelRepository) GetByProvider(ctx context.Context, providerID uuid.UUI
 		WHERE provider_id = $1
 		ORDER BY name
 	`
-	
+
 	var modelsList []*models.Model
 	err := r.db.conn.SelectContext(ctx, &modelsList, query, providerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get models by provider: %w", err)
 	}
-	
+
 	return modelsList, nil
 }
 
@@ -173,11 +173,11 @@ func (r *ModelRepository) Create(ctx context.Context, model *models.Model) error
 		)
 		RETURNING created_at, updated_at
 	`
-	
+
 	if model.ID == uuid.Nil {
 		model.ID = uuid.New()
 	}
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		model.ID, model.ProviderID, model.Name, model.InputCostPerToken, model.OutputCostPerToken,
@@ -191,14 +191,14 @@ func (r *ModelRepository) Create(ctx context.Context, model *models.Model) error
 		model.SupportsPDFInput, model.SupportsVideoInput, model.SupportsImageInput,
 		model.SupportsSystemMessages, model.Source, model.Metadata,
 	).Scan(&model.CreatedAt, &model.UpdatedAt)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create model: %w", err)
 	}
-	
+
 	// Invalidate cache
 	r.cache.Delete(model.Name)
-	
+
 	return nil
 }
 
@@ -220,7 +220,7 @@ func (r *ModelRepository) Update(ctx context.Context, model *models.Model) error
 		WHERE id = $1
 		RETURNING updated_at
 	`
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		model.ID, model.ProviderID, model.Name, model.InputCostPerToken, model.OutputCostPerToken,
@@ -234,17 +234,17 @@ func (r *ModelRepository) Update(ctx context.Context, model *models.Model) error
 		model.SupportsPDFInput, model.SupportsVideoInput, model.SupportsImageInput,
 		model.SupportsSystemMessages, model.Source, model.Metadata,
 	).Scan(&model.UpdatedAt)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ErrModelNotFound
 		}
 		return fmt.Errorf("failed to update model: %w", err)
 	}
-	
+
 	// Invalidate cache
 	r.cache.Delete(model.Name)
-	
+
 	return nil
 }
 
@@ -256,27 +256,27 @@ func (r *ModelRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("failed to get model name: %w", err)
 	}
-	
+
 	query := "DELETE FROM models WHERE id = $1"
 	result, err := r.db.conn.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete model: %w", err)
 	}
-	
+
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rows == 0 {
 		return ErrModelNotFound
 	}
-	
+
 	// Invalidate cache
 	if name != "" {
 		r.cache.Delete(name)
 	}
-	
+
 	return nil
 }
 
@@ -297,13 +297,13 @@ func (r *ModelRepository) List(ctx context.Context, limit, offset int) ([]*model
 		ORDER BY name
 		LIMIT $1 OFFSET $2
 	`
-	
+
 	var modelsList []*models.Model
 	err := r.db.conn.SelectContext(ctx, &modelsList, query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
-	
+
 	return modelsList, nil
 }
 
@@ -325,13 +325,13 @@ func (r *ModelRepository) Search(ctx context.Context, searchTerm string, limit i
 		ORDER BY similarity(name, $1) DESC
 		LIMIT $2
 	`
-	
+
 	var modelsList []*models.Model
 	err := r.db.conn.SelectContext(ctx, &modelsList, query, searchTerm, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search models: %w", err)
 	}
-	
+
 	return modelsList, nil
 }
 

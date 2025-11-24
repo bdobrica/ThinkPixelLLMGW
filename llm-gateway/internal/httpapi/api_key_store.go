@@ -25,7 +25,7 @@ func NewDatabaseAPIKeyStore(repo *storage.APIKeyRepository) *DatabaseAPIKeyStore
 func (s *DatabaseAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (*models.APIKey, error) {
 	// Hash the plaintext key
 	hashedKey := auth.HashKey(plaintextKey)
-	
+
 	// Look up in database (with caching)
 	apiKey, err := s.repo.GetByHash(ctx, hashedKey)
 	if err != nil {
@@ -34,7 +34,6 @@ func (s *DatabaseAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (
 		}
 		return nil, fmt.Errorf("failed to lookup API key: %w", err)
 	}
-	
+
 	return apiKey, nil
 }
-

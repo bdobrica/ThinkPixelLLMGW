@@ -13,7 +13,7 @@ import (
 // DB wraps the database connection and provides health checks
 type DB struct {
 	conn *sqlx.DB
-	
+
 	// Cache for frequently accessed data
 	apiKeyCache *LRUCache
 	modelCache  *LRUCache
@@ -28,21 +28,21 @@ type DBConfig struct {
 	User     string
 	Password string
 	SSLMode  string
-	
+
 	// Pool settings
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
 	ConnMaxIdleTime time.Duration
-	
+
 	// Query timeouts
 	QueryTimeout time.Duration
-	
+
 	// Cache settings
-	APIKeyCacheSize     int
-	APIKeyCacheTTL      time.Duration
-	ModelCacheSize      int
-	ModelCacheTTL       time.Duration
+	APIKeyCacheSize int
+	APIKeyCacheTTL  time.Duration
+	ModelCacheSize  int
+	ModelCacheTTL   time.Duration
 }
 
 // DefaultDBConfig returns default database configuration
@@ -54,18 +54,18 @@ func DefaultDBConfig() DBConfig {
 		User:     "postgres",
 		Password: "",
 		SSLMode:  "disable",
-		
+
 		MaxOpenConns:    25,
 		MaxIdleConns:    5,
 		ConnMaxLifetime: 5 * time.Minute,
 		ConnMaxIdleTime: 1 * time.Minute,
-		
+
 		QueryTimeout: 5 * time.Second,
-		
-		APIKeyCacheSize:     1000,
-		APIKeyCacheTTL:      5 * time.Minute,
-		ModelCacheSize:      500,
-		ModelCacheTTL:       15 * time.Minute,
+
+		APIKeyCacheSize: 1000,
+		APIKeyCacheTTL:  5 * time.Minute,
+		ModelCacheSize:  500,
+		ModelCacheTTL:   15 * time.Minute,
 	}
 }
 
@@ -76,25 +76,25 @@ func NewDB(cfg DBConfig) (*DB, error) {
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
 		cfg.Host, cfg.Port, cfg.Database, cfg.User, cfg.Password, cfg.SSLMode,
 	)
-	
+
 	// Connect to database
 	conn, err := sqlx.Connect("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
-	
+
 	// Configure connection pool
 	conn.SetMaxOpenConns(cfg.MaxOpenConns)
 	conn.SetMaxIdleConns(cfg.MaxIdleConns)
 	conn.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	conn.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
-	
+
 	db := &DB{
 		conn:        conn,
 		apiKeyCache: NewLRUCache(cfg.APIKeyCacheSize, cfg.APIKeyCacheTTL),
 		modelCache:  NewLRUCache(cfg.ModelCacheSize, cfg.ModelCacheTTL),
 	}
-	
+
 	return db, nil
 }
 
@@ -116,14 +116,14 @@ func (db *DB) Health(ctx context.Context) error {
 	if err := db.Ping(ctx); err != nil {
 		return fmt.Errorf("database ping failed: %w", err)
 	}
-	
+
 	// Check if we can execute a simple query
 	var result int
 	err := db.conn.GetContext(ctx, &result, "SELECT 1")
 	if err != nil {
 		return fmt.Errorf("health check query failed: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -137,7 +137,7 @@ type DBStats struct {
 	WaitDuration       time.Duration
 	MaxIdleClosed      int64
 	MaxLifetimeClosed  int64
-	
+
 	APIKeyCacheStats CacheStats
 	ModelCacheStats  CacheStats
 }
@@ -145,7 +145,7 @@ type DBStats struct {
 // GetStats returns current database and cache statistics
 func (db *DB) GetStats() DBStats {
 	stats := db.conn.Stats()
-	
+
 	return DBStats{
 		MaxOpenConnections: stats.MaxOpenConnections,
 		OpenConnections:    stats.OpenConnections,
@@ -155,7 +155,7 @@ func (db *DB) GetStats() DBStats {
 		WaitDuration:       stats.WaitDuration,
 		MaxIdleClosed:      stats.MaxIdleClosed,
 		MaxLifetimeClosed:  stats.MaxLifetimeClosed,
-		
+
 		APIKeyCacheStats: db.apiKeyCache.GetStats(),
 		ModelCacheStats:  db.modelCache.GetStats(),
 	}
@@ -216,4 +216,3 @@ func (db *DB) NewUsageRepository() *UsageRepository {
 func (db *DB) NewMonthlyUsageSummaryRepository() *MonthlyUsageSummaryRepository {
 	return NewMonthlyUsageSummaryRepository(db)
 }
-

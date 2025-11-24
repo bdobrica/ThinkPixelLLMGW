@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	
+
 	"gateway/internal/models"
 )
 
@@ -32,7 +32,7 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, keyHash string) (*mode
 	if cached, found := r.cache.Get(keyHash); found {
 		return cached.(*models.APIKey), nil
 	}
-	
+
 	// Query database
 	var key models.APIKey
 	query := `
@@ -41,7 +41,7 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, keyHash string) (*mode
 		FROM api_keys
 		WHERE key_hash = $1 AND enabled = true
 	`
-	
+
 	err := r.db.conn.GetContext(ctx, &key, query, keyHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -49,15 +49,15 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, keyHash string) (*mode
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	
+
 	// Load metadata
 	if err := r.loadMetadata(ctx, &key); err != nil {
 		return nil, fmt.Errorf("failed to load metadata: %w", err)
 	}
-	
+
 	// Cache the result
 	r.cache.Set(keyHash, &key)
-	
+
 	return &key, nil
 }
 
@@ -70,7 +70,7 @@ func (r *APIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.A
 		FROM api_keys
 		WHERE id = $1
 	`
-	
+
 	err := r.db.conn.GetContext(ctx, &key, query, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -78,12 +78,12 @@ func (r *APIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.A
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	
+
 	// Load metadata
 	if err := r.loadMetadata(ctx, &key); err != nil {
 		return nil, fmt.Errorf("failed to load metadata: %w", err)
 	}
-	
+
 	return &key, nil
 }
 
@@ -94,27 +94,27 @@ func (r *APIKeyRepository) loadMetadata(ctx context.Context, key *models.APIKey)
 		FROM key_metadata
 		WHERE api_key_id = $1
 	`
-	
+
 	rows, err := r.db.conn.QueryxContext(ctx, query, key.ID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	
+
 	key.Metadata = make(map[string]map[string]string)
-	
+
 	for rows.Next() {
 		var metadataType, k, value string
 		if err := rows.Scan(&metadataType, &k, &value); err != nil {
 			return err
 		}
-		
+
 		if key.Metadata[metadataType] == nil {
 			key.Metadata[metadataType] = make(map[string]string)
 		}
 		key.Metadata[metadataType][k] = value
 	}
-	
+
 	return rows.Err()
 }
 
@@ -126,24 +126,24 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *models.APIKey) error
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING created_at, updated_at
 	`
-	
+
 	if key.ID == uuid.Nil {
 		key.ID = uuid.New()
 	}
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		key.ID, key.Name, key.KeyHash, key.AllowedModels, key.RateLimitPerMinute,
 		key.MonthlyBudgetUSD, key.Enabled, key.ExpiresAt,
 	).Scan(&key.CreatedAt, &key.UpdatedAt)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create API key: %w", err)
 	}
-	
+
 	// Invalidate cache
 	r.cache.Delete(key.KeyHash)
-	
+
 	return nil
 }
 
@@ -156,23 +156,23 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 		WHERE id = $1
 		RETURNING updated_at
 	`
-	
+
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		key.ID, key.Name, key.AllowedModels, key.RateLimitPerMinute,
 		key.MonthlyBudgetUSD, key.Enabled, key.ExpiresAt,
 	).Scan(&key.UpdatedAt)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ErrAPIKeyNotFound
 		}
 		return fmt.Errorf("failed to update API key: %w", err)
 	}
-	
+
 	// Invalidate cache
 	r.cache.Delete(key.KeyHash)
-	
+
 	return nil
 }
 
@@ -184,27 +184,27 @@ func (r *APIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("failed to get key hash: %w", err)
 	}
-	
+
 	query := "DELETE FROM api_keys WHERE id = $1"
 	result, err := r.db.conn.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete API key: %w", err)
 	}
-	
+
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rows == 0 {
 		return ErrAPIKeyNotFound
 	}
-	
+
 	// Invalidate cache
 	if keyHash != "" {
 		r.cache.Delete(keyHash)
 	}
-	
+
 	return nil
 }
 
@@ -217,20 +217,20 @@ func (r *APIKeyRepository) List(ctx context.Context, limit, offset int) ([]*mode
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
 	`
-	
+
 	var keys []*models.APIKey
 	err := r.db.conn.SelectContext(ctx, &keys, query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list API keys: %w", err)
 	}
-	
+
 	// Load metadata for each key
 	for _, key := range keys {
 		if err := r.loadMetadata(ctx, key); err != nil {
 			return nil, fmt.Errorf("failed to load metadata: %w", err)
 		}
 	}
-	
+
 	return keys, nil
 }
 
@@ -242,36 +242,36 @@ func (r *APIKeyRepository) SetMetadata(ctx context.Context, apiKeyID uuid.UUID, 
 		ON CONFLICT (api_key_id, metadata_type, key)
 		DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
 	`
-	
+
 	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, metadataType, key, value)
 	if err != nil {
 		return fmt.Errorf("failed to set metadata: %w", err)
 	}
-	
+
 	// Invalidate cache (get key hash first)
 	var keyHash string
 	if err := r.db.conn.GetContext(ctx, &keyHash, "SELECT key_hash FROM api_keys WHERE id = $1", apiKeyID); err == nil {
 		r.cache.Delete(keyHash)
 	}
-	
+
 	return nil
 }
 
 // DeleteMetadata deletes metadata for an API key
 func (r *APIKeyRepository) DeleteMetadata(ctx context.Context, apiKeyID uuid.UUID, metadataType, key string) error {
 	query := "DELETE FROM key_metadata WHERE api_key_id = $1 AND metadata_type = $2 AND key = $3"
-	
+
 	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, metadataType, key)
 	if err != nil {
 		return fmt.Errorf("failed to delete metadata: %w", err)
 	}
-	
+
 	// Invalidate cache
 	var keyHash string
 	if err := r.db.conn.GetContext(ctx, &keyHash, "SELECT key_hash FROM api_keys WHERE id = $1", apiKeyID); err == nil {
 		r.cache.Delete(keyHash)
 	}
-	
+
 	return nil
 }
 

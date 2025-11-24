@@ -27,7 +27,7 @@ func (s *RedisLoggingSink) Enqueue(rec *logging.Record) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal log record: %w", err)
 	}
-	
+
 	// Enqueue to Redis buffer (best-effort, use background context)
 	ctx := context.Background()
 	if err := s.buffer.Enqueue(ctx, data); err != nil {
@@ -36,6 +36,6 @@ func (s *RedisLoggingSink) Enqueue(rec *logging.Record) error {
 		fmt.Printf("Warning: failed to enqueue log record: %v\n", err)
 		return nil // Don't propagate error to avoid failing requests
 	}
-	
+
 	return nil
 }

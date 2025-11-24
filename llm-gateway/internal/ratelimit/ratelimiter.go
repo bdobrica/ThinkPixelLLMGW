@@ -46,19 +46,19 @@ func (rl *RateLimiter) AllowN(ctx context.Context, apiKeyID string, limit int, c
 		// No limit configured
 		return true, nil
 	}
-	
+
 	key := fmt.Sprintf("ratelimit:%s", apiKeyID)
 	now := time.Now()
 	windowStart := now.Add(-1 * time.Minute)
-	
+
 	pipe := rl.client.Pipeline()
-	
+
 	// Remove old entries outside the window
 	pipe.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart.UnixMilli()))
-	
+
 	// Count current requests in window
 	countCmd := pipe.ZCard(ctx, key)
-	
+
 	// Add current request(s) with timestamp as score
 	for i := 0; i < count; i++ {
 		timestamp := now.Add(time.Duration(i) * time.Microsecond).UnixMilli()
@@ -67,17 +67,17 @@ func (rl *RateLimiter) AllowN(ctx context.Context, apiKeyID string, limit int, c
 			Member: fmt.Sprintf("%d:%d", timestamp, i),
 		})
 	}
-	
+
 	// Set expiry on the key (cleanup old keys)
 	pipe.Expire(ctx, key, 2*time.Minute)
-	
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, fmt.Errorf("rate limit check failed: %w", err)
 	}
-	
+
 	currentCount := countCmd.Val()
-	
+
 	// Check if adding these requests would exceed the limit
 	return int(currentCount) <= limit, nil
 }
@@ -87,18 +87,18 @@ func (rl *RateLimiter) GetCurrentUsage(ctx context.Context, apiKeyID string) (in
 	key := fmt.Sprintf("ratelimit:%s", apiKeyID)
 	now := time.Now()
 	windowStart := now.Add(-1 * time.Minute)
-	
+
 	// Remove old entries
 	if err := rl.client.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart.UnixMilli())).Err(); err != nil {
 		return 0, fmt.Errorf("failed to clean old entries: %w", err)
 	}
-	
+
 	// Count current requests
 	count, err := rl.client.ZCard(ctx, key).Result()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current usage: %w", err)
 	}
-	
+
 	return count, nil
 }
 
@@ -123,9 +123,9 @@ func (tbl *TokenBucketLimiter) Allow(ctx context.Context, apiKeyID string, rate 
 	key := fmt.Sprintf("tokenbucket:%s", apiKeyID)
 	tokensKey := key + ":tokens"
 	lastRefillKey := key + ":last"
-	
+
 	now := time.Now()
-	
+
 	// Lua script for atomic token bucket check and update
 	script := redis.NewScript(`
 		local tokens_key = KEYS[1]
@@ -157,9 +157,9 @@ func (tbl *TokenBucketLimiter) Allow(ctx context.Context, apiKeyID string, rate 
 			return 0
 		end
 	`)
-	
+
 	result, err := script.Run(
-		ctx, 
+		ctx,
 		tbl.client,
 		[]string{tokensKey, lastRefillKey},
 		rate,
@@ -167,11 +167,11 @@ func (tbl *TokenBucketLimiter) Allow(ctx context.Context, apiKeyID string, rate 
 		now.UnixMilli(),
 		1, // cost per request
 	).Int()
-	
+
 	if err != nil {
 		return false, fmt.Errorf("token bucket check failed: %w", err)
 	}
-	
+
 	return result == 1, nil
 }
 
@@ -180,9 +180,9 @@ func (tbl *TokenBucketLimiter) GetRemainingTokens(ctx context.Context, apiKeyID 
 	key := fmt.Sprintf("tokenbucket:%s", apiKeyID)
 	tokensKey := key + ":tokens"
 	lastRefillKey := key + ":last"
-	
+
 	now := time.Now()
-	
+
 	script := redis.NewScript(`
 		local tokens_key = KEYS[1]
 		local last_refill_key = KEYS[2]
@@ -199,7 +199,7 @@ func (tbl *TokenBucketLimiter) GetRemainingTokens(ctx context.Context, apiKeyID 
 		
 		return tokens
 	`)
-	
+
 	result, err := script.Run(
 		ctx,
 		tbl.client,
@@ -208,11 +208,11 @@ func (tbl *TokenBucketLimiter) GetRemainingTokens(ctx context.Context, apiKeyID 
 		burst,
 		now.UnixMilli(),
 	).Float64()
-	
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to get remaining tokens: %w", err)
 	}
-	
+
 	return result, nil
 }
 

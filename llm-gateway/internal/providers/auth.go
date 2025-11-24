@@ -21,7 +21,7 @@ func NewSimpleAPIKeyAuth(apiKey, headerName, prefix string) *SimpleAPIKeyAuth {
 	if prefix == "" {
 		prefix = "Bearer "
 	}
-	
+
 	return &SimpleAPIKeyAuth{
 		apiKey:     apiKey,
 		headerName: headerName,
@@ -34,7 +34,7 @@ func (a *SimpleAPIKeyAuth) Authenticate(ctx context.Context) (AuthContext, error
 	if a.apiKey == "" {
 		return nil, fmt.Errorf("API key is required")
 	}
-	
+
 	return &SimpleAPIKeyAuthContext{
 		apiKey:     a.apiKey,
 		headerName: a.headerName,
@@ -55,7 +55,7 @@ func (c *SimpleAPIKeyAuthContext) ApplyToRequest(ctx context.Context, req any) e
 	if !ok {
 		return fmt.Errorf("expected *http.Request, got %T", req)
 	}
-	
+
 	httpReq.Header.Set(c.headerName, c.prefix+c.apiKey)
 	return nil
 }

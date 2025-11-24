@@ -126,17 +126,17 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Log error
 		logRec := &logging.Record{
-			Timestamp:       time.Now(),
-			RequestID:       reqID,
-			APIKeyID:        apiKeyRecord.ID.String(),
-			APIKeyName:      apiKeyRecord.Name,
-			Provider:        provider.Type(),
-			Model:           providerModel,
-			Alias:           modelName,
-			ProviderMs:      providerLatency.Milliseconds(),
-			GatewayMs:       time.Since(start).Milliseconds(),
-			Error:           err.Error(),
-			RequestPayload:  payload,
+			Timestamp:      time.Now(),
+			RequestID:      reqID,
+			APIKeyID:       apiKeyRecord.ID.String(),
+			APIKeyName:     apiKeyRecord.Name,
+			Provider:       provider.Type(),
+			Model:          providerModel,
+			Alias:          modelName,
+			ProviderMs:     providerLatency.Milliseconds(),
+			GatewayMs:      time.Since(start).Milliseconds(),
+			Error:          err.Error(),
+			RequestPayload: payload,
 		}
 		_ = d.Logger.Enqueue(logRec)
 
@@ -324,7 +324,7 @@ func newRequestID() string {
 func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	errorResp := map[string]any{
 		"error": map[string]any{
 			"message": message,
@@ -332,7 +332,6 @@ func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
 			"code":    statusCode,
 		},
 	}
-	
+
 	_ = json.NewEncoder(w).Encode(errorResp)
 }
-

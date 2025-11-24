@@ -9,11 +9,11 @@ import (
 
 // Config holds configuration for the gateway.
 type Config struct {
-	HTTPPort  string
-	Database  DatabaseConfig
-	Cache     CacheConfig
-	Redis     RedisConfig
-	Provider  ProviderConfig
+	HTTPPort string
+	Database DatabaseConfig
+	Cache    CacheConfig
+	Redis    RedisConfig
+	Provider ProviderConfig
 	// TODO: add S3 config, encryption keys, JWT secret, etc.
 }
 
@@ -104,12 +104,12 @@ func getEnvInt(key string, defaultValue int) int {
 	if val == "" {
 		return defaultValue
 	}
-	
+
 	intVal, err := strconv.Atoi(val)
 	if err != nil {
 		return defaultValue
 	}
-	
+
 	return intVal
 }
 
@@ -118,12 +118,12 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	if val == "" {
 		return defaultValue
 	}
-	
+
 	duration, err := time.ParseDuration(val)
 	if err != nil {
 		return defaultValue
 	}
-	
+
 	return duration
 }
 

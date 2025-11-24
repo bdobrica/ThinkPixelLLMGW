@@ -50,7 +50,7 @@ func (rb *RedisBuffer) Enqueue(ctx context.Context, record *LogRecord) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal log record: %w", err)
 	}
-	
+
 	// Use Lua script for atomic enqueue with size limit
 	if rb.maxSize > 0 {
 		script := redis.NewScript(`
@@ -69,7 +69,7 @@ func (rb *RedisBuffer) Enqueue(ctx context.Context, record *LogRecord) error {
 			
 			return len
 		`)
-		
+
 		_, err = script.Run(ctx, rb.client, []string{rb.queueKey}, data, rb.maxSize).Result()
 		if err != nil {
 			return fmt.Errorf("failed to enqueue log record: %w", err)
@@ -80,7 +80,7 @@ func (rb *RedisBuffer) Enqueue(ctx context.Context, record *LogRecord) error {
 			return fmt.Errorf("failed to enqueue log record: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -89,7 +89,7 @@ func (rb *RedisBuffer) EnqueueBatch(ctx context.Context, records []*LogRecord) e
 	if len(records) == 0 {
 		return nil
 	}
-	
+
 	// Serialize all records
 	values := make([]interface{}, len(records))
 	for i, record := range records {
@@ -99,21 +99,21 @@ func (rb *RedisBuffer) EnqueueBatch(ctx context.Context, records []*LogRecord) e
 		}
 		values[i] = data
 	}
-	
+
 	// Push all at once
 	pipe := rb.client.Pipeline()
 	pipe.RPush(ctx, rb.queueKey, values...)
-	
+
 	// Trim if needed
 	if rb.maxSize > 0 {
 		pipe.LTrim(ctx, rb.queueKey, -rb.maxSize, -1)
 	}
-	
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to enqueue batch: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -122,7 +122,7 @@ func (rb *RedisBuffer) Dequeue(ctx context.Context, count int) ([]*LogRecord, er
 	if count <= 0 {
 		count = rb.batchSize
 	}
-	
+
 	// Use Lua script for atomic dequeue
 	script := redis.NewScript(`
 		local key = KEYS[1]
@@ -138,12 +138,12 @@ func (rb *RedisBuffer) Dequeue(ctx context.Context, count int) ([]*LogRecord, er
 		
 		return records
 	`)
-	
+
 	result, err := script.Run(ctx, rb.client, []string{rb.queueKey}, count).StringSlice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to dequeue: %w", err)
 	}
-	
+
 	// Deserialize records
 	records := make([]*LogRecord, 0, len(result))
 	for i, data := range result {
@@ -153,7 +153,7 @@ func (rb *RedisBuffer) Dequeue(ctx context.Context, count int) ([]*LogRecord, er
 		}
 		records = append(records, &record)
 	}
-	
+
 	return records, nil
 }
 
@@ -162,13 +162,13 @@ func (rb *RedisBuffer) Peek(ctx context.Context, count int) ([]*LogRecord, error
 	if count <= 0 {
 		count = rb.batchSize
 	}
-	
+
 	// Get records without removing
 	result, err := rb.client.LRange(ctx, rb.queueKey, 0, int64(count-1)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to peek: %w", err)
 	}
-	
+
 	// Deserialize records
 	records := make([]*LogRecord, 0, len(result))
 	for i, data := range result {
@@ -178,7 +178,7 @@ func (rb *RedisBuffer) Peek(ctx context.Context, count int) ([]*LogRecord, error
 		}
 		records = append(records, &record)
 	}
-	
+
 	return records, nil
 }
 
@@ -212,17 +212,17 @@ func (rb *RedisBuffer) WaitForRecords(ctx context.Context, timeout time.Duration
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for records: %w", err)
 	}
-	
+
 	// result[0] is the key name, result[1] is the value
 	if len(result) < 2 {
 		return nil, nil
 	}
-	
+
 	var record LogRecord
 	if err := json.Unmarshal([]byte(result[1]), &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal record: %w", err)
 	}
-	
+
 	return []*LogRecord{&record}, nil
 }
 
@@ -239,7 +239,7 @@ func (rb *RedisBuffer) GetStats(ctx context.Context) (BufferStats, error) {
 	if err != nil {
 		return BufferStats{}, err
 	}
-	
+
 	return BufferStats{
 		QueueSize: size,
 		MaxSize:   rb.maxSize,
