@@ -21,7 +21,8 @@ type DB struct {
 
 // DBConfig holds database configuration
 type DBConfig struct {
-	// Connection settings
+	// Connection settings (use either DSN or individual fields)
+	DSN      string // Full connection string (takes precedence if set)
 	Host     string
 	Port     int
 	Database string
@@ -72,10 +73,17 @@ func DefaultDBConfig() DBConfig {
 // NewDB creates a new database connection with caching
 func NewDB(cfg DBConfig) (*DB, error) {
 	// Build connection string
-	dsn := fmt.Sprintf(
-		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-		cfg.Host, cfg.Port, cfg.Database, cfg.User, cfg.Password, cfg.SSLMode,
-	)
+	var dsn string
+	if cfg.DSN != "" {
+		// Use provided DSN directly
+		dsn = cfg.DSN
+	} else {
+		// Build from individual components
+		dsn = fmt.Sprintf(
+			"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
+			cfg.Host, cfg.Port, cfg.Database, cfg.User, cfg.Password, cfg.SSLMode,
+		)
+	}
 
 	// Connect to database
 	conn, err := sqlx.Connect("postgres", dsn)
@@ -212,7 +220,9 @@ func (db *DB) NewUsageRepository() *UsageRepository {
 	return NewUsageRepository(db)
 }
 
-// NewMonthlyUsageSummaryRepository creates a new monthly usage summary repository
+// NewMonthlyUsageSummaryRepository is disabled - MonthlyUsageSummary model not implemented
+/*
 func (db *DB) NewMonthlyUsageSummaryRepository() *MonthlyUsageSummaryRepository {
 	return NewMonthlyUsageSummaryRepository(db)
 }
+*/

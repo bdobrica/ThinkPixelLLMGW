@@ -212,7 +212,7 @@ func (s *RedisBillingService) syncKey(ctx context.Context, key string) error {
 	}
 
 	// Get value from Redis
-	cost, err := s.redis.Get(ctx, key).Float64()
+	_, err = s.redis.Get(ctx, key).Float64()
 	if err != nil {
 		return fmt.Errorf("failed to get value: %w", err)
 	}

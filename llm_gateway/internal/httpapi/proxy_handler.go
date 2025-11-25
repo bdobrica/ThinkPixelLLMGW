@@ -3,26 +3,25 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"llm_gateway/internal/auth"
 	"llm_gateway/internal/logging"
-	"llm_gateway/internal/models"
+	"llm_gateway/internal/middleware"
 	"llm_gateway/internal/providers"
-	"llm_gateway/internal/storage"
 )
 
 // handleChat is the entry point for OpenAI-compatible chat completions.
+// This handler is protected by APIKeyMiddleware, so the API key has already been validated.
 //
 // Flow:
 //  1. Validate method
-//  2. Authenticate via Bearer API key
+//  2. Get authenticated API key from context (set by middleware)
 //  3. Decode JSON body
 //  4. Extract model + check key permissions
 //  5. Rate limit
@@ -43,42 +42,22 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// 1. Auth via "Authorization: Bearer <key>"
-	plaintextKey, err := parseBearer(r.Header.Get("Authorization"))
-	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
+	// 1. Get API key record from context (set by APIKeyMiddleware)
+	apiKeyRecord, ok := middleware.GetAPIKeyRecord(ctx)
+	if !ok {
+		// This should never happen if middleware is properly applied
+		writeJSONError(w, http.StatusInternalServerError, "internal error: missing API key context")
 		return
 	}
 
-	// 2. Lookup API key from database (with caching)
-	apiKeyRecord, err := d.APIKeys.Lookup(ctx, plaintextKey)
-	if err != nil {
-		if errors.Is(err, storage.ErrAPIKeyNotFound) {
-			writeJSONError(w, http.StatusUnauthorized, "invalid API key")
-		} else {
-			writeJSONError(w, http.StatusInternalServerError, "internal error")
-		}
-		return
-	}
-
-	// Check if key is enabled and not expired
-	if !apiKeyRecord.Enabled {
-		writeJSONError(w, http.StatusUnauthorized, "API key disabled")
-		return
-	}
-	if apiKeyRecord.ExpiresAt != nil && apiKeyRecord.ExpiresAt.Before(time.Now()) {
-		writeJSONError(w, http.StatusUnauthorized, "API key expired")
-		return
-	}
-
-	// 3. Decode request body as generic JSON (OpenAI-style payload).
+	// 2. Decode request body as generic JSON (OpenAI-style payload).
 	var payload map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
-	// 4. Extract model name.
+	// 3. Extract model name.
 	modelName, _ := payload["model"].(string)
 	if modelName == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing 'model' field")
@@ -88,25 +67,27 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Check if streaming is requested
 	isStreaming, _ := payload["stream"].(bool)
 
-	// 5. Check if key is allowed to call this model/alias.
-	// TODO: Implement AllowedModels check when APIKey has that field
-	// For now, we allow all models
+	// 4. Check if key is allowed to call this model/alias.
+	if !apiKeyRecord.AllowsModel(modelName) {
+		writeJSONError(w, http.StatusForbidden, "API key not allowed to use this model")
+		return
+	}
 
-	// 6. Rate limit check
-	allowed := d.RateLimit.Allow(ctx, apiKeyRecord.ID.String())
+	// 5. Rate limit check
+	allowed := d.RateLimit.Allow(ctx, apiKeyRecord.ID)
 	if !allowed {
 		writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded")
 		return
 	}
 
-	// 7. Budget check
-	withinBudget := d.Billing.WithinBudget(ctx, apiKeyRecord.ID.String())
+	// 6. Budget check
+	withinBudget := d.Billing.WithinBudget(ctx, apiKeyRecord.ID)
 	if !withinBudget {
 		writeJSONError(w, http.StatusPaymentRequired, "monthly budget exceeded")
 		return
 	}
 
-	// 8. Resolve model → provider + providerModel
+	// 7. Resolve model → provider + providerModel
 	provider, providerModel, err := d.Providers.ResolveModel(ctx, modelName)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("unknown model: %s", modelName))
@@ -126,10 +107,10 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		// Log error
-		logRec := &logging.Record{
+		logRec := &logging.LogRecord{
 			Timestamp:      time.Now(),
 			RequestID:      reqID,
-			APIKeyID:       apiKeyRecord.ID.String(),
+			APIKeyID:       apiKeyRecord.ID,
 			APIKeyName:     apiKeyRecord.Name,
 			Provider:       provider.Type(),
 			Model:          providerModel,
@@ -159,7 +140,7 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) handleNonStreamingResponse(
 	w http.ResponseWriter,
 	pResp *providers.ChatResponse,
-	apiKeyRecord *models.APIKey,
+	apiKeyRecord *auth.APIKeyRecord,
 	reqID string,
 	modelName string,
 	providerModel string,
@@ -175,10 +156,10 @@ func (d *Dependencies) handleNonStreamingResponse(
 	}
 
 	// Create log record
-	logRec := &logging.Record{
+	logRec := &logging.LogRecord{
 		Timestamp:       time.Now(),
 		RequestID:       reqID,
-		APIKeyID:        apiKeyRecord.ID.String(),
+		APIKeyID:        apiKeyRecord.ID,
 		APIKeyName:      apiKeyRecord.Name,
 		Provider:        provider.Type(),
 		Model:           providerModel,
@@ -192,7 +173,7 @@ func (d *Dependencies) handleNonStreamingResponse(
 
 	// Update billing (best-effort)
 	if pResp.CostUSD > 0 {
-		_ = d.Billing.AddUsage(context.Background(), apiKeyRecord.ID.String(), pResp.CostUSD)
+		_ = d.Billing.AddUsage(context.Background(), apiKeyRecord.ID, pResp.CostUSD)
 	}
 
 	// Enqueue log (best-effort)
@@ -212,7 +193,7 @@ func (d *Dependencies) handleStreamingResponse(
 	w http.ResponseWriter,
 	r *http.Request,
 	pResp *providers.ChatResponse,
-	apiKeyRecord *models.APIKey,
+	apiKeyRecord *auth.APIKeyRecord,
 	reqID string,
 	modelName string,
 	providerModel string,
@@ -278,10 +259,10 @@ func (d *Dependencies) handleStreamingResponse(
 	// Log the streaming request
 	// Note: For streaming, cost calculation is more complex
 	// We'd need to parse all chunks to get token counts
-	logRec := &logging.Record{
+	logRec := &logging.LogRecord{
 		Timestamp:       time.Now(),
 		RequestID:       reqID,
-		APIKeyID:        apiKeyRecord.ID.String(),
+		APIKeyID:        apiKeyRecord.ID,
 		APIKeyName:      apiKeyRecord.Name,
 		Provider:        provider.Type(),
 		Model:           providerModel,
@@ -297,23 +278,8 @@ func (d *Dependencies) handleStreamingResponse(
 
 	// Update billing if we have cost info
 	if totalCost > 0 {
-		_ = d.Billing.AddUsage(context.Background(), apiKeyRecord.ID.String(), totalCost)
+		_ = d.Billing.AddUsage(context.Background(), apiKeyRecord.ID, totalCost)
 	}
-}
-
-// parseBearer extracts the token from an Authorization: Bearer <token> header.
-func parseBearer(header string) (string, error) {
-	if header == "" {
-		return "", errors.New("missing Authorization header")
-	}
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return "", errors.New("invalid Authorization header format")
-	}
-	if parts[1] == "" {
-		return "", errors.New("empty bearer token")
-	}
-	return parts[1], nil
 }
 
 // newRequestID returns a UUID request ID for tracing

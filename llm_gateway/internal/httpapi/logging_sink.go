@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"llm_gateway/internal/logging"
@@ -21,20 +20,12 @@ func NewRedisLoggingSink(buffer *logging.RedisBuffer) *RedisLoggingSink {
 }
 
 // Enqueue adds a log record to the Redis buffer
-func (s *RedisLoggingSink) Enqueue(rec *logging.Record) error {
-	// Marshal record to JSON
-	data, err := json.Marshal(rec)
-	if err != nil {
-		return fmt.Errorf("failed to marshal log record: %w", err)
-	}
-
-	// Enqueue to Redis buffer (best-effort, use background context)
+func (s *RedisLoggingSink) Enqueue(rec *logging.LogRecord) error {
 	ctx := context.Background()
-	if err := s.buffer.Enqueue(ctx, data); err != nil {
-		// Log error but don't fail the request
-		// In production, you'd want to send this to a monitoring system
-		fmt.Printf("Warning: failed to enqueue log record: %v\n", err)
-		return nil // Don't propagate error to avoid failing requests
+
+	// Enqueue to Redis buffer
+	if err := s.buffer.Enqueue(ctx, rec); err != nil {
+		return fmt.Errorf("failed to enqueue log record: %w", err)
 	}
 
 	return nil

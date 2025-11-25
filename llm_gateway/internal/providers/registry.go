@@ -2,12 +2,13 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"llm_gateway/internal/storage"
+
+	"github.com/google/uuid"
 )
 
 // ProviderRegistry manages all provider instances and resolves models to providers
@@ -144,7 +145,7 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 
 	// Load models to map them to providers
 	modelRepo := storage.NewModelRepository(r.db)
-	models, err := modelRepo.List(ctx)
+	models, err := modelRepo.List(ctx, 10000, 0) // Get all models (with a high limit)
 	if err != nil {
 		return fmt.Errorf("failed to load models from database: %w", err)
 	}
@@ -162,23 +163,29 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 
 		// Decrypt credentials
 		credentials := make(map[string]string)
-		if len(dbProvider.EncryptedCredentials) > 0 && r.encryption != nil {
-			decrypted, err := r.encryption.Decrypt(dbProvider.EncryptedCredentials)
-			if err != nil {
-				return fmt.Errorf("failed to decrypt credentials for provider %s: %w", dbProvider.Name, err)
+		if dbProvider.EncryptedCredentials != nil && len(dbProvider.EncryptedCredentials) > 0 && r.encryption != nil {
+			// EncryptedCredentials is JSONB, convert to map first
+			encryptedMap := make(map[string]any)
+			for k, v := range dbProvider.EncryptedCredentials {
+				encryptedMap[k] = v
 			}
 
-			if err := json.Unmarshal(decrypted, &credentials); err != nil {
-				return fmt.Errorf("failed to unmarshal credentials for provider %s: %w", dbProvider.Name, err)
+			// Decrypt each credential value
+			for key, val := range encryptedMap {
+				if strVal, ok := val.(string); ok {
+					decrypted, err := r.encryption.Decrypt(strVal)
+					if err != nil {
+						return fmt.Errorf("failed to decrypt credential '%s' for provider %s: %w", key, dbProvider.Name, err)
+					}
+					credentials[key] = string(decrypted)
+				}
 			}
 		}
 
-		// Parse config
+		// Parse config (already a JSONB map)
 		config := make(map[string]any)
-		if len(dbProvider.Config) > 0 {
-			if err := json.Unmarshal(dbProvider.Config, &config); err != nil {
-				return fmt.Errorf("failed to unmarshal config for provider %s: %w", dbProvider.Name, err)
-			}
+		if dbProvider.Config != nil {
+			config = dbProvider.Config
 		}
 
 		// Create provider instance
@@ -206,9 +213,9 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 				continue
 			}
 
-			// Simple heuristic: match provider type to litellm_provider
+			// Simple heuristic: match provider type to provider_id
 			// In production, you might have a more sophisticated mapping
-			if matchesLiteLLMProvider(dbProvider.ProviderType, model.LiteLLMProvider) {
+			if matchesLiteLLMProvider(dbProvider.ProviderType, model.ProviderID) {
 				newModelToProvider[model.ModelName] = dbProvider.ID.String()
 				break // Use first matching provider
 			}
@@ -228,7 +235,7 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 		}
 
 		// If alias has a specific provider, use it; otherwise use model's default provider
-		if alias.ProviderID != nil {
+		if alias.ProviderID != uuid.Nil {
 			newAliasToProvider[alias.Alias] = alias.ProviderID.String()
 		} else if providerID, exists := newModelToProvider[model.ModelName]; exists {
 			newAliasToProvider[alias.Alias] = providerID

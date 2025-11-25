@@ -4,23 +4,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // APIKey represents a client API key managed by the admin API.
 type APIKey struct {
-	ID                 uuid.UUID  `db:"id"`
-	Name               string     `db:"name"`
-	KeyHash            string     `db:"key_hash"` // SHA-256 hash
-	AllowedModels      []string   `db:"allowed_models"`
-	RateLimitPerMinute int        `db:"rate_limit_per_minute"`
-	MonthlyBudgetUSD   *float64   `db:"monthly_budget_usd"` // NULL = unlimited
-	Enabled            bool       `db:"enabled"`
-	ExpiresAt          *time.Time `db:"expires_at"`
-	CreatedAt          time.Time  `db:"created_at"`
-	UpdatedAt          time.Time  `db:"updated_at"`
+	ID                 uuid.UUID      `db:"id"`
+	Name               string         `db:"name"`
+	KeyHash            string         `db:"key_hash"` // SHA-256 hash
+	AllowedModels      pq.StringArray `db:"allowed_models"`
+	RateLimitPerMinute int            `db:"rate_limit_per_minute"`
+	MonthlyBudgetUSD   *float64       `db:"monthly_budget_usd"` // NULL = unlimited
+	Enabled            bool           `db:"enabled"`
+	ExpiresAt          *time.Time     `db:"expires_at"`
+	CreatedAt          time.Time      `db:"created_at"`
+	UpdatedAt          time.Time      `db:"updated_at"`
 
-	// Not stored in DB, populated from key_metadata table
-	Metadata map[string]map[string]string `db:"-"` // metadata_type -> key -> value
+	// Not stored in DB, populated from api_key_tags table
+	Tags map[string]string `db:"-"` // -> key -> value
 }
 
 // AllowsModel checks if the key is allowed to call the given model (or alias).

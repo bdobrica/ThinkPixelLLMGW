@@ -3,7 +3,7 @@ package logging
 import "time"
 
 // Record is the structure that will be logged to S3 (via Redis buffering).
-type Record struct {
+type LogRecord struct {
 	Timestamp  time.Time         `json:"timestamp"`
 	RequestID  string            `json:"request_id"`
 	APIKeyID   string            `json:"api_key_id"`
@@ -23,7 +23,7 @@ type Record struct {
 
 // Sink receives log records from the gateway.
 type Sink interface {
-	Enqueue(rec *Record) error
+	Enqueue(rec *LogRecord) error
 }
 
 // NoopSink is a placeholder implementation that discards logs.
@@ -33,7 +33,7 @@ func NewNoopSink() *NoopSink {
 	return &NoopSink{}
 }
 
-func (s *NoopSink) Enqueue(rec *Record) error {
+func (s *NoopSink) Enqueue(rec *LogRecord) error {
 	// TODO: implement Redis buffer → S3 writer
 	return nil
 }

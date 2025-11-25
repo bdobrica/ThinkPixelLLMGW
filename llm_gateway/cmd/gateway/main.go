@@ -60,8 +60,8 @@ func main() {
 	}
 
 	// Close provider registry (which closes all providers)
-	if registry, ok := deps.Providers.(*httpapi.Dependencies); ok {
-		_ = registry.Providers.Close()
+	if registry, ok := deps.Providers.(interface{ Close() error }); ok {
+		_ = registry.Close()
 	}
 
 	log.Println("Server exited")

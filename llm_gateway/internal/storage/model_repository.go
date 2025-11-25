@@ -34,18 +34,35 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 	// Query database
 	var model models.Model
 	query := `
-		SELECT id, provider_id, name, input_cost_per_token, output_cost_per_token,
-		       max_tokens, max_input_tokens, max_output_tokens, input_cost_per_image,
-		       input_cost_per_audio_per_second, input_cost_per_video_per_second,
-		       output_cost_per_image, output_cost_per_audio_per_second,
-		       output_cost_per_video_per_second, output_vector_size, litellm_provider,
-		       mode, supports_function_calling, supports_parallel_function_calling,
-		       supports_vision, supports_tool_choice, supports_response_schema,
-		       supports_prompt_caching, supports_audio_input, supports_audio_output,
-		       supports_pdf_input, supports_video_input, supports_image_input,
-		       supports_system_messages, source, metadata, created_at, updated_at
+		SELECT 
+			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			supported_regions, supported_resolutions,
+			supports_assistant_prefill, supports_audio_input, supports_audio_output,
+			supports_computer_use, supports_embedding_image_input, supports_function_calling,
+			supports_image_input, supports_native_streaming, supports_parallel_function_calling,
+			supports_pdf_input, supports_prompt_caching, supports_reasoning,
+			supports_response_schema, supports_service_tier, supports_system_messages,
+			supports_tool_choice, supports_url_context, supports_video_input,
+			supports_vision, supports_web_search,
+			supports_text_input, supports_text_output, supports_image_output,
+			supports_video_output, supports_batch_requests, supports_json_output,
+			supports_rerank, supports_embedding_text_input, supports_streaming_output,
+			tokens_per_minute, requests_per_minute, requests_per_day,
+			max_tokens, max_input_tokens, max_output_tokens, max_query_tokens,
+			max_tokens_per_document_chunk, max_document_chunks_per_query,
+			tool_use_system_prompt_tokens, output_vector_size,
+			max_audio_length_hours, max_audio_per_prompt, max_images_per_prompt,
+			max_pdf_size_mb, max_video_length, max_videos_per_prompt,
+			max_requests_per_second, max_concurrent_requests, max_batch_size,
+			max_audio_length_seconds, max_video_length_seconds,
+			max_context_window_tokens, max_output_tokens_per_request,
+			max_input_tokens_per_request,
+			currency, pricing_component_schema_version,
+			average_latency_ms, p95_latency_ms, availability_slo, sla_tier, supports_sla,
+			metadata_schema_version, metadata,
+			created_at, updated_at
 		FROM models
-		WHERE name = $1
+		WHERE model_name = $1
 	`
 
 	err := r.db.conn.GetContext(ctx, &model, query, name)
@@ -57,6 +74,11 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 		return nil, fmt.Errorf("failed to get model: %w", err)
 	}
 
+	// Load pricing components
+	if err := r.loadPricingComponents(ctx, &model); err != nil {
+		return nil, fmt.Errorf("failed to load pricing components: %w", err)
+	}
+
 	// Cache the result
 	r.cache.Set(name, &model)
 
@@ -66,19 +88,36 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 // getByAlias retrieves a model by alias
 func (r *ModelRepository) getByAlias(ctx context.Context, alias string) (*models.Model, error) {
 	query := `
-		SELECT m.id, m.provider_id, m.name, m.input_cost_per_token, m.output_cost_per_token,
-		       m.max_tokens, m.max_input_tokens, m.max_output_tokens, m.input_cost_per_image,
-		       m.input_cost_per_audio_per_second, m.input_cost_per_video_per_second,
-		       m.output_cost_per_image, m.output_cost_per_audio_per_second,
-		       m.output_cost_per_video_per_second, m.output_vector_size, m.litellm_provider,
-		       m.mode, m.supports_function_calling, m.supports_parallel_function_calling,
-		       m.supports_vision, m.supports_tool_choice, m.supports_response_schema,
-		       m.supports_prompt_caching, m.supports_audio_input, m.supports_audio_output,
-		       m.supports_pdf_input, m.supports_video_input, m.supports_image_input,
-		       m.supports_system_messages, m.source, m.metadata, m.created_at, m.updated_at
+		SELECT 
+			m.id, m.model_name, m.provider_id, m.source, m.version, m.deprecation_date, m.is_deprecated,
+			m.supported_regions, m.supported_resolutions,
+			m.supports_assistant_prefill, m.supports_audio_input, m.supports_audio_output,
+			m.supports_computer_use, m.supports_embedding_image_input, m.supports_function_calling,
+			m.supports_image_input, m.supports_native_streaming, m.supports_parallel_function_calling,
+			m.supports_pdf_input, m.supports_prompt_caching, m.supports_reasoning,
+			m.supports_response_schema, m.supports_service_tier, m.supports_system_messages,
+			m.supports_tool_choice, m.supports_url_context, m.supports_video_input,
+			m.supports_vision, m.supports_web_search,
+			m.supports_text_input, m.supports_text_output, m.supports_image_output,
+			m.supports_video_output, m.supports_batch_requests, m.supports_json_output,
+			m.supports_rerank, m.supports_embedding_text_input, m.supports_streaming_output,
+			m.tokens_per_minute, m.requests_per_minute, m.requests_per_day,
+			m.max_tokens, m.max_input_tokens, m.max_output_tokens, m.max_query_tokens,
+			m.max_tokens_per_document_chunk, m.max_document_chunks_per_query,
+			m.tool_use_system_prompt_tokens, m.output_vector_size,
+			m.max_audio_length_hours, m.max_audio_per_prompt, m.max_images_per_prompt,
+			m.max_pdf_size_mb, m.max_video_length, m.max_videos_per_prompt,
+			m.max_requests_per_second, m.max_concurrent_requests, m.max_batch_size,
+			m.max_audio_length_seconds, m.max_video_length_seconds,
+			m.max_context_window_tokens, m.max_output_tokens_per_request,
+			m.max_input_tokens_per_request,
+			m.currency, m.pricing_component_schema_version,
+			m.average_latency_ms, m.p95_latency_ms, m.availability_slo, m.sla_tier, m.supports_sla,
+			m.metadata_schema_version, m.metadata,
+			m.created_at, m.updated_at
 		FROM models m
-		INNER JOIN model_aliases ma ON m.id = ma.model_id
-		WHERE ma.alias = $1
+		INNER JOIN model_aliases ma ON m.id = ma.target_model_id
+		WHERE ma.alias = $1 AND ma.enabled = true
 	`
 
 	var model models.Model
@@ -90,27 +129,69 @@ func (r *ModelRepository) getByAlias(ctx context.Context, alias string) (*models
 		return nil, fmt.Errorf("failed to get model by alias: %w", err)
 	}
 
+	// Load pricing components
+	if err := r.loadPricingComponents(ctx, &model); err != nil {
+		return nil, fmt.Errorf("failed to load pricing components: %w", err)
+	}
+
 	// Cache by both alias and actual name
 	r.cache.Set(alias, &model)
-	r.cache.Set(model.Name, &model)
+	r.cache.Set(model.ModelName, &model)
 
 	return &model, nil
+}
+
+// loadPricingComponents loads pricing components for a model
+func (r *ModelRepository) loadPricingComponents(ctx context.Context, model *models.Model) error {
+	query := `
+		SELECT id, model_id, code, direction, modality, unit, tier, scope, price,
+		       metadata_schema_version, metadata
+		FROM pricing_components
+		WHERE model_id = $1
+		ORDER BY code
+	`
+
+	var components []models.PricingComponent
+	err := r.db.conn.SelectContext(ctx, &components, query, model.ID)
+	if err != nil {
+		return err
+	}
+
+	model.PricingComponents = components
+	return nil
 }
 
 // GetByID retrieves a model by ID
 func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Model, error) {
 	var model models.Model
 	query := `
-		SELECT id, provider_id, name, input_cost_per_token, output_cost_per_token,
-		       max_tokens, max_input_tokens, max_output_tokens, input_cost_per_image,
-		       input_cost_per_audio_per_second, input_cost_per_video_per_second,
-		       output_cost_per_image, output_cost_per_audio_per_second,
-		       output_cost_per_video_per_second, output_vector_size, litellm_provider,
-		       mode, supports_function_calling, supports_parallel_function_calling,
-		       supports_vision, supports_tool_choice, supports_response_schema,
-		       supports_prompt_caching, supports_audio_input, supports_audio_output,
-		       supports_pdf_input, supports_video_input, supports_image_input,
-		       supports_system_messages, source, metadata, created_at, updated_at
+		SELECT 
+			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			supported_regions, supported_resolutions,
+			supports_assistant_prefill, supports_audio_input, supports_audio_output,
+			supports_computer_use, supports_embedding_image_input, supports_function_calling,
+			supports_image_input, supports_native_streaming, supports_parallel_function_calling,
+			supports_pdf_input, supports_prompt_caching, supports_reasoning,
+			supports_response_schema, supports_service_tier, supports_system_messages,
+			supports_tool_choice, supports_url_context, supports_video_input,
+			supports_vision, supports_web_search,
+			supports_text_input, supports_text_output, supports_image_output,
+			supports_video_output, supports_batch_requests, supports_json_output,
+			supports_rerank, supports_embedding_text_input, supports_streaming_output,
+			tokens_per_minute, requests_per_minute, requests_per_day,
+			max_tokens, max_input_tokens, max_output_tokens, max_query_tokens,
+			max_tokens_per_document_chunk, max_document_chunks_per_query,
+			tool_use_system_prompt_tokens, output_vector_size,
+			max_audio_length_hours, max_audio_per_prompt, max_images_per_prompt,
+			max_pdf_size_mb, max_video_length, max_videos_per_prompt,
+			max_requests_per_second, max_concurrent_requests, max_batch_size,
+			max_audio_length_seconds, max_video_length_seconds,
+			max_context_window_tokens, max_output_tokens_per_request,
+			max_input_tokens_per_request,
+			currency, pricing_component_schema_version,
+			average_latency_ms, p95_latency_ms, availability_slo, sla_tier, supports_sla,
+			metadata_schema_version, metadata,
+			created_at, updated_at
 		FROM models
 		WHERE id = $1
 	`
@@ -123,25 +204,47 @@ func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Mo
 		return nil, fmt.Errorf("failed to get model: %w", err)
 	}
 
+	// Load pricing components
+	if err := r.loadPricingComponents(ctx, &model); err != nil {
+		return nil, fmt.Errorf("failed to load pricing components: %w", err)
+	}
+
 	return &model, nil
 }
 
 // GetByProvider retrieves all models for a provider
-func (r *ModelRepository) GetByProvider(ctx context.Context, providerID uuid.UUID) ([]*models.Model, error) {
+func (r *ModelRepository) GetByProvider(ctx context.Context, providerID string) ([]*models.Model, error) {
 	query := `
-		SELECT id, provider_id, name, input_cost_per_token, output_cost_per_token,
-		       max_tokens, max_input_tokens, max_output_tokens, input_cost_per_image,
-		       input_cost_per_audio_per_second, input_cost_per_video_per_second,
-		       output_cost_per_image, output_cost_per_audio_per_second,
-		       output_cost_per_video_per_second, output_vector_size, litellm_provider,
-		       mode, supports_function_calling, supports_parallel_function_calling,
-		       supports_vision, supports_tool_choice, supports_response_schema,
-		       supports_prompt_caching, supports_audio_input, supports_audio_output,
-		       supports_pdf_input, supports_video_input, supports_image_input,
-		       supports_system_messages, source, metadata, created_at, updated_at
+		SELECT 
+			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			supported_regions, supported_resolutions,
+			supports_assistant_prefill, supports_audio_input, supports_audio_output,
+			supports_computer_use, supports_embedding_image_input, supports_function_calling,
+			supports_image_input, supports_native_streaming, supports_parallel_function_calling,
+			supports_pdf_input, supports_prompt_caching, supports_reasoning,
+			supports_response_schema, supports_service_tier, supports_system_messages,
+			supports_tool_choice, supports_url_context, supports_video_input,
+			supports_vision, supports_web_search,
+			supports_text_input, supports_text_output, supports_image_output,
+			supports_video_output, supports_batch_requests, supports_json_output,
+			supports_rerank, supports_embedding_text_input, supports_streaming_output,
+			tokens_per_minute, requests_per_minute, requests_per_day,
+			max_tokens, max_input_tokens, max_output_tokens, max_query_tokens,
+			max_tokens_per_document_chunk, max_document_chunks_per_query,
+			tool_use_system_prompt_tokens, output_vector_size,
+			max_audio_length_hours, max_audio_per_prompt, max_images_per_prompt,
+			max_pdf_size_mb, max_video_length, max_videos_per_prompt,
+			max_requests_per_second, max_concurrent_requests, max_batch_size,
+			max_audio_length_seconds, max_video_length_seconds,
+			max_context_window_tokens, max_output_tokens_per_request,
+			max_input_tokens_per_request,
+			currency, pricing_component_schema_version,
+			average_latency_ms, p95_latency_ms, availability_slo, sla_tier, supports_sla,
+			metadata_schema_version, metadata,
+			created_at, updated_at
 		FROM models
 		WHERE provider_id = $1
-		ORDER BY name
+		ORDER BY model_name
 	`
 
 	var modelsList []*models.Model
@@ -150,109 +253,73 @@ func (r *ModelRepository) GetByProvider(ctx context.Context, providerID uuid.UUI
 		return nil, fmt.Errorf("failed to get models by provider: %w", err)
 	}
 
+	// Load pricing components for each model
+	for _, model := range modelsList {
+		if err := r.loadPricingComponents(ctx, model); err != nil {
+			return nil, fmt.Errorf("failed to load pricing components: %w", err)
+		}
+	}
+
 	return modelsList, nil
 }
 
-// Create creates a new model
-func (r *ModelRepository) Create(ctx context.Context, model *models.Model) error {
+// List returns all models (paginated)
+func (r *ModelRepository) List(ctx context.Context, limit, offset int) ([]*models.Model, error) {
 	query := `
-		INSERT INTO models (
-			id, provider_id, name, input_cost_per_token, output_cost_per_token,
-			max_tokens, max_input_tokens, max_output_tokens, input_cost_per_image,
-			input_cost_per_audio_per_second, input_cost_per_video_per_second,
-			output_cost_per_image, output_cost_per_audio_per_second,
-			output_cost_per_video_per_second, output_vector_size, litellm_provider,
-			mode, supports_function_calling, supports_parallel_function_calling,
-			supports_vision, supports_tool_choice, supports_response_schema,
-			supports_prompt_caching, supports_audio_input, supports_audio_output,
-			supports_pdf_input, supports_video_input, supports_image_input,
-			supports_system_messages, source, metadata
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-			$17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
-		)
-		RETURNING created_at, updated_at
+		SELECT 
+			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			supported_regions, supported_resolutions,
+			supports_assistant_prefill, supports_audio_input, supports_audio_output,
+			supports_computer_use, supports_embedding_image_input, supports_function_calling,
+			supports_image_input, supports_native_streaming, supports_parallel_function_calling,
+			supports_pdf_input, supports_prompt_caching, supports_reasoning,
+			supports_response_schema, supports_service_tier, supports_system_messages,
+			supports_tool_choice, supports_url_context, supports_video_input,
+			supports_vision, supports_web_search,
+			supports_text_input, supports_text_output, supports_image_output,
+			supports_video_output, supports_batch_requests, supports_json_output,
+			supports_rerank, supports_embedding_text_input, supports_streaming_output,
+			tokens_per_minute, requests_per_minute, requests_per_day,
+			max_tokens, max_input_tokens, max_output_tokens, max_query_tokens,
+			max_tokens_per_document_chunk, max_document_chunks_per_query,
+			tool_use_system_prompt_tokens, output_vector_size,
+			max_audio_length_hours, max_audio_per_prompt, max_images_per_prompt,
+			max_pdf_size_mb, max_video_length, max_videos_per_prompt,
+			max_requests_per_second, max_concurrent_requests, max_batch_size,
+			max_audio_length_seconds, max_video_length_seconds,
+			max_context_window_tokens, max_output_tokens_per_request,
+			max_input_tokens_per_request,
+			currency, pricing_component_schema_version,
+			average_latency_ms, p95_latency_ms, availability_slo, sla_tier, supports_sla,
+			metadata_schema_version, metadata,
+			created_at, updated_at
+		FROM models
+		WHERE is_deprecated = false
+		ORDER BY model_name
+		LIMIT $1 OFFSET $2
 	`
 
-	if model.ID == uuid.Nil {
-		model.ID = uuid.New()
+	var modelsList []*models.Model
+	err := r.db.conn.SelectContext(ctx, &modelsList, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 
-	err := r.db.conn.QueryRowxContext(
-		ctx, query,
-		model.ID, model.ProviderID, model.Name, model.InputCostPerToken, model.OutputCostPerToken,
-		model.MaxTokens, model.MaxInputTokens, model.MaxOutputTokens, model.InputCostPerImage,
-		model.InputCostPerAudioPerSecond, model.InputCostPerVideoPerSecond,
-		model.OutputCostPerImage, model.OutputCostPerAudioPerSecond,
-		model.OutputCostPerVideoPerSecond, model.OutputVectorSize, model.LiteLLMProvider,
-		model.Mode, model.SupportsFunctionCalling, model.SupportsParallelFunctionCalling,
-		model.SupportsVision, model.SupportsToolChoice, model.SupportsResponseSchema,
-		model.SupportsPromptCaching, model.SupportsAudioInput, model.SupportsAudioOutput,
-		model.SupportsPDFInput, model.SupportsVideoInput, model.SupportsImageInput,
-		model.SupportsSystemMessages, model.Source, model.Metadata,
-	).Scan(&model.CreatedAt, &model.UpdatedAt)
-
-	if err != nil {
-		return fmt.Errorf("failed to create model: %w", err)
-	}
-
-	// Invalidate cache
-	r.cache.Delete(model.Name)
-
-	return nil
-}
-
-// Update updates an existing model
-func (r *ModelRepository) Update(ctx context.Context, model *models.Model) error {
-	query := `
-		UPDATE models
-		SET provider_id = $2, name = $3, input_cost_per_token = $4, output_cost_per_token = $5,
-		    max_tokens = $6, max_input_tokens = $7, max_output_tokens = $8,
-		    input_cost_per_image = $9, input_cost_per_audio_per_second = $10,
-		    input_cost_per_video_per_second = $11, output_cost_per_image = $12,
-		    output_cost_per_audio_per_second = $13, output_cost_per_video_per_second = $14,
-		    output_vector_size = $15, litellm_provider = $16, mode = $17,
-		    supports_function_calling = $18, supports_parallel_function_calling = $19,
-		    supports_vision = $20, supports_tool_choice = $21, supports_response_schema = $22,
-		    supports_prompt_caching = $23, supports_audio_input = $24, supports_audio_output = $25,
-		    supports_pdf_input = $26, supports_video_input = $27, supports_image_input = $28,
-		    supports_system_messages = $29, source = $30, metadata = $31
-		WHERE id = $1
-		RETURNING updated_at
-	`
-
-	err := r.db.conn.QueryRowxContext(
-		ctx, query,
-		model.ID, model.ProviderID, model.Name, model.InputCostPerToken, model.OutputCostPerToken,
-		model.MaxTokens, model.MaxInputTokens, model.MaxOutputTokens, model.InputCostPerImage,
-		model.InputCostPerAudioPerSecond, model.InputCostPerVideoPerSecond,
-		model.OutputCostPerImage, model.OutputCostPerAudioPerSecond,
-		model.OutputCostPerVideoPerSecond, model.OutputVectorSize, model.LiteLLMProvider,
-		model.Mode, model.SupportsFunctionCalling, model.SupportsParallelFunctionCalling,
-		model.SupportsVision, model.SupportsToolChoice, model.SupportsResponseSchema,
-		model.SupportsPromptCaching, model.SupportsAudioInput, model.SupportsAudioOutput,
-		model.SupportsPDFInput, model.SupportsVideoInput, model.SupportsImageInput,
-		model.SupportsSystemMessages, model.Source, model.Metadata,
-	).Scan(&model.UpdatedAt)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return ErrModelNotFound
+	// Load pricing components for each model
+	for _, model := range modelsList {
+		if err := r.loadPricingComponents(ctx, model); err != nil {
+			return nil, fmt.Errorf("failed to load pricing components: %w", err)
 		}
-		return fmt.Errorf("failed to update model: %w", err)
 	}
 
-	// Invalidate cache
-	r.cache.Delete(model.Name)
-
-	return nil
+	return modelsList, nil
 }
 
 // Delete deletes a model
 func (r *ModelRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	// Get model name before deletion to invalidate cache
-	var name string
-	err := r.db.conn.GetContext(ctx, &name, "SELECT name FROM models WHERE id = $1", id)
+	var modelName string
+	err := r.db.conn.GetContext(ctx, &modelName, "SELECT model_name FROM models WHERE id = $1", id)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("failed to get model name: %w", err)
 	}
@@ -273,69 +340,14 @@ func (r *ModelRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	// Invalidate cache
-	if name != "" {
-		r.cache.Delete(name)
+	if modelName != "" {
+		r.cache.Delete(modelName)
 	}
 
 	return nil
 }
 
-// List returns all models (paginated)
-func (r *ModelRepository) List(ctx context.Context, limit, offset int) ([]*models.Model, error) {
-	query := `
-		SELECT id, provider_id, name, input_cost_per_token, output_cost_per_token,
-		       max_tokens, max_input_tokens, max_output_tokens, input_cost_per_image,
-		       input_cost_per_audio_per_second, input_cost_per_video_per_second,
-		       output_cost_per_image, output_cost_per_audio_per_second,
-		       output_cost_per_video_per_second, output_vector_size, litellm_provider,
-		       mode, supports_function_calling, supports_parallel_function_calling,
-		       supports_vision, supports_tool_choice, supports_response_schema,
-		       supports_prompt_caching, supports_audio_input, supports_audio_output,
-		       supports_pdf_input, supports_video_input, supports_image_input,
-		       supports_system_messages, source, metadata, created_at, updated_at
-		FROM models
-		ORDER BY name
-		LIMIT $1 OFFSET $2
-	`
-
-	var modelsList []*models.Model
-	err := r.db.conn.SelectContext(ctx, &modelsList, query, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list models: %w", err)
-	}
-
-	return modelsList, nil
-}
-
-// Search searches for models by name (fuzzy matching)
-func (r *ModelRepository) Search(ctx context.Context, searchTerm string, limit int) ([]*models.Model, error) {
-	query := `
-		SELECT id, provider_id, name, input_cost_per_token, output_cost_per_token,
-		       max_tokens, max_input_tokens, max_output_tokens, input_cost_per_image,
-		       input_cost_per_audio_per_second, input_cost_per_video_per_second,
-		       output_cost_per_image, output_cost_per_audio_per_second,
-		       output_cost_per_video_per_second, output_vector_size, litellm_provider,
-		       mode, supports_function_calling, supports_parallel_function_calling,
-		       supports_vision, supports_tool_choice, supports_response_schema,
-		       supports_prompt_caching, supports_audio_input, supports_audio_output,
-		       supports_pdf_input, supports_video_input, supports_image_input,
-		       supports_system_messages, source, metadata, created_at, updated_at
-		FROM models
-		WHERE name % $1
-		ORDER BY similarity(name, $1) DESC
-		LIMIT $2
-	`
-
-	var modelsList []*models.Model
-	err := r.db.conn.SelectContext(ctx, &modelsList, query, searchTerm, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search models: %w", err)
-	}
-
-	return modelsList, nil
-}
-
 // InvalidateCache removes a model from the cache
-func (r *ModelRepository) InvalidateCache(name string) {
-	r.cache.Delete(name)
+func (r *ModelRepository) InvalidateCache(modelName string) {
+	r.cache.Delete(modelName)
 }

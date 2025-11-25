@@ -80,9 +80,7 @@ func NewRedisClient(cfg RedisConfig) (*RedisClient, error) {
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
 
-		MaxConnAge:      cfg.MaxConnAge,
 		PoolTimeout:     cfg.PoolTimeout,
-		IdleTimeout:     cfg.IdleTimeout,
 		ConnMaxIdleTime: cfg.IdleTimeout,
 
 		MaxRetries:      cfg.MaxRetries,

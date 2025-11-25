@@ -24,8 +24,8 @@ func NewProviderRepository(db *DB) *ProviderRepository {
 func (r *ProviderRepository) GetByName(ctx context.Context, name string) (*models.Provider, error) {
 	var provider models.Provider
 	query := `
-		SELECT id, name, base_url, api_version, requires_auth, 
-		       supported_features, config, created_at, updated_at
+		SELECT id, name, display_name, provider_type, encrypted_credentials,
+		       config, enabled, created_at, updated_at
 		FROM providers
 		WHERE name = $1
 	`
@@ -45,8 +45,8 @@ func (r *ProviderRepository) GetByName(ctx context.Context, name string) (*model
 func (r *ProviderRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Provider, error) {
 	var provider models.Provider
 	query := `
-		SELECT id, name, base_url, api_version, requires_auth,
-		       supported_features, config, created_at, updated_at
+		SELECT id, name, display_name, provider_type, encrypted_credentials,
+		       config, enabled, created_at, updated_at
 		FROM providers
 		WHERE id = $1
 	`
@@ -65,8 +65,8 @@ func (r *ProviderRepository) GetByID(ctx context.Context, id uuid.UUID) (*models
 // List returns all providers
 func (r *ProviderRepository) List(ctx context.Context) ([]*models.Provider, error) {
 	query := `
-		SELECT id, name, base_url, api_version, requires_auth,
-		       supported_features, config, created_at, updated_at
+		SELECT id, name, display_name, provider_type, encrypted_credentials,
+		       config, enabled, created_at, updated_at
 		FROM providers
 		ORDER BY name
 	`
@@ -83,8 +83,8 @@ func (r *ProviderRepository) List(ctx context.Context) ([]*models.Provider, erro
 // Create creates a new provider
 func (r *ProviderRepository) Create(ctx context.Context, provider *models.Provider) error {
 	query := `
-		INSERT INTO providers (id, name, base_url, api_version, requires_auth, 
-		                       supported_features, config)
+		INSERT INTO providers (id, name, display_name, provider_type,
+		                       encrypted_credentials, config, enabled)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING created_at, updated_at
 	`
@@ -95,8 +95,8 @@ func (r *ProviderRepository) Create(ctx context.Context, provider *models.Provid
 
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
-		provider.ID, provider.Name, provider.BaseURL, provider.APIVersion,
-		provider.RequiresAuth, provider.SupportedFeatures, provider.Config,
+		provider.ID, provider.Name, provider.DisplayName, provider.ProviderType,
+		provider.EncryptedCredentials, provider.Config, provider.Enabled,
 	).Scan(&provider.CreatedAt, &provider.UpdatedAt)
 
 	if err != nil {
@@ -110,16 +110,16 @@ func (r *ProviderRepository) Create(ctx context.Context, provider *models.Provid
 func (r *ProviderRepository) Update(ctx context.Context, provider *models.Provider) error {
 	query := `
 		UPDATE providers
-		SET name = $2, base_url = $3, api_version = $4, requires_auth = $5,
-		    supported_features = $6, config = $7
+		SET name = $2, display_name = $3, provider_type = $4,
+		    encrypted_credentials = $5, config = $6, enabled = $7
 		WHERE id = $1
 		RETURNING updated_at
 	`
 
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
-		provider.ID, provider.Name, provider.BaseURL, provider.APIVersion,
-		provider.RequiresAuth, provider.SupportedFeatures, provider.Config,
+		provider.ID, provider.Name, provider.DisplayName, provider.ProviderType,
+		provider.EncryptedCredentials, provider.Config, provider.Enabled,
 	).Scan(&provider.UpdatedAt)
 
 	if err != nil {

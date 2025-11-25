@@ -49,8 +49,8 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, keyHash string) (*mode
 	}
 
 	// Load metadata
-	if err := r.loadMetadata(ctx, &key); err != nil {
-		return nil, fmt.Errorf("failed to load metadata: %w", err)
+	if err := r.loadTags(ctx, &key); err != nil {
+		return nil, fmt.Errorf("failed to load tags: %w", err)
 	}
 
 	// Cache the result
@@ -78,18 +78,18 @@ func (r *APIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.A
 	}
 
 	// Load metadata
-	if err := r.loadMetadata(ctx, &key); err != nil {
-		return nil, fmt.Errorf("failed to load metadata: %w", err)
+	if err := r.loadTags(ctx, &key); err != nil {
+		return nil, fmt.Errorf("failed to load tags: %w", err)
 	}
 
 	return &key, nil
 }
 
-// loadMetadata loads metadata for an API key
-func (r *APIKeyRepository) loadMetadata(ctx context.Context, key *models.APIKey) error {
+// loadTags loads tags for an API key
+func (r *APIKeyRepository) loadTags(ctx context.Context, key *models.APIKey) error {
 	query := `
-		SELECT metadata_type, key, value
-		FROM key_metadata
+		SELECT key, value
+		FROM api_key_tags
 		WHERE api_key_id = $1
 	`
 
@@ -99,18 +99,14 @@ func (r *APIKeyRepository) loadMetadata(ctx context.Context, key *models.APIKey)
 	}
 	defer rows.Close()
 
-	key.Metadata = make(map[string]map[string]string)
+	key.Tags = make(map[string]string)
 
 	for rows.Next() {
-		var metadataType, k, value string
-		if err := rows.Scan(&metadataType, &k, &value); err != nil {
+		var k, value string
+		if err := rows.Scan(&k, &value); err != nil {
 			return err
 		}
-
-		if key.Metadata[metadataType] == nil {
-			key.Metadata[metadataType] = make(map[string]string)
-		}
-		key.Metadata[metadataType][k] = value
+		key.Tags[k] = value
 	}
 
 	return rows.Err()
@@ -224,26 +220,26 @@ func (r *APIKeyRepository) List(ctx context.Context, limit, offset int) ([]*mode
 
 	// Load metadata for each key
 	for _, key := range keys {
-		if err := r.loadMetadata(ctx, key); err != nil {
-			return nil, fmt.Errorf("failed to load metadata: %w", err)
+		if err := r.loadTags(ctx, key); err != nil {
+			return nil, fmt.Errorf("failed to load tags: %w", err)
 		}
 	}
 
 	return keys, nil
 }
 
-// SetMetadata sets metadata for an API key
-func (r *APIKeyRepository) SetMetadata(ctx context.Context, apiKeyID uuid.UUID, metadataType, key, value string) error {
+// SetTag sets a tag for an API key
+func (r *APIKeyRepository) SetTag(ctx context.Context, apiKeyID uuid.UUID, key, value string) error {
 	query := `
-		INSERT INTO key_metadata (api_key_id, metadata_type, key, value)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (api_key_id, metadata_type, key)
-		DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+		INSERT INTO api_key_tags (api_key_id, key, value)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (api_key_id, key)
+		DO UPDATE SET value = EXCLUDED.value
 	`
 
-	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, metadataType, key, value)
+	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, key, value)
 	if err != nil {
-		return fmt.Errorf("failed to set metadata: %w", err)
+		return fmt.Errorf("failed to set tag: %w", err)
 	}
 
 	// Invalidate cache (get key hash first)
@@ -255,13 +251,13 @@ func (r *APIKeyRepository) SetMetadata(ctx context.Context, apiKeyID uuid.UUID, 
 	return nil
 }
 
-// DeleteMetadata deletes metadata for an API key
-func (r *APIKeyRepository) DeleteMetadata(ctx context.Context, apiKeyID uuid.UUID, metadataType, key string) error {
-	query := "DELETE FROM key_metadata WHERE api_key_id = $1 AND metadata_type = $2 AND key = $3"
+// DeleteTag deletes a tag for an API key
+func (r *APIKeyRepository) DeleteTag(ctx context.Context, apiKeyID uuid.UUID, key string) error {
+	query := "DELETE FROM api_key_tags WHERE api_key_id = $1 AND key = $2"
 
-	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, metadataType, key)
+	_, err := r.db.conn.ExecContext(ctx, query, apiKeyID, key)
 	if err != nil {
-		return fmt.Errorf("failed to delete metadata: %w", err)
+		return fmt.Errorf("failed to delete tag: %w", err)
 	}
 
 	// Invalidate cache

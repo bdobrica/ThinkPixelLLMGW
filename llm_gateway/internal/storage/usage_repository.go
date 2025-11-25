@@ -24,10 +24,11 @@ func NewUsageRepository(db *DB) *UsageRepository {
 func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord) error {
 	query := `
 		INSERT INTO usage_records (
-			id, api_key_id, model_id, provider_id, request_timestamp,
-			prompt_tokens, completion_tokens, total_tokens, cost_usd,
-			request_metadata, response_metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			id, api_key_id, model_id, provider_id, request_id,
+			model_name, endpoint, input_tokens, output_tokens,
+			cached_tokens, reasoning_tokens, response_time_ms,
+			status_code, error_message
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING created_at
 	`
 
@@ -35,16 +36,13 @@ func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord
 		record.ID = uuid.New()
 	}
 
-	if record.RequestTimestamp.IsZero() {
-		record.RequestTimestamp = time.Now()
-	}
-
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		record.ID, record.APIKeyID, record.ModelID, record.ProviderID,
-		record.RequestTimestamp, record.PromptTokens, record.CompletionTokens,
-		record.TotalTokens, record.CostUSD, record.RequestMetadata,
-		record.ResponseMetadata,
+		record.RequestID, record.ModelName, record.Endpoint,
+		record.InputTokens, record.OutputTokens, record.CachedTokens,
+		record.ReasoningTokens, record.ResponseTimeMS, record.StatusCode,
+		record.ErrorMessage,
 	).Scan(&record.CreatedAt)
 
 	if err != nil {
@@ -57,14 +55,15 @@ func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord
 // GetByAPIKey retrieves usage records for an API key
 func (r *UsageRepository) GetByAPIKey(ctx context.Context, apiKeyID uuid.UUID, startTime, endTime time.Time, limit, offset int) ([]*models.UsageRecord, error) {
 	query := `
-		SELECT id, api_key_id, model_id, provider_id, request_timestamp,
-		       prompt_tokens, completion_tokens, total_tokens, cost_usd,
-		       request_metadata, response_metadata, created_at
+		SELECT id, api_key_id, model_id, provider_id, request_id,
+		       model_name, endpoint, input_tokens, output_tokens,
+		       cached_tokens, reasoning_tokens, response_time_ms,
+		       status_code, error_message, created_at
 		FROM usage_records
 		WHERE api_key_id = $1 
-		  AND request_timestamp >= $2 
-		  AND request_timestamp < $3
-		ORDER BY request_timestamp DESC
+		  AND created_at >= $2 
+		  AND created_at < $3
+		ORDER BY created_at DESC
 		LIMIT $4 OFFSET $5
 	`
 
@@ -80,14 +79,15 @@ func (r *UsageRepository) GetByAPIKey(ctx context.Context, apiKeyID uuid.UUID, s
 // GetByModel retrieves usage records for a model
 func (r *UsageRepository) GetByModel(ctx context.Context, modelID uuid.UUID, startTime, endTime time.Time, limit, offset int) ([]*models.UsageRecord, error) {
 	query := `
-		SELECT id, api_key_id, model_id, provider_id, request_timestamp,
-		       prompt_tokens, completion_tokens, total_tokens, cost_usd,
-		       request_metadata, response_metadata, created_at
+		SELECT id, api_key_id, model_id, provider_id, request_id,
+		       model_name, endpoint, input_tokens, output_tokens,
+		       cached_tokens, reasoning_tokens, response_time_ms,
+		       status_code, error_message, created_at
 		FROM usage_records
 		WHERE model_id = $1 
-		  AND request_timestamp >= $2 
-		  AND request_timestamp < $3
-		ORDER BY request_timestamp DESC
+		  AND created_at >= $2 
+		  AND created_at < $3
+		ORDER BY created_at DESC
 		LIMIT $4 OFFSET $5
 	`
 
@@ -142,6 +142,8 @@ func (r *UsageRepository) GetTotalTokensByAPIKey(ctx context.Context, apiKeyID u
 	return promptTokens, completionTokens, totalTokens, nil
 }
 
+// MonthlyUsageSummaryRepository is disabled - MonthlyUsageSummary model not implemented
+/*
 // MonthlyUsageSummaryRepository handles monthly usage summary operations
 type MonthlyUsageSummaryRepository struct {
 	db *DB
@@ -233,7 +235,7 @@ func (r *MonthlyUsageSummaryRepository) RefreshSummary(ctx context.Context, apiK
 			id, api_key_id, year, month, total_requests, total_prompt_tokens,
 			total_completion_tokens, total_tokens, total_cost_usd
 		)
-		SELECT 
+		SELECT
 			gen_random_uuid(),
 			$1,
 			$2,
@@ -264,3 +266,4 @@ func (r *MonthlyUsageSummaryRepository) RefreshSummary(ctx context.Context, apiK
 
 	return nil
 }
+*/

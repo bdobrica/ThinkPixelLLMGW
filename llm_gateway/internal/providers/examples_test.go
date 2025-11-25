@@ -11,7 +11,7 @@ import (
 // Example usage of the provider system
 func ExampleProviderRegistry() {
 	// This example shows how to use the provider registry in your application
-	
+
 	// 1. Create registry (in real app, you'd use actual DB and encryption)
 	registry, err := providers.NewProviderRegistry(providers.RegistryConfig{
 		DB:             nil, // Replace with actual *storage.DB
@@ -22,14 +22,14 @@ func ExampleProviderRegistry() {
 		panic(err)
 	}
 	defer registry.Close()
-	
+
 	// 2. Resolve a model
 	ctx := context.Background()
 	provider, modelName, err := registry.ResolveModel(ctx, "gpt-4")
 	if err != nil {
 		panic(err)
 	}
-	
+
 	// 3. Send a chat request
 	resp, err := provider.Chat(ctx, providers.ChatRequest{
 		Model: modelName,
@@ -44,7 +44,7 @@ func ExampleProviderRegistry() {
 	if err != nil {
 		panic(err)
 	}
-	
+
 	// 4. Handle response
 	if resp.StatusCode == 200 {
 		// Success - process response
@@ -55,12 +55,12 @@ func ExampleProviderRegistry() {
 }
 
 // Example of streaming chat
-func ExampleProviderStreaming() {
+func ExampleProviderRegistry_streaming() {
 	var registry *providers.ProviderRegistry // initialized elsewhere
-	
+
 	ctx := context.Background()
 	provider, modelName, _ := registry.ResolveModel(ctx, "gpt-4")
-	
+
 	// Send streaming request
 	resp, err := provider.Chat(ctx, providers.ChatRequest{
 		Model: modelName,
@@ -75,14 +75,14 @@ func ExampleProviderStreaming() {
 	if err != nil {
 		panic(err)
 	}
-	
+
 	// Read stream
 	if resp.Stream != nil {
 		defer resp.Stream.Close()
-		
+
 		reader := providers.NewStreamReader(resp.Stream)
 		defer reader.Close()
-		
+
 		for {
 			event, err := reader.Read()
 			if event.Done {
@@ -91,7 +91,7 @@ func ExampleProviderStreaming() {
 			if err != nil {
 				break
 			}
-			
+
 			// Process streaming data
 			_ = event.Data
 		}
@@ -99,45 +99,45 @@ func ExampleProviderStreaming() {
 }
 
 // Example of adding a custom provider
-func ExampleCustomProvider() {
-	// 1. Define your provider type
-	type MyCustomProvider struct {
-		id   string
-		name string
-	}
-	
-	// 2. Implement the Provider interface
-	func (p *MyCustomProvider) ID(); string { return p.id }
-	func (p *MyCustomProvider) Name() string { return p.name }
-	func (p *MyCustomProvider) Type() string { return "mycustom" }
-	
-	func (p *MyCustomProvider) Chat(ctx context.Context, req providers.ChatRequest) (*providers.ChatResponse, error) {
-		// Your implementation here
-		return &providers.ChatResponse{
-			StatusCode: 200,
-			Body:       []byte(`{"message": "Hello from custom provider"}`),
-		}, nil
-	}
-	
-	func (p *MyCustomProvider) ValidateCredentials(ctx context.Context) error {
-		// Validate your credentials
-		return nil
-	}
-	
-	func (p *MyCustomProvider) Close() error {
-		// Cleanup resources
-		return nil
-	}
-	
-	// 3. Create a constructor
-	func NewMyCustomProvider(config providers.ProviderConfig) (providers.Provider, error) {
-		return &MyCustomProvider{
-			id:   config.ID,
-			name: config.Name,
-		}, nil
-	}
-	
-	// 4. Register with factory
+// 1. Define your provider type
+type MyCustomProvider struct {
+	id   string
+	name string
+}
+
+// 2. Implement the Provider interface
+func (p *MyCustomProvider) ID() string   { return p.id }
+func (p *MyCustomProvider) Name() string { return p.name }
+func (p *MyCustomProvider) Type() string { return "mycustom" }
+
+func (p *MyCustomProvider) Chat(ctx context.Context, req providers.ChatRequest) (*providers.ChatResponse, error) {
+	// Your implementation here
+	return &providers.ChatResponse{
+		StatusCode: 200,
+		Body:       []byte(`{"message": "Hello from custom provider"}`),
+	}, nil
+}
+
+func (p *MyCustomProvider) ValidateCredentials(ctx context.Context) error {
+	// Validate your credentials
+	return nil
+}
+
+func (p *MyCustomProvider) Close() error {
+	// Cleanup resources
+	return nil
+}
+
+// 3. Create a constructor
+func NewMyCustomProvider(config providers.ProviderConfig) (providers.Provider, error) {
+	return &MyCustomProvider{
+		id:   config.ID,
+		name: config.Name,
+	}, nil
+}
+
+// 4. Register with factory
+func ExampleProviderFactory_register() {
 	factory := providers.NewProviderFactory()
 	factory.Register("mycustom", NewMyCustomProvider)
 }
@@ -146,34 +146,34 @@ func ExampleCustomProvider() {
 func TestProviderResolution(t *testing.T) {
 	// This is a conceptual test - you'd need actual DB setup
 	t.Skip("Requires database setup")
-	
+
 	// Setup
 	ctx := context.Background()
 	registry, _ := providers.NewProviderRegistry(providers.RegistryConfig{
 		// DB config
 	})
 	defer registry.Close()
-	
+
 	// Test model resolution
 	provider, modelName, err := registry.ResolveModel(ctx, "gpt-4")
 	if err != nil {
 		t.Fatalf("Failed to resolve model: %v", err)
 	}
-	
+
 	if provider == nil {
 		t.Fatal("Provider is nil")
 	}
-	
+
 	if modelName != "gpt-4" {
 		t.Errorf("Expected model name 'gpt-4', got '%s'", modelName)
 	}
-	
+
 	// Test alias resolution
 	provider, modelName, err = registry.ResolveModel(ctx, "my-custom-alias")
 	if err != nil {
 		t.Fatalf("Failed to resolve alias: %v", err)
 	}
-	
+
 	if provider == nil {
 		t.Fatal("Provider is nil for alias")
 	}
@@ -182,7 +182,7 @@ func TestProviderResolution(t *testing.T) {
 // Mock test for OpenAI provider
 func TestOpenAIProvider(t *testing.T) {
 	t.Skip("Requires actual OpenAI API key")
-	
+
 	// Create provider
 	provider, err := providers.NewOpenAIProvider(providers.ProviderConfig{
 		ID:   "test-openai",
@@ -199,7 +199,7 @@ func TestOpenAIProvider(t *testing.T) {
 		t.Fatalf("Failed to create provider: %v", err)
 	}
 	defer provider.Close()
-	
+
 	// Test chat
 	ctx := context.Background()
 	resp, err := provider.Chat(ctx, providers.ChatRequest{
@@ -214,11 +214,11 @@ func TestOpenAIProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
-	
+
 	if resp.StatusCode != 200 {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
 	}
-	
+
 	if resp.CostUSD <= 0 {
 		t.Error("Expected positive cost")
 	}
@@ -227,13 +227,13 @@ func TestOpenAIProvider(t *testing.T) {
 // Benchmark model resolution
 func BenchmarkModelResolution(b *testing.B) {
 	b.Skip("Requires database setup")
-	
+
 	ctx := context.Background()
 	registry, _ := providers.NewProviderRegistry(providers.RegistryConfig{
 		// DB config
 	})
 	defer registry.Close()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _, _ = registry.ResolveModel(ctx, "gpt-4")
@@ -241,17 +241,17 @@ func BenchmarkModelResolution(b *testing.B) {
 }
 
 // Example of handling errors
-func ExampleErrorHandling() {
+func ExampleProviderRegistry_errorHandling() {
 	var registry *providers.ProviderRegistry // initialized elsewhere
 	ctx := context.Background()
-	
+
 	// Handle model not found
 	provider, modelName, err := registry.ResolveModel(ctx, "unknown-model")
 	if err != nil {
 		// Log error: "model or alias not found: unknown-model"
 		return
 	}
-	
+
 	// Handle provider request failure
 	resp, err := provider.Chat(ctx, providers.ChatRequest{
 		Model:   modelName,
@@ -261,14 +261,14 @@ func ExampleErrorHandling() {
 		// Log error: network error, timeout, etc.
 		return
 	}
-	
+
 	// Handle provider error response
 	if resp.StatusCode != 200 {
 		// Log error from provider
 		_ = string(resp.Body)
 		return
 	}
-	
+
 	// Success
 	_ = resp.Body
 }

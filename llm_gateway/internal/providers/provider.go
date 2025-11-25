@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"time"
-
-	"llm_gateway/internal/models"
 )
 
 // ChatRequest represents a normalized internal request to a provider.
