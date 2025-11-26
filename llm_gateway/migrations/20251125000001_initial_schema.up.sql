@@ -212,6 +212,23 @@ CREATE INDEX idx_api_key_tags_api_key ON api_key_tags(api_key_id);
 CREATE INDEX idx_api_key_tags_key ON api_key_tags(key);
 
 -- ============================================================================
+-- Table: model_alias_tags
+-- Key-value tags for model aliases
+-- ============================================================================
+CREATE TABLE model_alias_tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    model_alias_id UUID NOT NULL REFERENCES model_aliases(id) ON DELETE CASCADE,
+    key VARCHAR(100) NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    UNIQUE(model_alias_id, key)
+);
+
+CREATE INDEX idx_model_alias_tags_alias ON model_alias_tags(model_alias_id);
+CREATE INDEX idx_model_alias_tags_key ON model_alias_tags(key);
+
+-- ============================================================================
 -- Table: usage_records
 -- Tracks all API requests for billing, analytics, and audit
 -- ============================================================================
@@ -270,4 +287,5 @@ COMMENT ON TABLE pricing_components IS 'Granular pricing data for each model';
 COMMENT ON TABLE model_aliases IS 'Custom model aliases for user-friendly naming';
 COMMENT ON TABLE api_keys IS 'Client API keys with rate limiting and budget controls';
 COMMENT ON TABLE api_key_tags IS 'Key-value tags for API keys';
+COMMENT ON TABLE model_alias_tags IS 'Key-value tags for model aliases';
 COMMENT ON TABLE usage_records IS 'Request audit log for billing and analytics';

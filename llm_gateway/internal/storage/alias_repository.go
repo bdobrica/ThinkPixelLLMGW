@@ -38,6 +38,11 @@ func (r *ModelAliasRepository) GetByAlias(ctx context.Context, alias string) (*m
 		return nil, fmt.Errorf("failed to get model alias: %w", err)
 	}
 
+	// Load tags
+	if err := r.loadTags(ctx, &modelAlias); err != nil {
+		return nil, fmt.Errorf("failed to load tags: %w", err)
+	}
+
 	return &modelAlias, nil
 }
 
@@ -59,7 +64,39 @@ func (r *ModelAliasRepository) GetByID(ctx context.Context, id uuid.UUID) (*mode
 		return nil, fmt.Errorf("failed to get model alias: %w", err)
 	}
 
+	// Load tags
+	if err := r.loadTags(ctx, &modelAlias); err != nil {
+		return nil, fmt.Errorf("failed to load tags: %w", err)
+	}
+
 	return &modelAlias, nil
+}
+
+// loadTags loads tags for a model alias
+func (r *ModelAliasRepository) loadTags(ctx context.Context, alias *models.ModelAlias) error {
+	query := `
+		SELECT key, value
+		FROM model_alias_tags
+		WHERE model_alias_id = $1
+	`
+
+	rows, err := r.db.conn.QueryxContext(ctx, query, alias.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	alias.Tags = make(map[string]string)
+
+	for rows.Next() {
+		var k, value string
+		if err := rows.Scan(&k, &value); err != nil {
+			return err
+		}
+		alias.Tags[k] = value
+	}
+
+	return rows.Err()
 }
 
 // List returns all model aliases
@@ -75,6 +112,13 @@ func (r *ModelAliasRepository) List(ctx context.Context) ([]*models.ModelAlias, 
 	err := r.db.conn.SelectContext(ctx, &aliases, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list model aliases: %w", err)
+	}
+
+	// Load tags for each alias
+	for _, alias := range aliases {
+		if err := r.loadTags(ctx, alias); err != nil {
+			return nil, fmt.Errorf("failed to load tags: %w", err)
+		}
 	}
 
 	return aliases, nil
@@ -94,6 +138,13 @@ func (r *ModelAliasRepository) ListEnabled(ctx context.Context) ([]*models.Model
 	err := r.db.conn.SelectContext(ctx, &aliases, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list enabled model aliases: %w", err)
+	}
+
+	// Load tags for each alias
+	for _, alias := range aliases {
+		if err := r.loadTags(ctx, alias); err != nil {
+			return nil, fmt.Errorf("failed to load tags: %w", err)
+		}
 	}
 
 	return aliases, nil
@@ -186,6 +237,13 @@ func (r *ModelAliasRepository) ListByProvider(ctx context.Context, providerID uu
 		return nil, fmt.Errorf("failed to list aliases by provider: %w", err)
 	}
 
+	// Load tags for each alias
+	for _, alias := range aliases {
+		if err := r.loadTags(ctx, alias); err != nil {
+			return nil, fmt.Errorf("failed to load tags: %w", err)
+		}
+	}
+
 	return aliases, nil
 }
 
@@ -205,5 +263,41 @@ func (r *ModelAliasRepository) ListByModel(ctx context.Context, modelID uuid.UUI
 		return nil, fmt.Errorf("failed to list aliases by model: %w", err)
 	}
 
+	// Load tags for each alias
+	for _, alias := range aliases {
+		if err := r.loadTags(ctx, alias); err != nil {
+			return nil, fmt.Errorf("failed to load tags: %w", err)
+		}
+	}
+
 	return aliases, nil
+}
+
+// SetTag sets a tag for a model alias
+func (r *ModelAliasRepository) SetTag(ctx context.Context, aliasID uuid.UUID, key, value string) error {
+	query := `
+		INSERT INTO model_alias_tags (model_alias_id, key, value)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (model_alias_id, key)
+		DO UPDATE SET value = EXCLUDED.value
+	`
+
+	_, err := r.db.conn.ExecContext(ctx, query, aliasID, key, value)
+	if err != nil {
+		return fmt.Errorf("failed to set tag: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteTag deletes a tag for a model alias
+func (r *ModelAliasRepository) DeleteTag(ctx context.Context, aliasID uuid.UUID, key string) error {
+	query := "DELETE FROM model_alias_tags WHERE model_alias_id = $1 AND key = $2"
+
+	_, err := r.db.conn.ExecContext(ctx, query, aliasID, key)
+	if err != nil {
+		return fmt.Errorf("failed to delete tag: %w", err)
+	}
+
+	return nil
 }

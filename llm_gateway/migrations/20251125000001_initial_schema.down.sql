@@ -12,6 +12,7 @@ DROP FUNCTION IF EXISTS update_updated_at_column();
 
 -- Drop tables in reverse order (respecting foreign key dependencies)
 DROP TABLE IF EXISTS usage_records CASCADE;
+DROP TABLE IF EXISTS model_alias_tags CASCADE;
 DROP TABLE IF EXISTS api_key_tags CASCADE;
 DROP TABLE IF EXISTS api_keys CASCADE;
 DROP TABLE IF EXISTS model_aliases CASCADE;

@@ -6,6 +6,7 @@ import (
 
 	"llm_gateway/internal/auth"
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
 
 // DatabaseAPIKeyStore implements auth.APIKeyStore using the database repository
@@ -23,7 +24,7 @@ func NewDatabaseAPIKeyStore(repo *storage.APIKeyRepository) *DatabaseAPIKeyStore
 // Lookup finds an API key by its plaintext value and returns an auth.APIKeyRecord
 func (s *DatabaseAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (*auth.APIKeyRecord, error) {
 	// Hash the plaintext key
-	hashedKey := auth.HashKey(plaintextKey)
+	hashedKey := utils.HashString(plaintextKey)
 
 	// Look up in database (with caching)
 	apiKey, err := s.repo.GetByHash(ctx, hashedKey)

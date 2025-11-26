@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,13 +31,7 @@ func (k *APIKey) AllowsModel(model string) bool {
 	if len(k.AllowedModels) == 0 {
 		return true
 	}
-
-	for _, m := range k.AllowedModels {
-		if m == model {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(k.AllowedModels, model)
 }
 
 // IsExpired checks if the key has expired

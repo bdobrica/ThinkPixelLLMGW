@@ -2,25 +2,15 @@ package auth
 
 import (
 	"errors"
-	"os"
 	"time"
+
+	"llm_gateway/internal/config"
 
 	"github.com/golang-jwt/jwt/v4"
 )
 
-// Use a secure method for managing secrets
-var jwtSecret = []byte(getEnv("JWT_SECRET", "supersecretkey"))
-
-// getEnv retrieves environment variable or returns default value
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 // GenerateJWT creates a short-lived token with the API Key ID embedded
-func GenerateJWT(apiKey string, hashedKey string) (string, int64, error) {
+func GenerateJWT(apiKey string, hashedKey string, cfg *config.Config) (string, int64, error) {
 	expirationTime := time.Now().Add(15 * time.Minute).Unix()
 	claims := jwt.MapClaims{
 		"sub":        apiKey,         // Subject: API Key
@@ -28,7 +18,8 @@ func GenerateJWT(apiKey string, hashedKey string) (string, int64, error) {
 		"exp":        expirationTime, // Expiration timestamp
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedToken, err := token.SignedString(jwtSecret)
+
+	signedToken, err := token.SignedString(cfg.JWTSecret)
 	if err != nil {
 		return "", 0, err
 	}
@@ -36,16 +27,16 @@ func GenerateJWT(apiKey string, hashedKey string) (string, int64, error) {
 }
 
 // ValidateJWT verifies the provided JWT
-func ValidateJWT(tokenString string) (*jwt.Token, error) {
+func ValidateJWT(tokenString string, cfg *config.Config) (*jwt.Token, error) {
 	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
+		return cfg.JWTSecret, nil
 	})
 }
 
 // DecodeJWT extracts the API Key ID from the provided JWT
-func DecodeJWT(tokenString string) (string, error) {
+func DecodeJWT(tokenString string, cfg *config.Config) (string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
+		return cfg.JWTSecret, nil
 	})
 	if err != nil {
 		return "", err

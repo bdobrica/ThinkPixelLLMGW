@@ -111,8 +111,9 @@ Creates the core tables:
 - `providers` - LLM provider configurations (OpenAI, VertexAI, Bedrock, etc.)
 - `models` - Model catalog synced from BerriAI/LiteLLM
 - `model_aliases` - User-friendly model aliases
+- `model_alias_tags` - Flexible tagging for model aliases (categories, use cases)
 - `api_keys` - Client API keys with rate limiting and budgets
-- `key_metadata` - Flexible metadata for API keys (tags, labels, custom fields)
+- `api_key_tags` - Flexible tagging for API keys (environment, ownership, metadata)
 - `usage_records` - Request audit log for billing and analytics
 - `monthly_usage_summary` - Pre-aggregated monthly usage statistics
 
@@ -120,9 +121,9 @@ Creates the core tables:
 
 Adds development seed data:
 - Sample provider (OpenAI)
-- Popular models (GPT-5, GPT-5-mini, Gemini 2.5 Flash, Claude 3.7 Sonnet)
-- Model aliases
-- Demo API key with metadata
+- Popular models (GPT-4o, GPT-4o-mini, o1, o1-mini)
+- Model aliases with tags
+- Demo API key with tags
 
 ## Model Sync Strategy
 
@@ -149,25 +150,30 @@ The sync script should:
 
 ## Schema Design Decisions
 
-### Why key_metadata Table?
+### Why Separate Tag Tables?
 
-Instead of storing tags directly in `api_keys`, we use a separate `key_metadata` table:
+Instead of storing tags directly in `api_keys` or `model_aliases`, we use separate tables (`api_key_tags` and `model_alias_tags`):
 
 **Benefits**:
-- **Flexible schema**: Add new metadata types without migrations
-- **Better reporting**: Easy to query "all keys with tag X"
+- **Flexible schema**: Add new tags without migrations
+- **Better reporting**: Easy to query "all keys/aliases with tag X"
 - **Indexable**: Efficient searches on tags/labels
-- **Backward compatible**: Adding metadata doesn't change api_keys schema
+- **Backward compatible**: Adding tags doesn't change parent table schema
 
 **Example Queries**:
 ```sql
--- Find all keys with tag "production"
+-- Find all API keys with environment tag "production"
 SELECT ak.* FROM api_keys ak
-JOIN key_metadata km ON ak.id = km.api_key_id
-WHERE km.metadata_type = 'tag' AND km.key = 'environment' AND km.value = 'production';
+JOIN api_key_tags akt ON ak.id = akt.api_key_id
+WHERE akt.key = 'environment' AND akt.value = 'production';
 
--- Get all metadata for a key
-SELECT metadata_type, key, value FROM key_metadata
+-- Find all model aliases in "cost-effective" category
+SELECT ma.* FROM model_aliases ma
+JOIN model_alias_tags mat ON ma.id = mat.model_alias_id
+WHERE mat.key = 'category' AND mat.value = 'cost-effective';
+
+-- Get all tags for a key
+SELECT key, value FROM api_key_tags
 WHERE api_key_id = '<key-id>';
 ```
 

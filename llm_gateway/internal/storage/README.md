@@ -128,6 +128,62 @@ for _, m := range models {
 }
 ```
 
+#### Model Alias Repository
+
+```go
+// Create repository
+aliasRepo := db.NewModelAliasRepository()
+
+// Get model alias by alias name
+alias, err := aliasRepo.GetByAlias(ctx, "gpt4")
+if err != nil {
+	log.Printf("Error getting alias: %v", err)
+	return
+}
+
+log.Printf("Alias: %s -> Model ID: %s", alias.Alias, alias.TargetModelID)
+
+// Access tags
+if category, ok := alias.Tags["category"]; ok {
+	log.Printf("Category: %s", category)
+}
+
+// Create new model alias
+newAlias := &models.ModelAlias{
+	Alias:         "my-fast-model",
+	TargetModelID: model.ID,
+	ProviderID:    provider.ID,
+	Enabled:       true,
+}
+
+if err := aliasRepo.Create(ctx, newAlias); err != nil {
+	log.Printf("Error creating alias: %v", err)
+	return
+}
+
+// Set tags for the alias
+err = aliasRepo.SetTag(ctx, newAlias.ID, "category", "cost-effective")
+if err != nil {
+	log.Printf("Error setting tag: %v", err)
+}
+
+err = aliasRepo.SetTag(ctx, newAlias.ID, "use_case", "high-volume")
+if err != nil {
+	log.Printf("Error setting tag: %v", err)
+}
+
+// List all enabled aliases
+aliases, err := aliasRepo.ListEnabled(ctx)
+if err != nil {
+	log.Printf("Error listing aliases: %v", err)
+	return
+}
+
+for _, a := range aliases {
+	log.Printf("Alias: %s (Tags: %v)", a.Alias, a.Tags)
+}
+```
+
 #### Usage Tracking
 
 ```go

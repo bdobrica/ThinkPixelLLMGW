@@ -48,14 +48,27 @@ This document describes the PostgreSQL database schema for ThinkPixelLLMGW.
 ┌─────────────────────┐     │    │
 │   model_aliases     │     │    │
 ├─────────────────────┤     │    │
-│ id (PK)            │     │    │
-│ alias (unique)     │     │    │
-│ target_model_id FK │─────┘    │
-│ provider_id FK     │──────────┘
-│ custom_config      │
-│ enabled            │
+│ id (PK)            │◄────┐│    │
+│ alias (unique)     │     ││    │
+│ target_model_id FK │─────┘│    │
+│ provider_id FK     │──────┼────┘
+│ custom_config      │      │
+│ enabled            │      │
+│ created_at         │      │
+│ updated_at         │      │
+└─────────────────────┘      │
+         ▲                   │
+         │                   │
+         │ (model_alias_id)  │
+         │                   │
+┌─────────────────────┐      │
+│ model_alias_tags    │      │
+├─────────────────────┤      │
+│ id (PK)            │      │
+│ model_alias_id FK  │──────┘
+│ key                │
+│ value              │
 │ created_at         │
-│ updated_at         │
 └─────────────────────┘
 
 
@@ -78,16 +91,14 @@ This document describes the PostgreSQL database schema for ThinkPixelLLMGW.
          │ (api_key_id FK)  │
          │                  │
 ┌─────────────────────┐     │
-│   key_metadata      │     │
+│   api_key_tags      │     │
 ├─────────────────────┤     │
 │ id (PK)            │     │
-│ api_key_id FK      │─────┤
-│ metadata_type      │     │
-│ key                │     │
-│ value              │     │
-│ created_at         │     │
-│ updated_at         │     │
-└─────────────────────┘     │
+│ api_key_id FK      │─────┘
+│ key                │
+│ value              │
+│ created_at         │
+└─────────────────────┘
                             │
                             │ (api_key_id FK)
 ┌─────────────────────┐     │
@@ -206,6 +217,35 @@ User-friendly aliases for models (e.g., "gpt5" → "gpt-5", "my-custom-gpt" → 
 - Version pinning: `gpt-latest` always points to newest GPT
 - Custom routing: `cheap-model` points to lowest-cost option
 
+### model_alias_tags
+
+Flexible tagging system for model aliases (categories, use cases, custom labels).
+
+**Why Separate Table?**:
+- ✅ Add new tags without schema changes
+- ✅ Efficient queries: "Find all aliases with category X"
+- ✅ Multiple tags per alias
+- ✅ Better organization and filtering
+
+**Example Queries**:
+```sql
+-- Get all cost-effective aliases
+SELECT ma.* FROM model_aliases ma
+JOIN model_alias_tags mat ON ma.id = mat.model_alias_id
+WHERE mat.key = 'category' AND mat.value = 'cost-effective';
+
+-- Get all tags for an alias
+SELECT key, value 
+FROM model_alias_tags
+WHERE model_alias_id = '77777777-7777-7777-7777-777777777777';
+```
+
+**Common Tag Keys**:
+- `category`: Classification (premium, cost-effective, advanced)
+- `use_case`: Purpose (general, high-volume, complex-reasoning)
+- `tier`: Service tier (standard, enterprise)
+- `region`: Geographic preference
+
 ### api_keys
 
 Client API keys with rate limiting and budget controls.
@@ -227,36 +267,35 @@ keyHash := hex.EncodeToString(hash[:])
 // Store keyHash in database
 ```
 
-### key_metadata
+### api_key_tags
 
-Flexible metadata store for API keys (tags, labels, custom fields).
+Flexible tagging system for API keys (environment, ownership, custom metadata).
 
 **Why Separate Table?**:
-- ✅ Add new metadata types without schema changes
+- ✅ Add new tags without schema changes
 - ✅ Efficient queries: "Find all keys with tag X"
-- ✅ Multiple values per metadata type
+- ✅ Multiple tags per API key
 - ✅ Better reporting and analytics
 
 **Example Queries**:
 ```sql
 -- Get all production keys
 SELECT ak.* FROM api_keys ak
-JOIN key_metadata km ON ak.id = km.api_key_id
-WHERE km.metadata_type = 'tag' 
-  AND km.key = 'environment' 
-  AND km.value = 'production';
+JOIN api_key_tags akt ON ak.id = akt.api_key_id
+WHERE akt.key = 'environment' AND akt.value = 'production';
 
--- Get all metadata for a key
-SELECT metadata_type, key, value 
-FROM key_metadata
+-- Get all tags for a key
+SELECT key, value 
+FROM api_key_tags
 WHERE api_key_id = '66666666-6666-6666-6666-666666666666';
 ```
 
-**Common Metadata Types**:
-- `tag`: Key-value tags (environment, team, region)
-- `label`: Descriptive labels
-- `custom_field`: User-defined fields
-- `note`: Free-form notes
+**Common Tag Keys**:
+- `environment`: Environment (development, staging, production)
+- `team`: Team ownership (engineering, sales, support)
+- `owner`: Owner email or username
+- `project`: Project name
+- `purpose`: Purpose or description
 
 ### usage_records
 
@@ -331,9 +370,13 @@ ON usage_records(api_key_id, created_at DESC);
 CREATE INDEX idx_models_name_pattern 
 ON models USING GIN (model_name gin_trgm_ops);
 
--- key_metadata: Fast tag/label queries
-CREATE INDEX idx_key_metadata_type_key 
-ON key_metadata(metadata_type, key);
+-- api_key_tags: Fast tag/label queries
+CREATE INDEX idx_api_key_tags_api_key ON api_key_tags(api_key_id);
+CREATE INDEX idx_api_key_tags_key ON api_key_tags(key);
+
+-- model_alias_tags: Fast tag/label queries
+CREATE INDEX idx_model_alias_tags_alias ON model_alias_tags(model_alias_id);
+CREATE INDEX idx_model_alias_tags_key ON model_alias_tags(key);
 
 -- monthly_usage_summary: Fast monthly lookups
 CREATE INDEX idx_monthly_summary_api_key_period 
@@ -490,15 +533,23 @@ ORDER BY input_cost_per_token ASC;
 ### Get Tag Summary
 
 ```sql
--- Count keys by tag
+-- Count API keys by tag
 SELECT 
     key,
     value,
     COUNT(*) AS key_count
-FROM key_metadata
-WHERE metadata_type = 'tag'
+FROM api_key_tags
 GROUP BY key, value
 ORDER BY key, key_count DESC;
+
+-- Count model aliases by tag
+SELECT 
+    key,
+    value,
+    COUNT(*) AS alias_count
+FROM model_alias_tags
+GROUP BY key, value
+ORDER BY key, alias_count DESC;
 ```
 
 ## Backup and Maintenance

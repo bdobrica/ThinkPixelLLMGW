@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"llm_gateway/internal/auth"
+	"llm_gateway/internal/config"
 	"llm_gateway/internal/utils"
 )
 
@@ -13,7 +14,7 @@ import (
 const JWTContextKey ContextKey = "jwtHashedKey"
 
 // JWTMiddleware validates JWT for protected routes and passes the hashed key to handlers
-func JWTMiddleware(store auth.APIKeyStore) func(http.Handler) http.Handler {
+func JWTMiddleware(store auth.APIKeyStore, cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString := r.Header.Get("Authorization")
@@ -26,13 +27,13 @@ func JWTMiddleware(store auth.APIKeyStore) func(http.Handler) http.Handler {
 			tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 
 			// Validate the JWT and extract claims
-			_, err := auth.ValidateJWT(tokenString)
+			_, err := auth.ValidateJWT(tokenString, cfg)
 			if err != nil {
 				utils.RespondWithError(w, http.StatusUnauthorized, "Invalid token")
 				return
 			}
 
-			hashedKey, err := auth.DecodeJWT(tokenString)
+			hashedKey, err := auth.DecodeJWT(tokenString, cfg)
 			if err != nil {
 				utils.RespondWithError(w, http.StatusInternalServerError, "Error decoding token: "+err.Error())
 				return

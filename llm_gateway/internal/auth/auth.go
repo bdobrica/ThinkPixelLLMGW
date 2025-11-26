@@ -4,12 +4,13 @@ import (
 	"context"
 	"net/http"
 
+	"llm_gateway/internal/config"
 	"llm_gateway/internal/utils"
 )
 
 // AuthHandler exchanges API key for a JWT
 // Requires APIKeyStore to be injected
-func AuthHandler(store APIKeyStore) http.HandlerFunc {
+func AuthHandler(store APIKeyStore, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		apiKey := r.Header.Get("X-API-Key")
 		if apiKey == "" {
@@ -35,8 +36,8 @@ func AuthHandler(store APIKeyStore) http.HandlerFunc {
 		}
 
 		// Generate JWT with hashed key
-		hashedKey := HashKey(apiKey)
-		jwt, exp, err := GenerateJWT(apiKey, hashedKey)
+		hashedKey := utils.HashString(apiKey)
+		jwt, exp, err := GenerateJWT(apiKey, hashedKey, cfg)
 		if err != nil {
 			utils.RespondWithError(w, http.StatusInternalServerError, "Error generating token: "+err.Error())
 			return

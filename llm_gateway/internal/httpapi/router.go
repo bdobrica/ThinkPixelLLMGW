@@ -134,7 +134,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 
 	// Create router
 	mux := http.NewServeMux()
-	registerRoutes(mux, deps)
+	registerRoutes(mux, deps, cfg)
 
 	return mux, deps, nil
 }
@@ -187,7 +187,7 @@ func updateProviderCredentialsFromEnv(ctx context.Context, db *storage.DB, encry
 	return nil
 }
 
-func registerRoutes(mux *http.ServeMux, deps *Dependencies) {
+func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) {
 	// OpenAI-compatible proxy endpoint - protected with API key middleware
 	apiKeyMiddleware := middleware.APIKeyMiddleware(deps.APIKeys)
 	mux.Handle("/v1/chat/completions", apiKeyMiddleware(http.HandlerFunc(deps.handleChat)))
@@ -202,7 +202,7 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies) {
 	mux.Handle("/metrics", deps.Metrics.HTTPHandler())
 
 	// Admin endpoints - protected with JWT middleware
-	jwtMiddleware := middleware.JWTMiddleware(deps.APIKeys)
+	jwtMiddleware := middleware.JWTMiddleware(deps.APIKeys, cfg)
 	mux.Handle("/admin/keys", jwtMiddleware(http.HandlerFunc(deps.handleAdminKeys)))
 	mux.Handle("/admin/providers", jwtMiddleware(http.HandlerFunc(deps.handleAdminProviders)))
 }

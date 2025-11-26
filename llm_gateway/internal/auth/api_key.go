@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"slices"
+
+	"llm_gateway/internal/utils"
 )
 
 // APIKeyRecord is the view of an API key needed at request time.
@@ -21,12 +22,7 @@ func (k *APIKeyRecord) AllowsModel(model string) bool {
 	if len(k.AllowedModels) == 0 {
 		return true
 	}
-	for _, m := range k.AllowedModels {
-		if m == model {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(k.AllowedModels, model)
 }
 
 // APIKeyStore resolves plaintext API keys into stored records.
@@ -46,7 +42,7 @@ func NewInMemoryAPIKeyStore() *InMemoryAPIKeyStore {
 	}
 
 	// Seed with a demo key: "demo-key"
-	hash := HashKey("demo-key")
+	hash := utils.HashString("demo-key")
 	s.keys[hash] = &APIKeyRecord{
 		ID:            "demo-key-id",
 		Name:          "Demo Key",
@@ -59,16 +55,10 @@ func NewInMemoryAPIKeyStore() *InMemoryAPIKeyStore {
 }
 
 func (s *InMemoryAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (*APIKeyRecord, error) {
-	hash := HashKey(plaintextKey)
+	hash := utils.HashString(plaintextKey)
 	rec, ok := s.keys[hash]
 	if !ok {
 		return nil, ErrKeyNotFound
 	}
 	return rec, nil
-}
-
-// HashKey hashes the plaintext key; later this should match DB-stored hashes.
-func HashKey(plaintext string) string {
-	sum := sha256.Sum256([]byte(plaintext))
-	return hex.EncodeToString(sum[:])
 }
