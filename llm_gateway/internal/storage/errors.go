@@ -17,4 +17,10 @@ var (
 
 	// ErrUsageRecordNotFound is returned when a usage record is not found
 	ErrUsageRecordNotFound = errors.New("usage record not found")
+
+	// ErrAdminUserNotFound is returned when an admin user is not found
+	ErrAdminUserNotFound = errors.New("admin user not found")
+
+	// ErrAdminTokenNotFound is returned when an admin token is not found
+	ErrAdminTokenNotFound = errors.New("admin token not found")
 )

@@ -97,8 +97,12 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 - Response streaming support (future)
 
 #### 2. **Admin API** (`/admin/*`)
-- JWT-based authentication
+- JWT-based authentication for human users (email/password with Argon2)
+- Token-based authentication for service accounts (with Argon2)
+- Role-based access control (admin, editor, viewer)
 - CRUD operations for:
+  - Admin Users (human accounts)
+  - Admin Tokens (service accounts)
   - API Keys (create, revoke, regenerate, tag)
   - Providers (add, configure, credentials)
   - Model Aliases (create mappings)

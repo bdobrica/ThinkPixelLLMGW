@@ -2,6 +2,8 @@
 -- This script reverses all changes made in the up migration
 
 -- Drop triggers first
+DROP TRIGGER IF EXISTS update_admin_tokens_updated_at ON admin_tokens;
+DROP TRIGGER IF EXISTS update_admin_users_updated_at ON admin_users;
 DROP TRIGGER IF EXISTS update_api_keys_updated_at ON api_keys;
 DROP TRIGGER IF EXISTS update_model_aliases_updated_at ON model_aliases;
 DROP TRIGGER IF EXISTS update_models_updated_at ON models;
@@ -15,6 +17,8 @@ DROP TABLE IF EXISTS usage_records CASCADE;
 DROP TABLE IF EXISTS model_alias_tags CASCADE;
 DROP TABLE IF EXISTS api_key_tags CASCADE;
 DROP TABLE IF EXISTS api_keys CASCADE;
+DROP TABLE IF EXISTS admin_tokens CASCADE;
+DROP TABLE IF EXISTS admin_users CASCADE;
 DROP TABLE IF EXISTS model_aliases CASCADE;
 DROP TABLE IF EXISTS pricing_components CASCADE;
 DROP TABLE IF EXISTS models CASCADE;

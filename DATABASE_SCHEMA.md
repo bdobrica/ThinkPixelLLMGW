@@ -73,6 +73,33 @@ This document describes the PostgreSQL database schema for ThinkPixelLLMGW.
 
 
 ┌─────────────────────┐
+│   admin_users       │
+├─────────────────────┤
+│ id (PK)            │
+│ email (unique)     │
+│ password_hash      │
+│ roles[]            │
+│ enabled            │
+│ last_login_at      │
+│ created_at         │
+│ updated_at         │
+└─────────────────────┘
+
+┌─────────────────────┐
+│   admin_tokens      │
+├─────────────────────┤
+│ id (PK)            │
+│ service_name (uniq)│
+│ token_hash (unique)│
+│ roles[]            │
+│ enabled            │
+│ expires_at         │
+│ last_used_at       │
+│ created_at         │
+│ updated_at         │
+└─────────────────────┘
+
+┌─────────────────────┐
 │     api_keys        │
 ├─────────────────────┤
 │ id (PK)            │◄────┐
@@ -246,6 +273,105 @@ WHERE model_alias_id = '77777777-7777-7777-7777-777777777777';
 - `tier`: Service tier (standard, enterprise)
 - `region`: Geographic preference
 
+### admin_users
+
+Human accounts for management API access with email/password authentication.
+
+**Key Features**:
+- Email-based authentication
+- Argon2 password hashing (secure, memory-hard algorithm)
+- Role-based access control (e.g., admin, editor, viewer)
+- Can be enabled/disabled without deletion
+- Last login tracking for security auditing
+
+**Security**:
+```go
+// Always use Argon2 for password hashing
+hash := argon2.IDKey(password, salt, 1, 64*1024, 4, 32)
+// Store the hash in the database
+```
+
+**Common Roles**:
+- `admin`: Full access to all management API endpoints
+- `editor`: Can create/update resources but not delete
+- `viewer`: Read-only access to management API
+
+**Example Data**:
+```sql
+{
+    "email": "admin@example.com",
+    "password_hash": "$argon2id$v=19$m=65536,t=1,p=4$...",
+    "roles": ["admin", "viewer"],
+    "enabled": true
+}
+```
+
+### admin_tokens
+
+Service accounts for management API access with token-based authentication.
+
+**Key Features**:
+- Token-based authentication for automated systems
+- Argon2 token hashing for secure storage
+- Role-based access control (same as admin_users)
+- Optional expiration support
+- Last used tracking for monitoring
+- Can be enabled/disabled without deletion
+
+**Security**:
+```go
+// Generate a secure random token
+token := generateSecureToken() // e.g., 32 bytes random
+// Hash with Argon2 before storing
+hash := argon2.IDKey([]byte(token), salt, 1, 64*1024, 4, 32)
+// Store hash in database, return token to user ONCE
+```
+
+**Use Cases**:
+- CI/CD pipelines: Automate provider/model management
+- Monitoring tools: Read-only access to usage statistics
+- Integration services: Programmatic API key creation
+
+**Example Data**:
+```sql
+{
+    "service_name": "ci-pipeline",
+    "token_hash": "$argon2id$v=19$m=65536,t=1,p=4$...",
+    "roles": ["editor"],
+    "enabled": true,
+    "expires_at": "2026-01-01T00:00:00Z"
+}
+```
+
+### api_keys
+
+Client API keys with rate limiting and budget controls.
+
+**Why Separate Table?**:
+- ✅ Add new tags without schema changes
+- ✅ Efficient queries: "Find all aliases with category X"
+- ✅ Multiple tags per alias
+- ✅ Better organization and filtering
+
+**Example Queries**:
+```sql
+-- Get all cost-effective aliases
+SELECT ma.* FROM model_aliases ma
+JOIN model_alias_tags mat ON ma.id = mat.model_alias_id
+WHERE mat.key = 'category' AND mat.value = 'cost-effective';
+
+-- Get all tags for an alias
+SELECT key, value 
+FROM model_alias_tags
+WHERE model_alias_id = '77777777-7777-7777-7777-777777777777';
+```
+
+**Common Tag Keys**:
+- `category`: Classification (premium, cost-effective, advanced)
+- `use_case`: Purpose (general, high-volume, complex-reasoning)
+- `tier`: Service tier (standard, enterprise)
+- `region`: Geographic preference
+
 ### api_keys
 
 Client API keys with rate limiting and budget controls.
@@ -377,6 +503,16 @@ CREATE INDEX idx_api_key_tags_key ON api_key_tags(key);
 -- model_alias_tags: Fast tag/label queries
 CREATE INDEX idx_model_alias_tags_alias ON model_alias_tags(model_alias_id);
 CREATE INDEX idx_model_alias_tags_key ON model_alias_tags(key);
+
+-- admin_users: Fast email lookups and enabled status
+CREATE INDEX idx_admin_users_email ON admin_users(email);
+CREATE INDEX idx_admin_users_enabled ON admin_users(enabled) WHERE enabled = true;
+
+-- admin_tokens: Fast token lookups and service name queries
+CREATE INDEX idx_admin_tokens_service_name ON admin_tokens(service_name);
+CREATE INDEX idx_admin_tokens_token_hash ON admin_tokens(token_hash);
+CREATE INDEX idx_admin_tokens_enabled ON admin_tokens(enabled) WHERE enabled = true;
+CREATE INDEX idx_admin_tokens_expiry ON admin_tokens(expires_at) WHERE expires_at IS NOT NULL;
 
 -- monthly_usage_summary: Fast monthly lookups
 CREATE INDEX idx_monthly_summary_api_key_period 

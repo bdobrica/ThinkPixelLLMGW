@@ -112,6 +112,8 @@ Creates the core tables:
 - `models` - Model catalog synced from BerriAI/LiteLLM
 - `model_aliases` - User-friendly model aliases
 - `model_alias_tags` - Flexible tagging for model aliases (categories, use cases)
+- `admin_users` - Human accounts for management API (email/password auth with Argon2)
+- `admin_tokens` - Service accounts for management API (token auth with Argon2)
 - `api_keys` - Client API keys with rate limiting and budgets
 - `api_key_tags` - Flexible tagging for API keys (environment, ownership, metadata)
 - `usage_records` - Request audit log for billing and analytics
@@ -185,6 +187,40 @@ The `models.metadata` JSONB column stores the complete BerriAI model definition 
 2. **Feature detection**: Can query for specific capabilities without schema changes
 3. **Extensibility**: Custom fields can be added without migrations
 4. **Audit trail**: Original source data preserved for debugging
+
+### Admin Authentication Strategy
+
+The gateway separates **normal operation** (client API keys) from **management operations** (admin accounts):
+
+**Client API Keys** (`api_keys` table):
+- Purpose: Allow client applications to access LLM models
+- Authentication: Bearer token with SHA-256 hash
+- Use case: Applications making chat completions, embeddings, etc.
+
+**Admin Users** (`admin_users` table):
+- Purpose: Human accounts for managing the gateway
+- Authentication: Email/password with Argon2 hashing
+- Use case: Creating API keys, configuring providers, managing models
+
+**Admin Tokens** (`admin_tokens` table):
+- Purpose: Service accounts for automated management operations
+- Authentication: Token-based with Argon2 hashing
+- Use case: CI/CD pipelines, monitoring tools, automated provisioning
+
+**Why Argon2 for Admin Auth?**
+- Memory-hard algorithm resistant to GPU/ASIC attacks
+- Winner of Password Hashing Competition (2015)
+- Superior to bcrypt for new applications
+- Configurable memory/CPU trade-offs
+
+**Security Best Practices**:
+```go
+// Admin passwords: Use Argon2id
+hash := argon2.IDKey(password, salt, 1, 64*1024, 4, 32)
+
+// API keys: Use SHA-256 (fast lookup, keys are random/high-entropy)
+hash := sha256.Sum256([]byte(apiKey))
+```
 
 ## Testing Migrations
 

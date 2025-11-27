@@ -174,6 +174,45 @@ CREATE INDEX idx_model_aliases_provider ON model_aliases(provider_id);
 CREATE INDEX idx_model_aliases_enabled ON model_aliases(enabled) WHERE enabled = true;
 
 -- ============================================================================
+-- Table: admin_users
+-- Human accounts for management API access (email/password based)
+-- ============================================================================
+CREATE TABLE admin_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL, -- Argon2 hash
+    roles TEXT[] NOT NULL DEFAULT ARRAY['viewer']::TEXT[],
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_admin_users_email ON admin_users(email);
+CREATE INDEX idx_admin_users_enabled ON admin_users(enabled) WHERE enabled = true;
+
+-- ============================================================================
+-- Table: admin_tokens
+-- Service accounts for management API access (name/token based)
+-- ============================================================================
+CREATE TABLE admin_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_name VARCHAR(255) NOT NULL UNIQUE,
+    token_hash VARCHAR(128) NOT NULL UNIQUE, -- Argon2 hash
+    roles TEXT[] NOT NULL DEFAULT ARRAY['viewer']::TEXT[],
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    expires_at TIMESTAMPTZ,
+    last_used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_admin_tokens_service_name ON admin_tokens(service_name);
+CREATE INDEX idx_admin_tokens_token_hash ON admin_tokens(token_hash);
+CREATE INDEX idx_admin_tokens_enabled ON admin_tokens(enabled) WHERE enabled = true;
+CREATE INDEX idx_admin_tokens_expiry ON admin_tokens(expires_at) WHERE expires_at IS NOT NULL;
+
+-- ============================================================================
 -- Table: api_keys
 -- Stores API keys for client authentication
 -- ============================================================================
@@ -278,6 +317,12 @@ CREATE TRIGGER update_model_aliases_updated_at BEFORE UPDATE ON model_aliases
 CREATE TRIGGER update_api_keys_updated_at BEFORE UPDATE ON api_keys
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_admin_users_updated_at BEFORE UPDATE ON admin_users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_admin_tokens_updated_at BEFORE UPDATE ON admin_tokens
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================================================
 -- Comments for documentation
 -- ============================================================================
@@ -285,6 +330,8 @@ COMMENT ON TABLE providers IS 'LLM provider configurations (OpenAI, VertexAI, Be
 COMMENT ON TABLE models IS 'Model catalog with comprehensive features, limits, and pricing information';
 COMMENT ON TABLE pricing_components IS 'Granular pricing data for each model';
 COMMENT ON TABLE model_aliases IS 'Custom model aliases for user-friendly naming';
+COMMENT ON TABLE admin_users IS 'Human accounts for management API access (email/password authentication)';
+COMMENT ON TABLE admin_tokens IS 'Service accounts for management API access (token-based authentication)';
 COMMENT ON TABLE api_keys IS 'Client API keys with rate limiting and budget controls';
 COMMENT ON TABLE api_key_tags IS 'Key-value tags for API keys';
 COMMENT ON TABLE model_alias_tags IS 'Key-value tags for model aliases';
