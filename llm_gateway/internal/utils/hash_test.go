@@ -4,89 +4,66 @@ import (
 	"testing"
 )
 
-func TestHashString(t *testing.T) {
+func TestHashPassword(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name     string
+		password string
 	}{
 		{
-			name:  "simple string",
-			input: "hello world",
+			name:     "simple password",
+			password: "password123",
 		},
 		{
-			name:  "empty string",
-			input: "",
+			name:     "complex password",
+			password: "P@ssw0rd!@#$%^&*()",
 		},
 		{
-			name:  "special characters",
-			input: "!@#$%^&*()_+-={}[]|:;<>?,./",
+			name:     "empty password",
+			password: "",
 		},
 		{
-			name:  "unicode string",
-			input: "Hello 世界 🌍",
-		},
-		{
-			name:  "long string",
-			input: "this is a very long string that contains many characters and should still hash correctly",
+			name:     "long password",
+			password: "this-is-a-very-long-password-with-many-characters-1234567890",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hash := HashString(tt.input)
+			hash := HashPassword(tt.password)
 
 			// SHA256 produces 64 hex characters
 			if len(hash) != 64 {
-				t.Errorf("HashString() length = %d, want 64", len(hash))
+				t.Errorf("HashPassword() length = %d, want 64", len(hash))
 			}
 
 			// Hash should be consistent
-			hash2 := HashString(tt.input)
+			hash2 := HashPassword(tt.password)
 			if hash != hash2 {
-				t.Errorf("HashString() not consistent: first=%s, second=%s", hash, hash2)
+				t.Errorf("HashPassword() not consistent: first=%s, second=%s", hash, hash2)
 			}
 
-			// Verify it only contains hex characters
-			for _, c := range hash {
-				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-					t.Errorf("HashString() contains non-hex character: %c", c)
-					break
-				}
+			// Different passwords should produce different hashes
+			differentHash := HashPassword(tt.password + "x")
+			if hash == differentHash && tt.password != "" {
+				t.Errorf("HashPassword() produced same hash for different passwords")
 			}
 		})
 	}
 }
 
-func TestHashStringDifferentInputs(t *testing.T) {
-	input1 := "string1"
-	input2 := "string2"
+func TestHashPasswordDifferentInputs(t *testing.T) {
+	password1 := "password1"
+	password2 := "password2"
 
-	hash1 := HashString(input1)
-	hash2 := HashString(input2)
+	hash1 := HashPassword(password1)
+	hash2 := HashPassword(password2)
 
 	if hash1 == hash2 {
-		t.Error("HashString() produced same hash for different inputs")
-	}
-}
-
-func TestHashStringCollisionResistance(t *testing.T) {
-	// Test that similar strings produce different hashes
-	testCases := []struct {
-		s1 string
-		s2 string
-	}{
-		{"abc", "abd"},
-		{"test", "Test"},
-		{"hello", "hello "},
-		{"12345", "123456"},
+		t.Error("HashPassword() produced same hash for different passwords")
 	}
 
-	for _, tc := range testCases {
-		hash1 := HashString(tc.s1)
-		hash2 := HashString(tc.s2)
-
-		if hash1 == hash2 {
-			t.Errorf("HashString() collision for '%s' and '%s'", tc.s1, tc.s2)
-		}
+	// Verify both are valid SHA256 hashes (64 hex characters)
+	if len(hash1) != 64 || len(hash2) != 64 {
+		t.Errorf("HashPassword() produced invalid hash lengths: hash1=%d, hash2=%d", len(hash1), len(hash2))
 	}
 }

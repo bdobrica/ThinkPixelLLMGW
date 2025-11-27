@@ -1,12 +1,52 @@
 package auth
 
 import (
+	"context"
 	"llm_gateway/internal/config"
+	"llm_gateway/internal/models"
+	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
+
+// MockAdminStore for testing
+type MockAdminStore struct {
+	users  map[string]*models.AdminUser
+	tokens map[string]*models.AdminToken
+}
+
+func NewMockAdminStore() *MockAdminStore {
+	return &MockAdminStore{
+		users:  make(map[string]*models.AdminUser),
+		tokens: make(map[string]*models.AdminToken),
+	}
+}
+
+func (m *MockAdminStore) GetAdminUserByEmail(ctx context.Context, email string) (*models.AdminUser, error) {
+	if user, ok := m.users[email]; ok {
+		return user, nil
+	}
+	return nil, storage.ErrAdminUserNotFound
+}
+
+func (m *MockAdminStore) GetAdminTokenByServiceName(ctx context.Context, serviceName string) (*models.AdminToken, error) {
+	if token, ok := m.tokens[serviceName]; ok {
+		return token, nil
+	}
+	return nil, storage.ErrAdminTokenNotFound
+}
+
+func (m *MockAdminStore) UpdateAdminUserLastLogin(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+
+func (m *MockAdminStore) UpdateAdminTokenLastUsed(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
 
 func getTestConfig() *config.Config {
 	return &config.Config{
@@ -14,196 +54,219 @@ func getTestConfig() *config.Config {
 	}
 }
 
-func TestGenerateJWT(t *testing.T) {
-	cfg := getTestConfig()
-	apiKey := "test-api-key"
-	hashedKey := HashPassword(apiKey)
-
-	token, expirationTime, err := GenerateJWT(apiKey, hashedKey, cfg)
+func TestHashPasswordArgon2(t *testing.T) {
+	password := "test-password-123"
+	hash, err := utils.HashPasswordArgon2(password)
 	if err != nil {
-		t.Fatalf("GenerateJWT() error = %v, want nil", err)
+		t.Fatalf("HashPasswordArgon2() error = %v", err)
 	}
 
-	if token == "" {
-		t.Error("GenerateJWT() returned empty token")
+	if hash == "" {
+		t.Error("HashPasswordArgon2() returned empty hash")
 	}
 
-	if expirationTime <= time.Now().Unix() {
-		t.Error("GenerateJWT() expiration time is in the past")
-	}
-
-	// Expiration should be approximately 15 minutes from now
-	expectedExpiration := time.Now().Add(15 * time.Minute).Unix()
-	if expirationTime < expectedExpiration-5 || expirationTime > expectedExpiration+5 {
-		t.Errorf("GenerateJWT() expiration = %v, want approximately %v", expirationTime, expectedExpiration)
+	// Hash should start with $argon2id$
+	if len(hash) < 10 || hash[:10] != "$argon2id$" {
+		t.Errorf("HashPasswordArgon2() hash format invalid: %s", hash)
 	}
 }
 
-func TestValidateJWT(t *testing.T) {
-	cfg := getTestConfig()
-	apiKey := "test-api-key"
-	hashedKey := HashPassword(apiKey)
+func TestVerifyPasswordArgon2(t *testing.T) {
+	password := "test-password-123"
+	hash, err := utils.HashPasswordArgon2(password)
+	if err != nil {
+		t.Fatalf("HashPasswordArgon2() error = %v", err)
+	}
 
-	t.Run("valid token", func(t *testing.T) {
-		token, _, err := GenerateJWT(apiKey, hashedKey, cfg)
+	t.Run("valid password", func(t *testing.T) {
+		valid, err := utils.VerifyPasswordArgon2(password, hash)
 		if err != nil {
-			t.Fatalf("GenerateJWT() error = %v", err)
+			t.Fatalf("VerifyPasswordArgon2() error = %v", err)
 		}
-
-		parsedToken, err := ValidateJWT(token, cfg)
-		if err != nil {
-			t.Fatalf("ValidateJWT() error = %v, want nil", err)
-		}
-		if parsedToken == nil {
-			t.Fatalf("ValidateJWT() returned nil token")
-		}
-		if !parsedToken.Valid {
-			t.Error("ValidateJWT() token.Valid = false, want true")
+		if !valid {
+			t.Error("VerifyPasswordArgon2() = false, want true")
 		}
 	})
 
-	t.Run("invalid token format", func(t *testing.T) {
-		_, err := ValidateJWT("invalid-token-string", cfg)
-		if err == nil {
-			t.Error("ValidateJWT() error = nil, want error")
-		}
-	})
-
-	t.Run("empty token", func(t *testing.T) {
-		_, err := ValidateJWT("", cfg)
-		if err == nil {
-			t.Error("ValidateJWT() error = nil, want error")
-		}
-	})
-
-	t.Run("expired token", func(t *testing.T) {
-		// Create an expired token manually
-		expirationTime := time.Now().Add(-1 * time.Hour).Unix()
-		claims := jwt.MapClaims{
-			"sub":        apiKey,
-			"hashed_key": hashedKey,
-			"exp":        expirationTime,
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		signedToken, err := token.SignedString(cfg.JWTSecret)
+	t.Run("invalid password", func(t *testing.T) {
+		valid, err := utils.VerifyPasswordArgon2("wrong-password", hash)
 		if err != nil {
-			t.Fatalf("Failed to create expired token: %v", err)
+			t.Fatalf("VerifyPasswordArgon2() error = %v", err)
 		}
+		if valid {
+			t.Error("VerifyPasswordArgon2() = true, want false")
+		}
+	})
 
-		parsedToken, err := ValidateJWT(signedToken, cfg)
+	t.Run("invalid hash format", func(t *testing.T) {
+		_, err := utils.VerifyPasswordArgon2(password, "invalid-hash")
 		if err == nil {
-			t.Error("ValidateJWT() error = nil for expired token, want error")
-		}
-		if parsedToken != nil && parsedToken.Valid {
-			t.Error("ValidateJWT() token.Valid = true for expired token, want false")
+			t.Error("VerifyPasswordArgon2() error = nil, want error")
 		}
 	})
 }
 
-func TestDecodeJWT(t *testing.T) {
+func TestGenerateAdminJWTWithPassword(t *testing.T) {
 	cfg := getTestConfig()
-	apiKey := "test-api-key"
-	hashedKey := HashPassword(apiKey)
+	ctx := context.Background()
+	store := NewMockAdminStore()
+
+	// Create test user with Argon2 password hash
+	password := "admin-password-123"
+	passwordHash, err := utils.HashPasswordArgon2(password)
+	if err != nil {
+		t.Fatalf("Failed to hash password: %v", err)
+	}
+
+	user := &models.AdminUser{
+		ID:           uuid.New(),
+		Email:        "admin@example.com",
+		PasswordHash: passwordHash,
+		Roles:        pq.StringArray{"admin", "editor"},
+		Enabled:      true,
+	}
+	store.users[user.Email] = user
+
+	t.Run("valid credentials", func(t *testing.T) {
+		token, expTime, err := GenerateAdminJWTWithPassword(ctx, user.Email, password, store, cfg)
+		if err != nil {
+			t.Fatalf("GenerateAdminJWTWithPassword() error = %v", err)
+		}
+
+		if token == "" {
+			t.Error("GenerateAdminJWTWithPassword() returned empty token")
+		}
+
+		if expTime <= time.Now().Unix() {
+			t.Error("GenerateAdminJWTWithPassword() expiration time is in the past")
+		}
+
+		// Validate the token
+		claims, err := ValidateAdminJWT(token, cfg)
+		if err != nil {
+			t.Fatalf("ValidateAdminJWT() error = %v", err)
+		}
+
+		if claims.AuthType != AdminAuthTypeUser {
+			t.Errorf("claims.AuthType = %v, want %v", claims.AuthType, AdminAuthTypeUser)
+		}
+		if claims.Email != user.Email {
+			t.Errorf("claims.Email = %v, want %v", claims.Email, user.Email)
+		}
+		if len(claims.Roles) != 2 {
+			t.Errorf("len(claims.Roles) = %v, want 2", len(claims.Roles))
+		}
+	})
+
+	t.Run("invalid password", func(t *testing.T) {
+		_, _, err := GenerateAdminJWTWithPassword(ctx, user.Email, "wrong-password", store, cfg)
+		if err == nil {
+			t.Error("GenerateAdminJWTWithPassword() error = nil, want error")
+		}
+	})
+
+	t.Run("disabled user", func(t *testing.T) {
+		disabledUser := *user
+		disabledUser.Enabled = false
+		store.users[disabledUser.Email] = &disabledUser
+
+		_, _, err := GenerateAdminJWTWithPassword(ctx, disabledUser.Email, password, store, cfg)
+		if err == nil {
+			t.Error("GenerateAdminJWTWithPassword() error = nil for disabled user, want error")
+		}
+
+		// Restore enabled user
+		store.users[user.Email] = user
+	})
+}
+
+func TestGenerateAdminJWTWithToken(t *testing.T) {
+	cfg := getTestConfig()
+	ctx := context.Background()
+	store := NewMockAdminStore()
+
+	// Create test token with Argon2 hash
+	rawToken := "service-token-12345"
+	tokenHash, err := utils.HashPasswordArgon2(rawToken)
+	if err != nil {
+		t.Fatalf("Failed to hash token: %v", err)
+	}
+
+	adminToken := &models.AdminToken{
+		ID:          uuid.New(),
+		ServiceName: "test-service",
+		TokenHash:   tokenHash,
+		Roles:       pq.StringArray{"admin"},
+		Enabled:     true,
+	}
+	// Store using service_name as key for lookup
+	store.tokens[adminToken.ServiceName] = adminToken
 
 	t.Run("valid token", func(t *testing.T) {
-		token, _, err := GenerateJWT(apiKey, hashedKey, cfg)
+		token, expTime, err := GenerateAdminJWTWithToken(ctx, adminToken.ServiceName, rawToken, store, cfg)
 		if err != nil {
-			t.Fatalf("GenerateJWT() error = %v", err)
+			t.Fatalf("GenerateAdminJWTWithToken() error = %v", err)
 		}
 
-		decodedHash, err := DecodeJWT(token, cfg)
-		if err != nil {
-			t.Errorf("DecodeJWT() error = %v, want nil", err)
+		if token == "" {
+			t.Error("GenerateAdminJWTWithToken() returned empty token")
 		}
-		if decodedHash != hashedKey {
-			t.Errorf("DecodeJWT() = %v, want %v", decodedHash, hashedKey)
+
+		if expTime <= time.Now().Unix() {
+			t.Error("GenerateAdminJWTWithToken() expiration time is in the past")
+		}
+
+		// Validate the token
+		claims, err := ValidateAdminJWT(token, cfg)
+		if err != nil {
+			t.Fatalf("ValidateAdminJWT() error = %v", err)
+		}
+
+		if claims.AuthType != AdminAuthTypeToken {
+			t.Errorf("claims.AuthType = %v, want %v", claims.AuthType, AdminAuthTypeToken)
+		}
+		if claims.ServiceName != adminToken.ServiceName {
+			t.Errorf("claims.ServiceName = %v, want %v", claims.ServiceName, adminToken.ServiceName)
 		}
 	})
 
 	t.Run("invalid token", func(t *testing.T) {
-		_, err := DecodeJWT("invalid-token", cfg)
+		_, _, err := GenerateAdminJWTWithToken(ctx, adminToken.ServiceName, "wrong-token", store, cfg)
 		if err == nil {
-			t.Error("DecodeJWT() error = nil, want error")
+			t.Error("GenerateAdminJWTWithToken() error = nil, want error")
 		}
 	})
 
-	t.Run("empty token", func(t *testing.T) {
-		_, err := DecodeJWT("", cfg)
+	t.Run("invalid service name", func(t *testing.T) {
+		_, _, err := GenerateAdminJWTWithToken(ctx, "unknown-service", rawToken, store, cfg)
 		if err == nil {
-			t.Error("DecodeJWT() error = nil, want error")
+			t.Error("GenerateAdminJWTWithToken() error = nil for unknown service, want error")
 		}
 	})
 
-	t.Run("token with wrong signature", func(t *testing.T) {
-		// Create a token with a different secret
-		wrongSecret := []byte("wrong-secret")
-		claims := jwt.MapClaims{
-			"sub":        apiKey,
-			"hashed_key": hashedKey,
-			"exp":        time.Now().Add(15 * time.Minute).Unix(),
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		signedToken, err := token.SignedString(wrongSecret)
-		if err != nil {
-			t.Fatalf("Failed to create token: %v", err)
+	t.Run("disabled token", func(t *testing.T) {
+		disabledToken := *adminToken
+		disabledToken.Enabled = false
+		store.tokens[adminToken.ServiceName] = &disabledToken
+
+		_, _, err := GenerateAdminJWTWithToken(ctx, adminToken.ServiceName, rawToken, store, cfg)
+		if err == nil {
+			t.Error("GenerateAdminJWTWithToken() error = nil for disabled token, want error")
 		}
 
-		_, err = DecodeJWT(signedToken, cfg)
+		// Restore enabled token
+		store.tokens[adminToken.ServiceName] = adminToken
+	})
+
+	t.Run("expired token", func(t *testing.T) {
+		expiredTime := time.Now().Add(-1 * time.Hour)
+		expiredToken := *adminToken
+		expiredToken.ExpiresAt = &expiredTime
+		store.tokens[adminToken.ServiceName] = &expiredToken
+
+		_, _, err := GenerateAdminJWTWithToken(ctx, adminToken.ServiceName, rawToken, store, cfg)
 		if err == nil {
-			t.Error("DecodeJWT() error = nil for wrong signature, want error")
+			t.Error("GenerateAdminJWTWithToken() error = nil for expired token, want error")
 		}
 	})
-}
-
-func TestJWTRoundTrip(t *testing.T) {
-	// Test the full cycle: generate -> validate -> decode
-	cfg := getTestConfig()
-	apiKey := "round-trip-key"
-	hashedKey := HashPassword(apiKey)
-
-	// Generate
-	token, expTime, err := GenerateJWT(apiKey, hashedKey, cfg)
-	if err != nil {
-		t.Fatalf("GenerateJWT() error = %v", err)
-	}
-
-	// Validate
-	parsedToken, err := ValidateJWT(token, cfg)
-	if err != nil {
-		t.Fatalf("ValidateJWT() error = %v", err)
-	}
-	if !parsedToken.Valid {
-		t.Fatal("ValidateJWT() token is not valid")
-	}
-
-	// Decode
-	decodedHash, err := DecodeJWT(token, cfg)
-	if err != nil {
-		t.Fatalf("DecodeJWT() error = %v", err)
-	}
-	if decodedHash != hashedKey {
-		t.Errorf("DecodeJWT() = %v, want %v", decodedHash, hashedKey)
-	}
-
-	// Verify claims
-	claims, ok := parsedToken.Claims.(jwt.MapClaims)
-	if !ok {
-		t.Fatal("Failed to parse claims")
-	}
-
-	if claims["sub"] != apiKey {
-		t.Errorf("Claims sub = %v, want %v", claims["sub"], apiKey)
-	}
-	if claims["hashed_key"] != hashedKey {
-		t.Errorf("Claims hashed_key = %v, want %v", claims["hashed_key"], hashedKey)
-	}
-
-	// Verify expiration is approximately correct
-	exp, ok := claims["exp"].(float64)
-	if !ok {
-		t.Fatal("Claims exp is not a float64")
-	}
-	if int64(exp) != expTime {
-		t.Errorf("Claims exp = %v, want %v", int64(exp), expTime)
-	}
 }

@@ -154,8 +154,8 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 
 **Immediate Priorities:**
 - [ ] S3 writer implementation to drain Redis log buffer to S3/MinIO
+- [x] **Admin JWT authentication (November 27, 2025) - email/password + token-based flows**
 - [ ] Admin API endpoints (key/provider/alias CRUD operations)
-- [ ] JWT authentication implementation for admin routes
 - [ ] BerriAI model catalog sync script (populate models table)
 - [ ] Docker Compose setup for development environment
 
@@ -185,6 +185,24 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 - **Tags**: Flexible metadata support via key_metadata table
 - **Lifecycle**: Create, revoke, regenerate operations (admin API pending)
 - **Expiration**: Configurable expiration dates with automatic validation
+
+### Admin Authentication ✅
+- **Dual Authentication Flows**:
+  - Email/Password: Human users with Argon2id hashed passwords
+  - Service Name + Token: Service accounts with Argon2id hashed tokens
+- **JWT Generation**: 24-hour tokens with role-based claims (admin_id, auth_type, roles)
+- **Authentication Endpoints**:
+  - `POST /admin/auth/login` - Email/password login → JWT
+  - `POST /admin/auth/token` - Service name + token → JWT
+  - `GET /admin/test` - Protected test endpoint
+- **Token Lookup Pattern**: 
+  - Service tokens: Fast indexed lookup by `service_name`, then Argon2 verification
+  - User accounts: Indexed lookup by `email`, then Argon2 verification
+- **Role-Based Access Control**: Admin, editor, viewer roles
+- **Middleware**: AdminJWTMiddleware with role enforcement
+- **Secure Hashing**: Argon2id (time=1, memory=64MB, threads=4, keylen=32)
+- **Context Helpers**: Extract admin claims, roles, and ID from request context
+- **Clean Separation**: API Keys used ONLY for proxying, not for admin access
 
 ### Provider Management ✅
 - **Pluggable Architecture**: Factory pattern with provider registry

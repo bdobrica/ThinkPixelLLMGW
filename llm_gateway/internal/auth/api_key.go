@@ -42,7 +42,7 @@ func NewInMemoryAPIKeyStore() *InMemoryAPIKeyStore {
 	}
 
 	// Seed with a demo key: "demo-key"
-	hash := utils.HashString("demo-key")
+	hash := utils.HashPassword("demo-key")
 	s.keys[hash] = &APIKeyRecord{
 		ID:            "demo-key-id",
 		Name:          "Demo Key",
@@ -55,7 +55,7 @@ func NewInMemoryAPIKeyStore() *InMemoryAPIKeyStore {
 }
 
 func (s *InMemoryAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (*APIKeyRecord, error) {
-	hash := utils.HashString(plaintextKey)
+	hash := utils.HashPassword(plaintextKey)
 	rec, ok := s.keys[hash]
 	if !ok {
 		return nil, ErrKeyNotFound

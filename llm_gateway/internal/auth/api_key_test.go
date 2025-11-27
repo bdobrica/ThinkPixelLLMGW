@@ -115,7 +115,7 @@ func TestInMemoryAPIKeyStore_AddKey(t *testing.T) {
 
 	// Add a custom key
 	customKey := "custom-test-key-456"
-	customHash := utils.HashString(customKey)
+	customHash := utils.HashPassword(customKey)
 	store.keys[customHash] = &APIKeyRecord{
 		ID:            "custom-id",
 		Name:          "Custom Key",

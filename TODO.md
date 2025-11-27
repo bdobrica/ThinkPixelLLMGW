@@ -7,6 +7,64 @@ This document tracks all implementation tasks for the LLM Gateway project.
 
 ## ✅ Recently Completed
 
+### Admin JWT Authentication (November 27, 2025)
+- **Files Created/Updated:** 5 files (~800 lines of code)
+- **Core Features:**
+  - Argon2id password/token hashing and verification
+  - Dual authentication flows:
+    - Email/password: Indexed lookup by email → Argon2 verification
+    - Service name + token: Indexed lookup by service_name → Argon2 verification
+  - JWT generation with role-based claims (24-hour expiration)
+  - AdminJWTMiddleware with role enforcement
+  - Context helpers for extracting admin data
+  - Comprehensive test suite with mock store
+- **Files:**
+  - `internal/auth/hash.go` - Argon2id implementation (95 lines)
+  - `internal/auth/jwt.go` - Admin JWT generation and validation (210 lines)
+  - `internal/auth/jwt_test.go` - Complete test coverage (405 lines)
+  - `internal/middleware/jwt_middleware.go` - AdminJWTMiddleware and helpers (150 lines)
+  - `internal/httpapi/admin_store.go` - AdminStore adapter (45 lines)
+  - `internal/httpapi/admin_handler.go` - Auth endpoints (140 lines)
+- **Authentication Flows:**
+  - Email/password: AdminUser lookup by email → Argon2 verify → JWT with user claims
+  - Service name + token: AdminToken lookup by service_name → Argon2 verify → JWT with token claims
+- **API Endpoints:**
+  - `POST /admin/auth/login` - Login with {"email": "...", "password": "..."}
+  - `POST /admin/auth/token` - Authenticate with {"service_name": "...", "token": "..."}
+  - `GET /admin/test` - Protected test endpoint (requires JWT)
+- **Status:** ✅ **Ready for admin API implementation!**
+
+### Next Steps for Admin API
+
+With JWT authentication now complete, the following endpoints can be implemented:
+
+**Authentication Endpoints:**
+- `POST /admin/auth/login` - Email/password login → JWT
+  ```json
+  {"email": "admin@example.com", "password": "secret"}
+  ```
+- `POST /admin/auth/token` - Service name + token → JWT
+  ```json
+  {"service_name": "monitoring-service", "token": "service-secret-token"}
+  ```
+- Use `GenerateAdminJWTWithPassword()` and `GenerateAdminJWTWithToken()`
+
+**Protected Admin Endpoints** (use `AdminJWTMiddleware`):
+- `GET /admin/api-keys` - List API keys (viewer role)
+- `POST /admin/api-keys` - Create API key (editor role)
+- `PUT /admin/api-keys/:id` - Update API key (editor role)
+- `DELETE /admin/api-keys/:id` - Delete API key (admin role)
+- Similar endpoints for providers, models, aliases, users, tokens
+
+**Implementation Pattern:**
+```go
+// In router.go
+adminRouter := chi.NewRouter()
+adminRouter.Use(middleware.AdminJWTMiddleware(cfg, "viewer")) // Minimum role
+adminRouter.Get("/api-keys", adminHandler.ListAPIKeys)
+adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys", adminHandler.CreateAPIKey)
+```
+
 ### Proxy Handler & HTTP Router (November 23, 2025)
 - **Files Created/Updated:** 5 files (~600 lines of code)
 - **Core Features:**

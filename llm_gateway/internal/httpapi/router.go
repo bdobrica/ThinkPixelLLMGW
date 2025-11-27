@@ -21,12 +21,13 @@ import (
 
 // Dependencies aggregates all services the HTTP layer needs.
 type Dependencies struct {
-	APIKeys   auth.APIKeyStore
-	Providers providers.Registry
-	RateLimit ratelimit.Limiter
-	Billing   billing.Service
-	Logger    logging.Sink
-	Metrics   metrics.Metrics
+	APIKeys    auth.APIKeyStore
+	AdminStore auth.AdminStore
+	Providers  providers.Registry
+	RateLimit  ratelimit.Limiter
+	Billing    billing.Service
+	Logger     logging.Sink
+	Metrics    metrics.Metrics
 }
 
 // NewRouter creates an HTTP router with all dependencies wired up
@@ -66,6 +67,8 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 
 	// Initialize repositories
 	apiKeyRepo := storage.NewAPIKeyRepository(db)
+	adminUserRepo := storage.NewAdminUserRepository(db)
+	adminTokenRepo := storage.NewAdminTokenRepository(db)
 
 	// Initialize encryption for provider credentials
 	// TODO: Load encryption key from environment variable
@@ -124,12 +127,13 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 
 	// Create dependencies
 	deps := &Dependencies{
-		APIKeys:   NewDatabaseAPIKeyStore(apiKeyRepo),
-		Providers: registry,
-		RateLimit: rateLimiter,
-		Billing:   billingService,
-		Logger:    NewRedisLoggingSink(logBuffer),
-		Metrics:   metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
+		APIKeys:    NewDatabaseAPIKeyStore(apiKeyRepo),
+		AdminStore: NewAdminStoreAdapter(adminUserRepo, adminTokenRepo),
+		Providers:  registry,
+		RateLimit:  rateLimiter,
+		Billing:    billingService,
+		Logger:     NewRedisLoggingSink(logBuffer),
+		Metrics:    metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
 	}
 
 	// Create router
@@ -201,8 +205,18 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 	// Metrics endpoint - public
 	mux.Handle("/metrics", deps.Metrics.HTTPHandler())
 
-	// Admin endpoints - protected with JWT middleware
-	jwtMiddleware := middleware.JWTMiddleware(deps.APIKeys, cfg)
-	mux.Handle("/admin/keys", jwtMiddleware(http.HandlerFunc(deps.handleAdminKeys)))
-	mux.Handle("/admin/providers", jwtMiddleware(http.HandlerFunc(deps.handleAdminProviders)))
+	// Admin authentication endpoints - public (no middleware)
+	adminAuthHandler := NewAdminAuthHandler(deps.AdminStore, cfg)
+	mux.HandleFunc("/admin/auth/login", adminAuthHandler.Login)
+	mux.HandleFunc("/admin/auth/token", adminAuthHandler.TokenAuth)
+
+	// Protected admin test endpoint
+	adminJWT := middleware.AdminJWTMiddleware(cfg)
+	mux.Handle("/admin/test", adminJWT(http.HandlerFunc(adminAuthHandler.TestProtected)))
+
+	// Admin management endpoints - protected with AdminJWTMiddleware
+	// Require at least "viewer" role
+	viewerMiddleware := middleware.AdminJWTMiddleware(cfg, "viewer")
+	mux.Handle("/admin/keys", viewerMiddleware(http.HandlerFunc(deps.handleAdminKeys)))
+	mux.Handle("/admin/providers", viewerMiddleware(http.HandlerFunc(deps.handleAdminProviders)))
 }

@@ -163,7 +163,7 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 
 		// Decrypt credentials
 		credentials := make(map[string]string)
-		if dbProvider.EncryptedCredentials != nil && len(dbProvider.EncryptedCredentials) > 0 && r.encryption != nil {
+		if len(dbProvider.EncryptedCredentials) > 0 && r.encryption != nil {
 			// EncryptedCredentials is JSONB, convert to map first
 			encryptedMap := make(map[string]any)
 			for k, v := range dbProvider.EncryptedCredentials {
