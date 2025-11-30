@@ -11,8 +11,10 @@ import (
 	"github.com/google/uuid"
 
 	"llm_gateway/internal/auth"
+	"llm_gateway/internal/billing"
 	"llm_gateway/internal/logging"
 	"llm_gateway/internal/middleware"
+	"llm_gateway/internal/models"
 	"llm_gateway/internal/providers"
 )
 
@@ -171,16 +173,36 @@ func (d *Dependencies) handleNonStreamingResponse(
 		ResponsePayload: json.RawMessage(pResp.Body),
 	}
 
-	// Update billing (best-effort)
-	if pResp.CostUSD > 0 {
-		_ = d.Billing.AddUsage(context.Background(), apiKeyRecord.ID, pResp.CostUSD)
-	}
-
 	// Enqueue log (best-effort)
 	_ = d.Logger.Enqueue(logRec)
 
-	// TODO: Record usage in database for detailed analytics
-	// This would insert into usage_records table
+	// Queue billing update asynchronously
+	if pResp.CostUSD > 0 && d.BillingWorker != nil {
+		billingUpdate := &billing.BillingUpdate{
+			APIKeyID:  apiKeyRecord.ID,
+			CostUSD:   pResp.CostUSD,
+			Timestamp: time.Now(),
+		}
+		_ = d.BillingWorker.Enqueue(context.Background(), billingUpdate)
+	}
+
+	// Queue usage record asynchronously
+	if d.UsageWorker != nil {
+		usageRecord := &models.UsageRecord{
+			ID:              uuid.New(),
+			APIKeyID:        uuid.MustParse(apiKeyRecord.ID),
+			RequestID:       uuid.MustParse(reqID),
+			ModelName:       modelName,
+			Endpoint:        "/v1/chat/completions",
+			InputTokens:     pResp.InputTokens,
+			OutputTokens:    pResp.OutputTokens,
+			CachedTokens:    pResp.CachedTokens,
+			ReasoningTokens: pResp.ReasoningTokens,
+			ResponseTimeMS:  int(providerLatency.Milliseconds()),
+			StatusCode:      pResp.StatusCode,
+		}
+		_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
+	}
 
 	// Return provider response
 	w.Header().Set("Content-Type", "application/json")
@@ -276,10 +298,19 @@ func (d *Dependencies) handleStreamingResponse(
 
 	_ = d.Logger.Enqueue(logRec)
 
-	// Update billing if we have cost info
-	if totalCost > 0 {
-		_ = d.Billing.AddUsage(context.Background(), apiKeyRecord.ID, totalCost)
+	// Queue billing update asynchronously
+	if totalCost > 0 && d.BillingWorker != nil {
+		billingUpdate := &billing.BillingUpdate{
+			APIKeyID:  apiKeyRecord.ID,
+			CostUSD:   totalCost,
+			Timestamp: time.Now(),
+		}
+		_ = d.BillingWorker.Enqueue(context.Background(), billingUpdate)
 	}
+
+	// Note: For streaming responses, we don't have detailed token counts
+	// unless we parse all chunks. This is a limitation of streaming.
+	// Consider adding token counting from parsed chunks if needed.
 }
 
 // newRequestID returns a UUID request ID for tracing

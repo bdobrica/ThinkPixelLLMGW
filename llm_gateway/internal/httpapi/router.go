@@ -15,6 +15,7 @@ import (
 	"llm_gateway/internal/metrics"
 	"llm_gateway/internal/middleware"
 	"llm_gateway/internal/providers"
+	"llm_gateway/internal/queue"
 	"llm_gateway/internal/ratelimit"
 	"llm_gateway/internal/storage"
 )
@@ -29,6 +30,9 @@ type Dependencies struct {
 	Logger        logging.Sink
 	Metrics       metrics.Metrics
 	RequestLogger *logging.RequestLogger
+	// Queue workers for async processing
+	BillingWorker *billing.BillingQueueWorker
+	UsageWorker   *storage.UsageQueueWorker
 }
 
 // NewRouter creates an HTTP router with all dependencies wired up
@@ -138,6 +142,72 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		return nil, nil, fmt.Errorf("failed to initialize request logger: %w", err)
 	}
 
+	// Initialize queue infrastructure
+	// Check if Redis is available for queues
+	useRedis := redisClient != nil && cfg.Redis.Address != ""
+
+	// Create billing queue
+	var billingQueue queue.Queue
+	var billingDLQ queue.DeadLetterQueue
+	billingQueueCfg := queue.DefaultConfig("billing")
+	billingQueueCfg.UseRedis = useRedis
+	billingQueueCfg.BatchSize = 100
+	billingQueueCfg.BatchTimeout = 5 * time.Second
+	billingQueueCfg.MaxRetries = 3
+	billingQueueCfg.RetryBackoff = 1 * time.Second
+
+	if useRedis {
+		billingQueueCfg.RedisAddr = cfg.Redis.Address
+		billingQueueCfg.RedisPassword = cfg.Redis.Password
+		billingQueueCfg.RedisDB = cfg.Redis.DB
+		billingQueue, err = queue.NewRedisQueue(billingQueueCfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create billing queue: %w", err)
+		}
+		billingDLQ, err = queue.NewRedisDeadLetterQueue(billingQueueCfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create billing DLQ: %w", err)
+		}
+	} else {
+		billingQueue = queue.NewMemoryQueue(billingQueueCfg)
+		billingDLQ = queue.NewMemoryDeadLetterQueue()
+	}
+
+	// Create usage queue
+	var usageQueue queue.Queue
+	var usageDLQ queue.DeadLetterQueue
+	usageQueueCfg := queue.DefaultConfig("usage")
+	usageQueueCfg.UseRedis = useRedis
+	usageQueueCfg.BatchSize = 100
+	usageQueueCfg.BatchTimeout = 5 * time.Second
+	usageQueueCfg.MaxRetries = 3
+	usageQueueCfg.RetryBackoff = 1 * time.Second
+
+	if useRedis {
+		usageQueueCfg.RedisAddr = cfg.Redis.Address
+		usageQueueCfg.RedisPassword = cfg.Redis.Password
+		usageQueueCfg.RedisDB = cfg.Redis.DB
+		usageQueue, err = queue.NewRedisQueue(usageQueueCfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create usage queue: %w", err)
+		}
+		usageDLQ, err = queue.NewRedisDeadLetterQueue(usageQueueCfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create usage DLQ: %w", err)
+		}
+	} else {
+		usageQueue = queue.NewMemoryQueue(usageQueueCfg)
+		usageDLQ = queue.NewMemoryDeadLetterQueue()
+	}
+
+	// Create queue workers
+	billingWorker := billing.NewBillingQueueWorker(billingQueue, billingDLQ, billingService, billingQueueCfg)
+	usageWorker := storage.NewUsageQueueWorker(usageQueue, usageDLQ, db, usageQueueCfg)
+
+	// Start queue workers
+	billingWorker.Start(context.Background())
+	usageWorker.Start(context.Background())
+
 	// Create dependencies
 	deps := &Dependencies{
 		APIKeys:       NewDatabaseAPIKeyStore(apiKeyRepo),
@@ -148,6 +218,8 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		Logger:        NewRedisLoggingSink(logBuffer),
 		Metrics:       metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
 		RequestLogger: requestLogger,
+		BillingWorker: billingWorker,
+		UsageWorker:   usageWorker,
 	}
 
 	// Create router

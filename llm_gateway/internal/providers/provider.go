@@ -20,6 +20,11 @@ type ChatResponse struct {
 	Stream          io.ReadCloser // non-nil if streaming
 	ProviderLatency time.Duration
 	CostUSD         float64
+	// Usage information extracted from response
+	InputTokens     int
+	OutputTokens    int
+	CachedTokens    int
+	ReasoningTokens int
 }
 
 // StreamEvent represents a single event in a streaming response

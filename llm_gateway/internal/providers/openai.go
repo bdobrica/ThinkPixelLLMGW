@@ -134,9 +134,11 @@ func (p *OpenAIProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}
 
-		// Calculate cost from usage in response
+		// Calculate cost and extract usage from response
 		cost := 0.0
+		usage := &UsageInfo{}
 		if resp.StatusCode == http.StatusOK {
+			usage = extractUsageFromResponse(respBody)
 			cost = extractCostFromResponse(respBody)
 		}
 
@@ -145,6 +147,10 @@ func (p *OpenAIProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 			Body:            respBody,
 			ProviderLatency: latency,
 			CostUSD:         cost,
+			InputTokens:     usage.InputTokens,
+			OutputTokens:    usage.OutputTokens,
+			CachedTokens:    usage.CachedTokens,
+			ReasoningTokens: usage.ReasoningTokens,
 		}, nil
 	}
 
@@ -209,25 +215,67 @@ func (p *OpenAIProvider) Close() error {
 	return nil
 }
 
-// extractCostFromResponse extracts token usage and calculates cost
-// In production, you'd use the model pricing from database
-func extractCostFromResponse(body []byte) float64 {
+// UsageInfo contains detailed token usage information from the response
+type UsageInfo struct {
+	InputTokens     int
+	OutputTokens    int
+	CachedTokens    int
+	ReasoningTokens int
+	TotalTokens     int
+}
+
+// extractUsageFromResponse extracts detailed token usage from response
+func extractUsageFromResponse(body []byte) *UsageInfo {
 	var response struct {
 		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+			// OpenAI format (alternative field names)
 			PromptTokens     int `json:"prompt_tokens"`
 			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
+			// Detailed breakdowns
+			InputTokensDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
+			OutputTokensDetails struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"output_tokens_details"`
 		} `json:"usage"`
 	}
 
 	if err := json.Unmarshal(body, &response); err != nil {
-		return 0.0
+		return &UsageInfo{}
 	}
+
+	usage := &UsageInfo{
+		InputTokens:     response.Usage.InputTokens,
+		OutputTokens:    response.Usage.OutputTokens,
+		CachedTokens:    response.Usage.InputTokensDetails.CachedTokens,
+		ReasoningTokens: response.Usage.OutputTokensDetails.ReasoningTokens,
+		TotalTokens:     response.Usage.TotalTokens,
+	}
+
+	// Handle OpenAI's alternative field names
+	if usage.InputTokens == 0 && response.Usage.PromptTokens > 0 {
+		usage.InputTokens = response.Usage.PromptTokens
+	}
+	if usage.OutputTokens == 0 && response.Usage.CompletionTokens > 0 {
+		usage.OutputTokens = response.Usage.CompletionTokens
+	}
+
+	return usage
+}
+
+// extractCostFromResponse extracts token usage and calculates cost
+// In production, you'd use the model pricing from database
+func extractCostFromResponse(body []byte) float64 {
+	usage := extractUsageFromResponse(body)
 
 	// This is a placeholder calculation
 	// In production, fetch model pricing from database and use Model.CalculateCost()
-	inputCost := float64(response.Usage.PromptTokens) * 0.00001      // $0.01 per 1K tokens
-	outputCost := float64(response.Usage.CompletionTokens) * 0.00003 // $0.03 per 1K tokens
+	inputCost := float64(usage.InputTokens) * 0.00001   // $0.01 per 1K tokens
+	outputCost := float64(usage.OutputTokens) * 0.00003 // $0.03 per 1K tokens
 
 	return inputCost + outputCost
 }
