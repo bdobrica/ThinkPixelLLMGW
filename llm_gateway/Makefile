@@ -46,7 +46,11 @@ test-httpapi: ## Run HTTP API integration tests (requires postgres to be running
 	@echo "Running HTTP API integration tests..."
 	@echo "Make sure PostgreSQL is running: make dev-up"
 	@echo ""
+	@echo "Testing Admin Providers..."
 	DATABASE_URL="postgres://gateway:password@localhost:5432/gateway?sslmode=disable" go test -v ./internal/httpapi/... -run TestAdminProviders
+	@echo ""
+	@echo "Testing Admin Models..."
+	DATABASE_URL="postgres://gateway:password@localhost:5432/gateway?sslmode=disable" go test -v ./internal/httpapi/... -run TestAdminModels
 
 build: ## Build the gateway binary
 	go build -o bin/gateway ./cmd/gateway

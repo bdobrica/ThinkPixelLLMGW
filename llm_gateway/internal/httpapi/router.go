@@ -343,4 +343,36 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
+
+	// Model management endpoints
+	adminModelsHandler := NewAdminModelsHandler(deps.DB, deps.Providers)
+	mux.Handle("/admin/models", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// List models - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminModelsHandler.List)).ServeHTTP(w, r)
+		case http.MethodPost:
+			// Create model - admin role required
+			adminMiddleware(http.HandlerFunc(adminModelsHandler.Create)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	// Model detail endpoints with ID
+	mux.Handle("/admin/models/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// Get model details - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminModelsHandler.GetByID)).ServeHTTP(w, r)
+		case http.MethodPut:
+			// Update model - admin role required
+			adminMiddleware(http.HandlerFunc(adminModelsHandler.Update)).ServeHTTP(w, r)
+		case http.MethodDelete:
+			// Delete model - admin role required
+			adminMiddleware(http.HandlerFunc(adminModelsHandler.Delete)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 }
