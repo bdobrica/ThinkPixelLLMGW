@@ -30,3 +30,8 @@ func (s *RedisLoggingSink) Enqueue(rec *logging.LogRecord) error {
 
 	return nil
 }
+
+// Shutdown is a no-op for RedisLoggingSink as Redis persistence is handled separately
+func (s *RedisLoggingSink) Shutdown(ctx context.Context) error {
+	return nil
+}

@@ -16,7 +16,7 @@ type Config struct {
 	Redis         RedisConfig
 	Provider      ProviderConfig
 	RequestLogger RequestLoggerConfig
-	// TODO: add S3 config, encryption keys, JWT secret, etc.
+	LoggingSink   LoggingSinkConfig
 }
 
 // DatabaseConfig holds database connection settings
@@ -60,6 +60,18 @@ type RequestLoggerConfig struct {
 	MaxFiles         int
 	BufferSize       int
 	FlushInterval    time.Duration
+}
+
+// LoggingSinkConfig holds configuration for the S3-based logging sink
+type LoggingSinkConfig struct {
+	Enabled       bool          // Whether to enable S3 logging
+	BufferSize    int           // In-memory queue size
+	FlushSize     int           // Flush to S3 after this many records
+	FlushInterval time.Duration // Flush to S3 after this duration
+	S3Bucket      string        // S3 bucket name
+	S3Region      string        // AWS region
+	S3Prefix      string        // Prefix for S3 keys (e.g., "logs/")
+	PodName       string        // Pod identifier for multi-pod deployments
 }
 
 func getEnvInt(key string, defaultValue int) int {
@@ -157,6 +169,16 @@ func Load() (*Config, error) {
 			MaxFiles:         getEnvInt("REQUEST_LOGGER_MAX_FILES", 5),                        // default 5
 			BufferSize:       getEnvInt("REQUEST_LOGGER_BUFFER_SIZE", 100),                    // default 100
 			FlushInterval:    getEnvDuration("REQUEST_LOGGER_FLUSH_INTERVAL", 60*time.Second), // default 60 seconds
+		},
+		LoggingSink: LoggingSinkConfig{
+			Enabled:       getEnvString("LOGGING_SINK_ENABLED", "false") == "true",
+			BufferSize:    getEnvInt("LOGGING_SINK_BUFFER_SIZE", 10000),
+			FlushSize:     getEnvInt("LOGGING_SINK_FLUSH_SIZE", 1000),
+			FlushInterval: getEnvDuration("LOGGING_SINK_FLUSH_INTERVAL", 5*time.Minute),
+			S3Bucket:      getEnvString("LOGGING_SINK_S3_BUCKET", ""),
+			S3Region:      getEnvString("LOGGING_SINK_S3_REGION", "us-east-1"),
+			S3Prefix:      getEnvString("LOGGING_SINK_S3_PREFIX", "logs/"),
+			PodName:       getEnvString("POD_NAME", "gateway-0"),
 		},
 	}
 

@@ -106,6 +106,80 @@ PROVIDER_RELOAD_INTERVAL=5m
 PROVIDER_REQUEST_TIMEOUT=60s
 ```
 
+### Request Logger Configuration
+
+The gateway includes a file-based request logger for debugging and audit purposes.
+
+```bash
+# File path template with %s placeholder for timestamp (default: /var/log/llm-gateway/requests-%s.jsonl)
+REQUEST_LOGGER_FILE_PATH_TEMPLATE=/var/log/llm-gateway/requests-%s.jsonl
+
+# Maximum file size in bytes before rotation (default: 10485760 = 10MB)
+REQUEST_LOGGER_MAX_SIZE=10485760
+
+# Maximum number of rotated files to keep (default: 5)
+REQUEST_LOGGER_MAX_FILES=5
+
+# In-memory buffer size (default: 100)
+REQUEST_LOGGER_BUFFER_SIZE=100
+
+# Flush interval for periodic disk writes (default: 60s)
+REQUEST_LOGGER_FLUSH_INTERVAL=60s
+```
+
+### Logging Sink Configuration (S3 Analytics)
+
+The logging sink writes structured request/response logs to S3 for analytics and compliance.
+
+```bash
+# Enable S3 logging sink (default: false)
+LOGGING_SINK_ENABLED=true
+
+# In-memory buffer size before flush (default: 10000)
+# Higher values = better batching, more memory usage
+# Lower values = less memory, more S3 requests
+LOGGING_SINK_BUFFER_SIZE=10000
+
+# Number of records to batch before flushing to S3 (default: 1000)
+# Recommendation: 500-2000 for cost-effective S3 usage
+LOGGING_SINK_FLUSH_SIZE=1000
+
+# Time interval before flushing to S3 (default: 5m)
+# Ensures logs are written even if flush size not reached
+LOGGING_SINK_FLUSH_INTERVAL=5m
+
+# S3 bucket name (REQUIRED if LOGGING_SINK_ENABLED=true)
+LOGGING_SINK_S3_BUCKET=my-llm-logs
+
+# AWS region for S3 bucket (default: us-east-1)
+LOGGING_SINK_S3_REGION=us-east-1
+
+# S3 key prefix for organizing logs (default: logs/)
+# Example: logs/2025/11/30/gateway-0-20251130-143022.jsonl
+LOGGING_SINK_S3_PREFIX=logs/
+
+# Pod name identifier for multi-pod deployments (default: gateway-0)
+# In Kubernetes, set to the pod name via downward API
+POD_NAME=gateway-0
+```
+
+**Important**: When using S3 logging in Kubernetes, configure a preStop hook to allow graceful shutdown:
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "sleep 30"]
+```
+
+This ensures the pod has enough time (30-60 seconds recommended) to flush buffered logs to S3 before termination.
+
+**S3 Log Format**: Logs are written as JSON Lines (`.jsonl`) files with one record per line:
+```json
+{"timestamp":"2025-11-30T14:30:22Z","request_id":"req-123","api_key_id":"key-456","provider":"openai","model":"gpt-4","cost_usd":0.05,...}
+{"timestamp":"2025-11-30T14:30:23Z","request_id":"req-124","api_key_id":"key-789","provider":"anthropic","model":"claude-3","cost_usd":0.03,...}
+```
+
 ## Example Configurations
 
 ### Development Environment
@@ -165,6 +239,16 @@ REDIS_WRITE_TIMEOUT=3s
 # Provider settings
 PROVIDER_RELOAD_INTERVAL=5m
 PROVIDER_REQUEST_TIMEOUT=60s
+
+# S3 Logging (production)
+LOGGING_SINK_ENABLED=true
+LOGGING_SINK_BUFFER_SIZE=10000
+LOGGING_SINK_FLUSH_SIZE=1000
+LOGGING_SINK_FLUSH_INTERVAL=5m
+LOGGING_SINK_S3_BUCKET=company-llm-logs-prod
+LOGGING_SINK_S3_REGION=us-east-1
+LOGGING_SINK_S3_PREFIX=logs/
+POD_NAME=${HOSTNAME}  # Kubernetes automatically sets this
 ```
 
 ### High-Traffic Environment
@@ -320,6 +404,49 @@ data:
   CACHE_API_KEY_TTL: "5m"
   CACHE_MODEL_SIZE: "1000"
   CACHE_MODEL_TTL: "15m"
+  LOGGING_SINK_ENABLED: "true"
+  LOGGING_SINK_BUFFER_SIZE: "10000"
+  LOGGING_SINK_FLUSH_SIZE: "1000"
+  LOGGING_SINK_FLUSH_INTERVAL: "5m"
+  LOGGING_SINK_S3_BUCKET: "my-company-llm-logs"
+  LOGGING_SINK_S3_REGION: "us-east-1"
+  LOGGING_SINK_S3_PREFIX: "logs/"
+
+---
+# deployment.yaml (with preStop hook for graceful shutdown)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: llmgateway
+  template:
+    metadata:
+      labels:
+        app: llmgateway
+    spec:
+      containers:
+      - name: gateway
+        image: llmgateway:latest
+        envFrom:
+        - configMapRef:
+            name: llmgateway-config
+        - secretRef:
+            name: llmgateway-secret
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 30"]
+        ports:
+        - containerPort: 8080
 
 ---
 # secret.yaml
@@ -331,6 +458,8 @@ type: Opaque
 stringData:
   DATABASE_URL: postgres://user:password@postgres.default.svc.cluster.local:5432/llmgateway?sslmode=require
 ```
+
+**Note**: The `preStop` hook gives the pod 30 seconds to flush logs to S3 before Kubernetes sends SIGTERM. Adjust based on your flush interval and buffer size.
 
 ## Troubleshooting
 
