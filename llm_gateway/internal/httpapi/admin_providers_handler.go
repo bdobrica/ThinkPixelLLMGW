@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -166,8 +167,44 @@ func (h *AdminProvidersHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // List handles GET /admin/providers - List all providers
 func (h *AdminProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	query := r.URL.Query()
+
+	// Search parameter
+	search := query.Get("search")
+
+	// Enabled filter
+	var enabledOnly *bool
+	if enabled := query.Get("enabled"); enabled != "" {
+		val := enabled == "true"
+		enabledOnly = &val
+	}
+
+	// Pagination parameters
+	page := 1
+	if pageStr := query.Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 20 // default page size
+	if pageSizeStr := query.Get("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
+		}
+	}
+
+	// Create filters
+	filters := storage.ProviderListFilters{
+		Search:      search,
+		EnabledOnly: enabledOnly,
+		Page:        page,
+		PageSize:    pageSize,
+	}
+
 	providerRepo := storage.NewProviderRepository(h.db)
-	providers, err := providerRepo.List(r.Context())
+	result, err := providerRepo.ListWithFilters(r.Context(), filters)
 	if err != nil {
 		utils.RespondWithError(w, http.StatusInternalServerError, "Failed to list providers")
 		return
@@ -176,8 +213,8 @@ func (h *AdminProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Get model counts for each provider
 	modelRepo := storage.NewModelRepository(h.db)
 
-	responses := make([]ProviderResponse, 0, len(providers))
-	for _, p := range providers {
+	responses := make([]ProviderResponse, 0, len(result.Providers))
+	for _, p := range result.Providers {
 		models, _ := modelRepo.GetByProvider(r.Context(), p.ID.String())
 		modelCount := len(models)
 
@@ -201,7 +238,13 @@ func (h *AdminProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	utils.RespondWithJSON(w, http.StatusOK, responses)
+	// Return paginated response
+	utils.RespondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"items":       responses,
+		"total_count": result.TotalCount,
+		"page":        result.Page,
+		"page_size":   result.PageSize,
+	})
 }
 
 // GetByID handles GET /admin/providers/:id - Get provider details

@@ -375,4 +375,36 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
+
+	// Model Alias management endpoints
+	adminAliasesHandler := NewAdminAliasesHandler(deps.DB, deps.Providers)
+	mux.Handle("/admin/aliases", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// List aliases - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminAliasesHandler.List)).ServeHTTP(w, r)
+		case http.MethodPost:
+			// Create alias - admin role required
+			adminMiddleware(http.HandlerFunc(adminAliasesHandler.Create)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	// Alias detail endpoints with ID
+	mux.Handle("/admin/aliases/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// Get alias details - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminAliasesHandler.GetByID)).ServeHTTP(w, r)
+		case http.MethodPut:
+			// Update alias - admin role required
+			adminMiddleware(http.HandlerFunc(adminAliasesHandler.Update)).ServeHTTP(w, r)
+		case http.MethodDelete:
+			// Delete alias - admin role required
+			adminMiddleware(http.HandlerFunc(adminAliasesHandler.Delete)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 }

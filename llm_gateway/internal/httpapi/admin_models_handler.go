@@ -560,59 +560,46 @@ func (h *AdminModelsHandler) createModelWithPricing(ctx context.Context, model *
 // List handles GET /admin/models - List all models
 func (h *AdminModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
-	providerID := r.URL.Query().Get("provider_id")
-	search := r.URL.Query().Get("search")
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
+	query := r.URL.Query()
 
-	limit := 50 // Default
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
-			limit = l
+	providerID := query.Get("provider_id")
+	search := query.Get("search")
+
+	// Pagination parameters
+	page := 1
+	if pageStr := query.Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
 		}
 	}
 
-	offset := 0
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
+	pageSize := 20 // default page size
+	if pageSizeStr := query.Get("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
 		}
+	}
+
+	// Create filters
+	filters := storage.ModelListFilters{
+		ProviderID: providerID,
+		Search:     search,
+		Page:       page,
+		PageSize:   pageSize,
 	}
 
 	modelRepo := storage.NewModelRepository(h.db)
 	providerRepo := storage.NewProviderRepository(h.db)
 
-	var modelsList []*models.Model
-	var err error
-
-	if providerID != "" {
-		// Filter by provider
-		modelsList, err = modelRepo.GetByProvider(r.Context(), providerID)
-	} else {
-		// Get all models with pagination
-		modelsList, err = modelRepo.List(r.Context(), limit, offset)
-	}
-
+	result, err := modelRepo.ListWithFilters(r.Context(), filters)
 	if err != nil {
 		utils.RespondWithError(w, http.StatusInternalServerError, "Failed to list models")
 		return
 	}
 
-	// Filter by search term if provided
-	if search != "" {
-		filtered := make([]*models.Model, 0)
-		searchLower := strings.ToLower(search)
-		for _, m := range modelsList {
-			if strings.Contains(strings.ToLower(m.ModelName), searchLower) {
-				filtered = append(filtered, m)
-			}
-		}
-		modelsList = filtered
-	}
-
 	// Build responses
-	responses := make([]ModelResponse, 0, len(modelsList))
-	for _, m := range modelsList {
+	responses := make([]ModelResponse, 0, len(result.Models))
+	for _, m := range result.Models {
 		// Get provider name
 		providerName := m.ProviderID
 		providerUUID, err := uuid.Parse(m.ProviderID)
@@ -637,7 +624,13 @@ func (h *AdminModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	utils.RespondWithJSON(w, http.StatusOK, responses)
+	// Return paginated response
+	utils.RespondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"items":       responses,
+		"total_count": result.TotalCount,
+		"page":        result.Page,
+		"page_size":   result.PageSize,
+	})
 }
 
 // GetByID handles GET /admin/models/:id - Get model details

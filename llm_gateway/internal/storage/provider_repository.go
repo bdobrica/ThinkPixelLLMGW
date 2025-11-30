@@ -80,6 +80,84 @@ func (r *ProviderRepository) List(ctx context.Context) ([]*models.Provider, erro
 	return providers, nil
 }
 
+// ProviderListFilters contains filter parameters for listing providers
+type ProviderListFilters struct {
+	Search      string
+	EnabledOnly *bool
+	Page        int
+	PageSize    int
+}
+
+// ProviderListResult contains paginated provider list results
+type ProviderListResult struct {
+	Providers  []*models.Provider
+	TotalCount int
+	Page       int
+	PageSize   int
+}
+
+// ListWithFilters returns providers with filtering and pagination
+func (r *ProviderRepository) ListWithFilters(ctx context.Context, filters ProviderListFilters) (*ProviderListResult, error) {
+	// Build WHERE clause
+	var whereClauses []string
+	var args []interface{}
+	argCount := 1
+
+	if filters.Search != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(name ILIKE $%d OR display_name ILIKE $%d)", argCount, argCount))
+		args = append(args, "%"+filters.Search+"%")
+		argCount++
+	}
+
+	if filters.EnabledOnly != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("enabled = $%d", argCount))
+		args = append(args, *filters.EnabledOnly)
+		argCount++
+	}
+
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + whereClauses[0]
+		for i := 1; i < len(whereClauses); i++ {
+			whereClause += " AND " + whereClauses[i]
+		}
+	}
+
+	// Get total count
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM providers %s", whereClause)
+	var totalCount int
+	err := r.db.conn.GetContext(ctx, &totalCount, countQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count providers: %w", err)
+	}
+
+	// Get paginated results
+	offset := (filters.Page - 1) * filters.PageSize
+	dataQuery := fmt.Sprintf(`
+		SELECT id, name, display_name, provider_type, encrypted_credentials,
+		       config, enabled, created_at, updated_at
+		FROM providers
+		%s
+		ORDER BY name
+		LIMIT $%d OFFSET $%d
+	`, whereClause, argCount, argCount+1)
+
+	args = append(args, filters.PageSize, offset)
+
+	var providers []*models.Provider
+	err = r.db.conn.SelectContext(ctx, &providers, dataQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list providers: %w", err)
+	}
+
+	return &ProviderListResult{
+		Providers:  providers,
+		TotalCount: totalCount,
+		Page:       filters.Page,
+		PageSize:   filters.PageSize,
+	}, nil
+}
+
 // Create creates a new provider
 func (r *ProviderRepository) Create(ctx context.Context, provider *models.Provider) error {
 	query := `

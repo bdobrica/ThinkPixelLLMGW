@@ -124,6 +124,105 @@ func (r *ModelAliasRepository) List(ctx context.Context) ([]*models.ModelAlias, 
 	return aliases, nil
 }
 
+// AliasListFilters contains filter parameters for listing aliases
+type AliasListFilters struct {
+	ProviderID string
+	Search     string
+	Tags       map[string]string // key-value pairs to filter by
+	Page       int
+	PageSize   int
+}
+
+// AliasListResult contains paginated alias list results
+type AliasListResult struct {
+	Aliases    []*models.ModelAlias
+	TotalCount int
+	Page       int
+	PageSize   int
+}
+
+// ListWithFilters returns aliases with filtering and pagination
+func (r *ModelAliasRepository) ListWithFilters(ctx context.Context, filters AliasListFilters) (*AliasListResult, error) {
+	// Build WHERE clause
+	var whereClauses []string
+	var args []interface{}
+	argCount := 1
+
+	if filters.ProviderID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("provider_id = $%d", argCount))
+		args = append(args, filters.ProviderID)
+		argCount++
+	}
+
+	if filters.Search != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("alias ILIKE $%d", argCount))
+		args = append(args, "%"+filters.Search+"%")
+		argCount++
+	}
+
+	// For tag filtering, we need a subquery that checks if ALL specified tags match
+	if len(filters.Tags) > 0 {
+		tagConditions := []string{}
+		for key, value := range filters.Tags {
+			tagConditions = append(tagConditions,
+				fmt.Sprintf("EXISTS (SELECT 1 FROM model_alias_tags WHERE model_alias_id = model_aliases.id AND key = $%d AND value = $%d)",
+					argCount, argCount+1))
+			args = append(args, key, value)
+			argCount += 2
+		}
+		whereClauses = append(whereClauses, tagConditions...)
+	}
+
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + whereClauses[0]
+		for i := 1; i < len(whereClauses); i++ {
+			whereClause += " AND " + whereClauses[i]
+		}
+	}
+
+	// Get total count
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM model_aliases %s", whereClause)
+	var totalCount int
+	err := r.db.conn.GetContext(ctx, &totalCount, countQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count aliases: %w", err)
+	}
+
+	// Get paginated results
+	offset := (filters.Page - 1) * filters.PageSize
+	dataQuery := fmt.Sprintf(`
+		SELECT id, alias, target_model_id, provider_id, custom_config,
+		       enabled, created_at, updated_at
+		FROM model_aliases
+		%s
+		ORDER BY alias
+		LIMIT $%d OFFSET $%d
+	`, whereClause, argCount, argCount+1)
+
+	args = append(args, filters.PageSize, offset)
+
+	var aliases []*models.ModelAlias
+	err = r.db.conn.SelectContext(ctx, &aliases, dataQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list aliases: %w", err)
+	}
+
+	// Load tags for each alias
+	for _, alias := range aliases {
+		if err := r.loadTags(ctx, alias); err != nil {
+			return nil, fmt.Errorf("failed to load tags: %w", err)
+		}
+	}
+
+	return &AliasListResult{
+		Aliases:    aliases,
+		TotalCount: totalCount,
+		Page:       filters.Page,
+		PageSize:   filters.PageSize,
+	}, nil
+}
+
 // ListEnabled returns only enabled model aliases
 func (r *ModelAliasRepository) ListEnabled(ctx context.Context) ([]*models.ModelAlias, error) {
 	query := `

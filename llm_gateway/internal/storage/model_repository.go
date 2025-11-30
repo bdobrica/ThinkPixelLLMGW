@@ -315,6 +315,116 @@ func (r *ModelRepository) List(ctx context.Context, limit, offset int) ([]*model
 	return modelsList, nil
 }
 
+// ModelListFilters contains filter parameters for listing models
+type ModelListFilters struct {
+	ProviderID string
+	Search     string
+	Page       int
+	PageSize   int
+}
+
+// ModelListResult contains paginated model list results
+type ModelListResult struct {
+	Models     []*models.Model
+	TotalCount int
+	Page       int
+	PageSize   int
+}
+
+// ListWithFilters returns models with filtering and pagination
+func (r *ModelRepository) ListWithFilters(ctx context.Context, filters ModelListFilters) (*ModelListResult, error) {
+	// Build WHERE clause
+	var whereClauses []string
+	var args []interface{}
+	argCount := 1
+
+	if filters.ProviderID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("provider_id = $%d", argCount))
+		args = append(args, filters.ProviderID)
+		argCount++
+	}
+
+	if filters.Search != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("model_name ILIKE $%d", argCount))
+		args = append(args, "%"+filters.Search+"%")
+		argCount++
+	}
+
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + whereClauses[0]
+		for i := 1; i < len(whereClauses); i++ {
+			whereClause += " AND " + whereClauses[i]
+		}
+	}
+
+	// Get total count
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM models %s", whereClause)
+	var totalCount int
+	err := r.db.conn.GetContext(ctx, &totalCount, countQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count models: %w", err)
+	}
+
+	// Get paginated results
+	offset := (filters.Page - 1) * filters.PageSize
+	dataQuery := fmt.Sprintf(`
+		SELECT 
+			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			supported_regions, supported_resolutions,
+			supports_assistant_prefill, supports_audio_input, supports_audio_output,
+			supports_computer_use, supports_embedding_image_input, supports_function_calling,
+			supports_image_input, supports_native_streaming, supports_parallel_function_calling,
+			supports_pdf_input, supports_prompt_caching, supports_reasoning,
+			supports_response_schema, supports_service_tier, supports_system_messages,
+			supports_tool_choice, supports_url_context, supports_video_input,
+			supports_vision, supports_web_search,
+			supports_text_input, supports_text_output, supports_image_output,
+			supports_video_output, supports_batch_requests, supports_json_output,
+			supports_rerank, supports_embedding_text_input, supports_streaming_output,
+			tokens_per_minute, requests_per_minute, requests_per_day,
+			max_tokens, max_input_tokens, max_output_tokens, max_query_tokens,
+			max_tokens_per_document_chunk, max_document_chunks_per_query,
+			tool_use_system_prompt_tokens, output_vector_size,
+			max_audio_length_hours, max_audio_per_prompt, max_images_per_prompt,
+			max_pdf_size_mb, max_video_length, max_videos_per_prompt,
+			max_requests_per_second, max_concurrent_requests, max_batch_size,
+			max_audio_length_seconds, max_video_length_seconds,
+			max_context_window_tokens, max_output_tokens_per_request,
+			max_input_tokens_per_request,
+			currency, pricing_component_schema_version,
+			average_latency_ms, p95_latency_ms, availability_slo, sla_tier, supports_sla,
+			metadata_schema_version, metadata,
+			created_at, updated_at
+		FROM models
+		%s
+		ORDER BY model_name
+		LIMIT $%d OFFSET $%d
+	`, whereClause, argCount, argCount+1)
+
+	args = append(args, filters.PageSize, offset)
+
+	var modelsList []*models.Model
+	err = r.db.conn.SelectContext(ctx, &modelsList, dataQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list models: %w", err)
+	}
+
+	// Load pricing components for each model
+	for _, model := range modelsList {
+		if err := r.loadPricingComponents(ctx, model); err != nil {
+			return nil, fmt.Errorf("failed to load pricing components: %w", err)
+		}
+	}
+
+	return &ModelListResult{
+		Models:     modelsList,
+		TotalCount: totalCount,
+		Page:       filters.Page,
+		PageSize:   filters.PageSize,
+	}, nil
+}
+
 // Delete deletes a model
 func (r *ModelRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	// Get model name before deletion to invalidate cache
