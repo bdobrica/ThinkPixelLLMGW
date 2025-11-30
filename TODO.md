@@ -3,7 +3,7 @@
 This document tracks all implementation tasks for the LLM Gateway project.
 
 **Last Updated:** November 30, 2025  
-**Project Status:** Core gateway fully functional with OpenAI provider. Async queue system and admin JWT authentication implemented. Ready for admin API CRUD endpoints and additional provider implementations.
+**Project Status:** Core gateway fully functional with OpenAI provider. Async queue system, admin JWT authentication, and full admin CRUD endpoints for providers/models/aliases implemented. Only API key management endpoint remains for MVP completion.
 
 ## 📊 Current Implementation Summary
 
@@ -13,28 +13,65 @@ This document tracks all implementation tasks for the LLM Gateway project.
 - **Provider System**: Pluggable architecture, OpenAI provider with streaming, registry with auto-reload
 - **Async Processing**: Hybrid queue system (Memory/Redis), billing and usage workers with batch processing
 - **Rate Limiting**: Redis-backed sliding window algorithm with atomic operations
-- **Billing**: Redis cache with background sync, budget checks, cost tracking
-- **Logging**: Request logging, Redis buffer, S3 writer (background worker TODO)
-- **Encryption**: AES-256-GCM for provider credentials
+- **Billing**: Redis cache with 5-minute background sync, budget checks, cost tracking
+- **Logging**: Request logger with file rotation, Redis buffer, S3 writer (background worker TODO)
+- **Encryption**: AES-256-GCM for provider credentials with environment-based key management
 - **HTTP API**: Chat completions endpoint, health checks, graceful shutdown
-- **Admin API**: JWT authentication endpoints (login with email/password or service token)
+- **Admin API**: 
+  - JWT authentication (email/password and service token flows)
+  - Complete CRUD for providers (Create, Read, Update, Delete with encryption)
+  - Complete CRUD for models (100+ fields, pricing, features, capabilities)
+  - Complete CRUD for model aliases (custom configs, tags, resolution)
+  - Role-based access control (viewer, editor, admin)
+- **Configuration**: Complete environment-based config with all sections (DB, Redis, Cache, Logging, Provider)
 
 ### 🚧 Partially Implemented
-- **S3 Logging**: Writer implemented, background worker integration pending
-- **Admin CRUD**: Authentication complete, CRUD endpoints for API keys/providers/aliases pending
+- **S3 Logging**: Writer and sink implemented, background worker integration pending
+- **Admin API Keys**: Endpoint registered but not implemented (placeholder)
 - **Metrics**: Noop implementation, Prometheus integration pending
 - **Providers**: OpenAI complete, VertexAI and Bedrock stubs exist
 
 ### 📝 Test Coverage
-- **23+ test files** covering auth, models, storage, queue, billing, logging, utils
+- **30+ test files** covering auth, models, storage, queue, billing, logging, utils, httpapi
 - Unit tests for core functionality (JWT, Argon2, encryption, queues, workers)
-- Integration tests for queue system
+- Integration tests for queue system and admin CRUD endpoints
 - Manual testing guide with Docker setup (`TESTING_GUIDE.md`)
 
-### 🎯 Next Priority: Admin CRUD Endpoints
-Implement REST endpoints for managing API keys, providers, and model aliases using the existing repository layer and JWT authentication.
+### 🎯 Next Priority: API Key Management Endpoint
+Implement the AdminKeysHandler to provide REST endpoints for creating, listing, updating, and revoking API keys. This is the final piece needed to complete the admin API MVP.
 
 ## ✅ Recently Completed
+
+### Admin CRUD Endpoints for Providers, Models & Aliases (November 30, 2025)
+- **Files Created/Updated:** 6 files (~2,600 lines of code)
+- **Core Features:**
+  - Complete CRUD operations for providers with credential encryption
+  - Complete CRUD operations for models with 100+ fields (pricing, features, limits)
+  - Complete CRUD operations for model aliases with custom configurations
+  - Role-based access control (viewer for reads, admin for writes)
+  - Comprehensive integration tests for all endpoints
+  - Pagination and filtering support
+- **Implemented Endpoints:**
+  - **Providers:** GET/POST `/admin/providers`, GET/PUT/DELETE `/admin/providers/:id`
+  - **Models:** GET/POST `/admin/models`, GET/PUT/DELETE `/admin/models/:id`
+  - **Aliases:** GET/POST `/admin/aliases`, GET/PUT/DELETE `/admin/aliases/:id`
+- **Files:**
+  - `internal/httpapi/admin_providers_handler.go` - Provider CRUD with encryption (474 lines)
+  - `internal/httpapi/admin_providers_handler_integration_test.go` - Integration tests (350+ lines)
+  - `internal/httpapi/admin_models_handler.go` - Model CRUD with full schema (1089 lines)
+  - `internal/httpapi/admin_models_handler_integration_test.go` - Integration tests (400+ lines)
+  - `internal/httpapi/admin_aliases_handler.go` - Alias CRUD with validation (521 lines)
+  - `internal/httpapi/admin_aliases_handler_integration_test.go` - Integration tests (300+ lines)
+- **Key Features:**
+  - Provider credentials encrypted with AES-256-GCM before storage
+  - Model pricing supports 10+ pricing components (input/output/cached tokens, images, audio, etc.)
+  - Model features support 40+ capability flags (vision, function calling, streaming, etc.)
+  - Pagination with page/page_size query parameters
+  - Filtering and search across all resources
+  - Cache invalidation on updates
+  - Provider registry reload on provider changes
+  - Complete request/response models with JSON validation
+- **Status:** ✅ **Admin CRUD complete! Only API key management endpoint remains.**
 
 ### Admin JWT Authentication System (November 30, 2025)
 - **Files Created/Updated:** 11 files (~1,400 lines of code)
@@ -151,34 +188,29 @@ Implement REST endpoints for managing API keys, providers, and model aliases usi
 
 ### Next Steps for Admin API
 
-With JWT authentication now complete, the following endpoints can be implemented:
+With JWT authentication and CRUD endpoints now complete, only API key management remains:
 
-**Authentication Endpoints:**
-- `POST /admin/auth/login` - Email/password login → JWT
-  ```json
-  {"email": "admin@example.com", "password": "secret"}
-  ```
-- `POST /admin/auth/token` - Service name + token → JWT
-  ```json
-  {"service_name": "monitoring-service", "token": "service-secret-token"}
-  ```
-- Use `GenerateAdminJWTWithPassword()` and `GenerateAdminJWTWithToken()`
+**Completed Endpoints:**
+- ✅ `POST /admin/auth/login` - Email/password login → JWT
+- ✅ `POST /admin/auth/token` - Service name + token → JWT
+- ✅ `GET/POST /admin/providers` - List and create providers (viewer/admin roles)
+- ✅ `GET/PUT/DELETE /admin/providers/:id` - Provider CRUD (viewer/admin roles)
+- ✅ `GET/POST /admin/models` - List and create models (viewer/admin roles)
+- ✅ `GET/PUT/DELETE /admin/models/:id` - Model CRUD (viewer/admin roles)
+- ✅ `GET/POST /admin/aliases` - List and create aliases (viewer/admin roles)
+- ✅ `GET/PUT/DELETE /admin/aliases/:id` - Alias CRUD (viewer/admin roles)
 
-**Protected Admin Endpoints** (use `AdminJWTMiddleware`):
-- `GET /admin/api-keys` - List API keys (viewer role)
-- `POST /admin/api-keys` - Create API key (editor role)
-- `PUT /admin/api-keys/:id` - Update API key (editor role)
-- `DELETE /admin/api-keys/:id` - Delete API key (admin role)
-- Similar endpoints for providers, models, aliases, users, tokens
+**Remaining Endpoint (Final MVP Task):**
+- ❌ `GET/POST /admin/keys` - List and create API keys (viewer/editor roles)
+- ❌ `GET/PUT/DELETE /admin/keys/:id` - API key CRUD (viewer/editor/admin roles)
+- ❌ `POST /admin/keys/:id/regenerate` - Regenerate API key (editor role)
 
-**Implementation Pattern:**
-```go
-// In router.go
-adminRouter := chi.NewRouter()
-adminRouter.Use(middleware.AdminJWTMiddleware(cfg, "viewer")) // Minimum role
-adminRouter.Get("/api-keys", adminHandler.ListAPIKeys)
-adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys", adminHandler.CreateAPIKey)
-```
+**Implementation Notes:**
+- Replace placeholder in `admin_handler.go` `handleAdminKeys()` with full implementation
+- Create `AdminKeysHandler` similar to existing admin handlers
+- Use existing `APIKeyRepository` from storage layer
+- Follow same patterns as providers/models/aliases handlers
+- Include integration tests following existing test patterns
 
 ### Proxy Handler & HTTP Router (November 23, 2025)
 - **Files Created/Updated:** 5 files (~600 lines of code)
@@ -260,9 +292,9 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
 
 ---
 
-## 🎯 Milestone 1: MVP - Core Functionality ✅ COMPLETED
+## 🎯 Milestone 1: MVP - Core Functionality ✅ NEARLY COMPLETE (API Key Management Pending)
 
-**Status**: All core functionality implemented and tested. Gateway is operational with OpenAI provider.
+**Status**: All core functionality implemented and tested. Gateway is operational with OpenAI provider. Admin CRUD endpoints complete for providers, models, and aliases. Only API key management endpoint implementation remains.
 
 ### 1.1 Database Layer ✅
 - [x] **Design PostgreSQL schema** (see `DATABASE_SCHEMA.md`)
@@ -369,23 +401,24 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
   - [x] Buffer statistics and monitoring
   - [x] Handle buffer overflow (FIFO with size limit)
 
-### 1.3 Configuration Management
+### 1.3 Configuration Management ✅
 - [x] **Expand config package** (`internal/config/config.go`) ✅
   - [x] Add DatabaseURL (PostgreSQL connection string)
-  - [x] Add database pool configuration (max connections, lifetimes)
-  - [x] Add cache configuration (size, TTL)
-  - [x] Add RedisURL and Redis pool configuration
-  - [x] Environment variable parsing with defaults
-  - [ ] Add S3 config (endpoint, bucket, region, credentials)
-  - [ ] Add JWT secret
-  - [ ] Add encryption key (32 bytes for AES-256)
-  - [ ] Support config files (YAML/TOML) in addition to env vars
-  - [ ] Validation logic for required fields
+  - [x] Add DatabaseConfig (MaxOpenConns, MaxIdleConns, ConnMaxLifetime, ConnMaxIdleTime)
+  - [x] Add CacheConfig (API key cache size/TTL, model cache size/TTL)
+  - [x] Add RedisConfig (Address, Password, DB, PoolSize, MinIdleConns, Timeouts)
+  - [x] Add ProviderConfig (ReloadInterval, RequestTimeout)
+  - [x] Add RequestLoggerConfig (FilePathTemplate, MaxSize, MaxFiles, BufferSize, FlushInterval)
+  - [x] Add LoggingSinkConfig (S3 bucket, region, prefix, pod name, flush settings)
+  - [x] Add JWTSecret for admin authentication
+  - [x] Environment variable parsing with defaults (getEnvInt, getEnvInt64, getEnvDuration, getEnvString)
+  - [x] Validation logic for required fields (DATABASE_URL)
+  - [x] Encryption key loaded from ENCRYPTION_KEY environment variable
 
 - [x] **Environment-based configs** ✅
   - [x] Development defaults (see `ENV_VARIABLES.md`)
   - [x] Production examples (see `ENV_VARIABLES.md`)
-  - [ ] Docker-compose configuration example
+  - [x] Complete environment variable support for all config sections
 
 ### 1.4 Provider Implementation ✅
 - [x] **Pluggable Provider Architecture** (`internal/providers/`) ✅
@@ -462,19 +495,34 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
   - [x] Error handling for all failure scenarios
 
 - [x] **HTTP Router** (`internal/httpapi/router.go`) ✅
-  - [x] Dependency injection system
+  - [x] Dependency injection system with complete service graph
   - [x] Initialize all real implementations (no more Noops):
     - [x] Database connection with pooling and caching
     - [x] Redis client with connection pooling
-    - [x] Encryption service (AES-256)
-    - [x] Provider registry with auto-reload
-    - [x] Rate limiter (Redis-backed)
-    - [x] Billing service (Redis cache with DB sync)
+    - [x] Encryption service (AES-256-GCM)
+    - [x] API key, admin user, and admin token repositories
+    - [x] Provider registry with auto-reload (5-minute default)
+    - [x] Rate limiter (Redis-backed implementation ready)
+    - [x] Billing service (Redis cache with 5-minute DB sync)
+    - [x] Request logger with file rotation
     - [x] Logging buffer (Redis queue)
+    - [x] Queue infrastructure (hybrid memory/Redis)
+    - [x] Billing and usage queue workers (batch processing)
   - [x] Route registration:
-    - [x] POST `/v1/chat/completions` - Main proxy endpoint
+    - [x] POST `/v1/chat/completions` - Main proxy endpoint with API key auth
     - [x] GET `/health` - Health check
-    - [x] GET `/metrics` - Metrics endpoint (placeholder)
+    - [x] GET `/metrics` - Metrics endpoint (noop for now)
+    - [x] POST `/admin/auth/login` - Admin email/password authentication
+    - [x] POST `/admin/auth/token` - Admin service token authentication
+    - [x] GET `/admin/test` - Protected test endpoint
+    - [x] GET `/admin/keys` - API key management (placeholder)
+    - [x] `/admin/providers` - Full CRUD with role-based access (viewer/admin)
+    - [x] `/admin/models` - Full CRUD with role-based access (viewer/admin)
+    - [x] `/admin/aliases` - Full CRUD with role-based access (viewer/admin)
+  - [x] Middleware stack with API key and JWT authentication
+  - [x] Role-based access control (viewer, editor, admin)
+  - [x] Provider credentials update from environment variables
+  - [x] Queue workers started in background
   - [x] Return dependencies for cleanup
 
 - [x] **API Key Store Adapter** (`internal/httpapi/api_key_store.go`) ✅
@@ -511,26 +559,45 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
   - [x] Troubleshooting guide
   - [x] Load testing with Apache Bench
 
-### 1.6 Logging Pipeline ✅ (Partial - S3 Writer Implemented)
+### 1.6 Logging Pipeline ✅ (Implemented - S3 Background Worker Pending)
+- [x] **Redis Buffer** (`internal/logging/redis_buffer.go`) ✅
+  - [x] Redis-backed buffer for log records using Redis lists
+  - [x] Enqueue with LPUSH, handle overflow with LTRIM
+  - [x] DequeueBatch with RPOP for batch processing
+  - [x] QueueDepth monitoring
+  - [x] Clear method for maintenance
+  - [x] Configurable queue key, max size, and batch size
+
 - [x] **S3 Writer** (`internal/logging/s3_writer.go`) ✅
-  - [x] AWS SDK integration for S3 uploads
+  - [x] AWS SDK v2 integration for S3 uploads
   - [x] WriteBatch method for uploading log records
   - [x] File naming: `logs/<year>/<month>/<day>/<pod>-<timestamp>-<nano>.jsonl`
-  - [x] JSON Lines format for efficient parsing
+  - [x] JSON Lines format (application/x-ndjson)
   - [x] Structured logging with utils.Logger
   - [ ] Background worker to drain Redis buffer (TODO)
   - [ ] Compression (gzip) for storage efficiency (TODO)
-  - [ ] Error handling and retries (TODO)
   - [ ] Graceful shutdown (flush pending logs) (TODO)
 
-- [x] **Logging Sink** (`internal/logging/sink.go`) ✅ (Partial)
-  - [x] Define Sink interface
-  - [x] Define Record struct
-  - [x] Redis buffer integration (via RedisLoggingSink adapter)
-  - [ ] Wire S3 writer for persistent storage
-  - [ ] Metrics for log queue depth
+- [x] **Logging Sink** (`internal/logging/sink.go`) ✅
+  - [x] Define Sink interface (Enqueue, Shutdown)
+  - [x] Define LogRecord struct (timestamp, API key, provider, model, costs, errors)
+  - [x] NoopSink implementation for testing
+  - [x] S3Sink with in-memory queue and periodic flushing
+  - [x] RedisLoggingSink adapter in httpapi layer
+  - [x] Integration in router.go with Redis buffer
+  - [ ] Wire S3Sink background worker for persistent storage (TODO)
+  - [ ] Metrics for log queue depth (TODO)
 
-### 1.7 Admin API - Basic Operations ✅ (Partial - Authentication Complete, CRUD Pending)
+- [x] **Request Logger** (`internal/logging/request_logger.go`) ✅
+  - [x] File-based request logging with rotation
+  - [x] JSON Lines format with buffering
+  - [x] Periodic flush (60s default)
+  - [x] Rotation based on file size (10MB default)
+  - [x] Maximum file retention (5 files default)
+  - [x] Graceful shutdown with buffer flush
+  - [x] Integration in router with complete lifecycle management
+
+### 1.7 Admin API - Basic Operations ✅ (Nearly Complete - Only API Key Management Pending)
 - [x] **Admin User & Token Models** (`internal/models/admin_user.go`, `admin_token.go`) ✅
   - [x] AdminUser model with email/password authentication
   - [x] AdminToken model with service_name/token authentication
@@ -572,7 +639,8 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
   - [x] GET `/admin/test` - Protected test endpoint
   - [x] Response includes: token, expires_at, admin_id, auth_type
 
-- [ ] **API Key Management** (`internal/httpapi/admin_handler.go`) 🔨 **NEXT PRIORITY**
+- [ ] **API Key Management** 🔨 **NEXT PRIORITY**
+  - [ ] Implement AdminKeysHandler (currently placeholder in admin_handler.go)
   - [ ] POST `/admin/keys` - Create new API key
     - [ ] Generate cryptographically secure random key (32+ chars)
     - [ ] Hash key with SHA-256
@@ -583,58 +651,77 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
   - [ ] PUT `/admin/keys/:id` - Update key (rate limits, budget, allowed models)
   - [ ] DELETE `/admin/keys/:id` - Revoke key (set enabled=false)
   - [ ] POST `/admin/keys/:id/regenerate` - Generate new key, revoke old
+  - [ ] Wire up proper routing in router.go (currently just placeholder)
 
-- [ ] **Provider Management** (`internal/httpapi/admin_handler.go`)
-  - [ ] POST `/admin/providers` - Add new provider
-    - [ ] Accept name, type (openai, vertexai, bedrock), config
-    - [ ] Encrypt credentials with storage.Encryption
-    - [ ] Validate provider type and required fields
-  - [ ] GET `/admin/providers` - List all providers
-    - [ ] Include id, name, type, enabled, model count
-    - [ ] Exclude encrypted credentials
-  - [ ] GET `/admin/providers/:id` - Get provider details
-    - [ ] Include decrypted credentials (admin role only)
-    - [ ] Include associated models
-  - [ ] PUT `/admin/providers/:id` - Update provider
-    - [ ] Update config, credentials, enabled status
-    - [ ] Re-encrypt credentials if changed
-  - [ ] DELETE `/admin/providers/:id` - Disable provider
-    - [ ] Soft delete (set enabled=false)
-    - [ ] Trigger provider registry reload
+- [x] **Provider Management** (`internal/httpapi/admin_providers_handler.go`) ✅
+  - [x] POST `/admin/providers` - Create new provider (admin role)
+    - [x] Accept name, display_name, type, credentials, config, enabled
+    - [x] Validate provider type (openai, anthropic, vertexai, bedrock, etc.)
+    - [x] Encrypt credentials with storage.Encryption (AES-256-GCM)
+    - [x] Store in database and trigger registry reload
+  - [x] GET `/admin/providers` - List all providers (viewer role)
+    - [x] Paginated response with total count
+    - [x] Include id, name, type, enabled, model count
+    - [x] Exclude encrypted credentials from list view
+    - [x] Support filtering and search
+  - [x] GET `/admin/providers/:id` - Get provider details (viewer role)
+    - [x] Include decrypted credentials (admin role only)
+    - [x] Include associated models list
+    - [x] Full provider configuration
+  - [x] PUT `/admin/providers/:id` - Update provider (admin role)
+    - [x] Update display_name, config, credentials, enabled status
+    - [x] Re-encrypt credentials if changed
+    - [x] Trigger provider registry reload
+  - [x] DELETE `/admin/providers/:id` - Disable provider (admin role)
+    - [x] Soft delete (set enabled=false)
+    - [x] Trigger provider registry reload
+  - [x] Complete integration tests (admin_providers_handler_integration_test.go)
 
-- [ ] **Model Management** (`internal/httpapi/admin_handler.go`)
-  - [ ] POST `/admin/models` - Add new model
-    - [ ] Accept model_name, provider_id, pricing_components, features
-    - [ ] Validate provider exists and is enabled
-    - [ ] Validate pricing component schema
-  - [ ] GET `/admin/models` - List all models
-    - [ ] Include id, model_name, provider_id, pricing, features
-    - [ ] Support filtering by provider_id
-    - [ ] Support pagination and search
-  - [ ] GET `/admin/models/:id` - Get model details
-    - [ ] Include full model capabilities and pricing
-    - [ ] Include pricing components breakdown
-  - [ ] PUT `/admin/models/:id` - Update model
-    - [ ] Update pricing, features, deprecation status
-    - [ ] Invalidate model cache on update
-  - [ ] DELETE `/admin/models/:id` - Delete model
-    - [ ] Check for dependent aliases before deletion
-    - [ ] Invalidate model cache
+- [x] **Model Management** (`internal/httpapi/admin_models_handler.go`) ✅
+  - [x] POST `/admin/models` - Create new model (admin role)
+    - [x] Accept 100+ fields including pricing, features, limits
+    - [x] Validate provider exists and is enabled
+    - [x] Support all pricing components (input/output/cached/reasoning tokens, audio, images, etc.)
+    - [x] Support 40+ feature flags (vision, function calling, streaming, etc.)
+  - [x] GET `/admin/models` - List all models (viewer role)
+    - [x] Paginated response with filtering
+    - [x] Filter by provider_id, deprecated status, search query
+    - [x] Include pricing and feature summary
+  - [x] GET `/admin/models/:id` - Get model details (viewer role)
+    - [x] Complete model capabilities and pricing breakdown
+    - [x] All 100+ fields with proper JSON serialization
+  - [x] PUT `/admin/models/:id` - Update model (admin role)
+    - [x] Update pricing, features, deprecation status
+    - [x] Invalidate model cache on update
+    - [x] Support partial updates with pointer fields
+  - [x] DELETE `/admin/models/:id` - Delete model (admin role)
+    - [x] Check for dependent aliases before deletion
+    - [x] Invalidate model cache
+  - [x] Complete integration tests (admin_models_handler_integration_test.go)
 
-- [ ] **Model Alias Management**
-  - [ ] POST `/admin/aliases` - Create model alias
-    - [ ] Accept alias_name, actual_model, provider_id
-    - [ ] Validate model exists and provider is enabled
-  - [ ] GET `/admin/aliases` - List all aliases
-  - [ ] PUT `/admin/aliases/:id` - Update alias
-  - [ ] DELETE `/admin/aliases/:id` - Delete alias
+- [x] **Model Alias Management** (`internal/httpapi/admin_aliases_handler.go`) ✅
+  - [x] POST `/admin/aliases` - Create model alias (admin role)
+    - [x] Accept alias_name, target_model_id, provider_id, custom_config, tags
+    - [x] Validate model and provider exist and are enabled
+    - [x] Support custom configuration overrides
+  - [x] GET `/admin/aliases` - List all aliases (viewer role)
+    - [x] Paginated response with filtering
+    - [x] Filter by enabled status, search query
+  - [x] GET `/admin/aliases/:id` - Get alias details (viewer role)
+  - [x] PUT `/admin/aliases/:id` - Update alias (admin role)
+    - [x] Update alias_name, target_model_id, provider_id, custom_config
+    - [x] Support enabling/disabling aliases
+  - [x] DELETE `/admin/aliases/:id` - Delete alias (admin role)
+    - [x] Remove alias from database
+  - [x] Complete integration tests (admin_aliases_handler_integration_test.go)
 
-- [ ] **Request/Response Models**
-  - [ ] Define JSON schemas for all admin endpoints
-  - [ ] CreateAPIKeyRequest, UpdateAPIKeyRequest, APIKeyResponse
-  - [ ] CreateProviderRequest, UpdateProviderRequest, ProviderResponse
-  - [ ] CreateAliasRequest, AliasResponse
-  - [ ] Error response standardization
+- [x] **Request/Response Models** ✅
+  - [x] Complete JSON schemas for all admin endpoints
+  - [x] Provider: CreateProviderRequest, UpdateProviderRequest, ProviderResponse, ProviderDetailResponse
+  - [x] Model: CreateModelRequest, UpdateModelRequest, ModelResponse, ListModelsResponse
+  - [x] Alias: CreateAliasRequest, UpdateAliasRequest, AliasResponse, ListAliasesResponse
+  - [x] Auth: LoginRequest, TokenAuthRequest, AuthResponse
+  - [x] Standardized error responses with utils.RespondWithError
 
 ### 1.8 Testing & Validation ✅ (Partial - Tests Exist)
 - [x] **Unit Tests** ✅ (Partial)
