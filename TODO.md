@@ -602,6 +602,25 @@ adminRouter.With(middleware.AdminJWTMiddleware(cfg, "editor")).Post("/api-keys",
     - [ ] Soft delete (set enabled=false)
     - [ ] Trigger provider registry reload
 
+- [ ] **Model Management** (`internal/httpapi/admin_handler.go`)
+  - [ ] POST `/admin/models` - Add new model
+    - [ ] Accept model_name, provider_id, pricing_components, features
+    - [ ] Validate provider exists and is enabled
+    - [ ] Validate pricing component schema
+  - [ ] GET `/admin/models` - List all models
+    - [ ] Include id, model_name, provider_id, pricing, features
+    - [ ] Support filtering by provider_id
+    - [ ] Support pagination and search
+  - [ ] GET `/admin/models/:id` - Get model details
+    - [ ] Include full model capabilities and pricing
+    - [ ] Include pricing components breakdown
+  - [ ] PUT `/admin/models/:id` - Update model
+    - [ ] Update pricing, features, deprecation status
+    - [ ] Invalidate model cache on update
+  - [ ] DELETE `/admin/models/:id` - Delete model
+    - [ ] Check for dependent aliases before deletion
+    - [ ] Invalidate model cache
+
 - [ ] **Model Alias Management**
   - [ ] POST `/admin/aliases` - Create model alias
     - [ ] Accept alias_name, actual_model, provider_id
