@@ -7,27 +7,29 @@ import (
 	"sync"
 )
 
-// Defines log levels
+// LogLevel represents an enumeration of log levels
+type LogLevel int
+
 const (
-	Critical = 50
-	Fatal    = Critical
-	Error    = 40
-	Warning  = 30
-	Info     = 20
-	Debug    = 10
-	NotSet   = 0
+	Critical LogLevel = 50
+	Fatal    LogLevel = Critical
+	Error    LogLevel = 40
+	Warning  LogLevel = 30
+	Info     LogLevel = 20
+	Debug    LogLevel = 10
+	NotSet   LogLevel = 0
 )
 
 // Logger provides structured logging with context
 type Logger struct {
 	prefix        string
 	logger        *log.Logger
-	logLevel      int
+	logLevel      LogLevel
 	logLevelMutex sync.Mutex
 }
 
 // NewLogger creates a new logger with a given prefix
-func NewLogger(prefix string, logLevel ...int) *Logger {
+func NewLogger(prefix string, logLevel ...LogLevel) *Logger {
 	logLevelValue := Warning
 	if len(logLevel) > 0 {
 		logLevelValue = logLevel[0]
@@ -40,7 +42,7 @@ func NewLogger(prefix string, logLevel ...int) *Logger {
 }
 
 // SetLogLevel sets the logging level
-func (l *Logger) SetLogLevel(logLevel int) {
+func (l *Logger) SetLogLevel(logLevel LogLevel) {
 	l.logLevelMutex.Lock()
 	defer l.logLevelMutex.Unlock()
 	l.logLevel = logLevel
