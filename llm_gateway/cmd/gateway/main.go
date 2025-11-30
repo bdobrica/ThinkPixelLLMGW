@@ -59,6 +59,16 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
+	// Shutdown request logger to flush remaining buffered logs
+	if deps.RequestLogger != nil {
+		deps.RequestLogger.Shutdown()
+	}
+
+	// Shutdown billing service to sync final data
+	if billingService, ok := deps.Billing.(interface{ Shutdown(context.Context) error }); ok {
+		_ = billingService.Shutdown(ctx)
+	}
+
 	// Close provider registry (which closes all providers)
 	if registry, ok := deps.Providers.(interface{ Close() error }); ok {
 		_ = registry.Close()

@@ -9,12 +9,13 @@ import (
 
 // Config holds configuration for the gateway.
 type Config struct {
-	HTTPPort  string
-	JWTSecret []byte
-	Database  DatabaseConfig
-	Cache     CacheConfig
-	Redis     RedisConfig
-	Provider  ProviderConfig
+	HTTPPort      string
+	JWTSecret     []byte
+	Database      DatabaseConfig
+	Cache         CacheConfig
+	Redis         RedisConfig
+	Provider      ProviderConfig
+	RequestLogger RequestLoggerConfig
 	// TODO: add S3 config, encryption keys, JWT secret, etc.
 }
 
@@ -53,6 +54,14 @@ type ProviderConfig struct {
 	RequestTimeout time.Duration // Default timeout for provider requests
 }
 
+type RequestLoggerConfig struct {
+	FilePathTemplate string
+	MaxSize          int64
+	MaxFiles         int
+	BufferSize       int
+	FlushInterval    time.Duration
+}
+
 func getEnvInt(key string, defaultValue int) int {
 	val := os.Getenv(key)
 	if val == "" {
@@ -64,6 +73,18 @@ func getEnvInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 
+	return intVal
+}
+
+func getEnvInt64(key string, defaultValue int64) int64 {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	intVal, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return defaultValue
+	}
 	return intVal
 }
 
@@ -129,6 +150,13 @@ func Load() (*Config, error) {
 		Provider: ProviderConfig{
 			ReloadInterval: getEnvDuration("PROVIDER_RELOAD_INTERVAL", 5*time.Minute),
 			RequestTimeout: getEnvDuration("PROVIDER_REQUEST_TIMEOUT", 60*time.Second),
+		},
+		RequestLogger: RequestLoggerConfig{
+			FilePathTemplate: getEnvString("REQUEST_LOGGER_FILE_PATH_TEMPLATE", "/var/log/llm-gateway/requests-%s.jsonl"),
+			MaxSize:          getEnvInt64("REQUEST_LOGGER_MAX_SIZE", 10_485_760),              // default 10 MB
+			MaxFiles:         getEnvInt("REQUEST_LOGGER_MAX_FILES", 5),                        // default 5
+			BufferSize:       getEnvInt("REQUEST_LOGGER_BUFFER_SIZE", 100),                    // default 100
+			FlushInterval:    getEnvDuration("REQUEST_LOGGER_FLUSH_INTERVAL", 60*time.Second), // default 60 seconds
 		},
 	}
 

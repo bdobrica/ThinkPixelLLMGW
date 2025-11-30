@@ -14,38 +14,6 @@ import (
 	"time"
 )
 
-// Helper functions for environment variables
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intVal, err := fmt.Sscanf(value, "%d", new(int)); err == nil && intVal == 1 {
-			var result int
-			fmt.Sscanf(value, "%d", &result)
-			return result
-		}
-	}
-	return defaultValue
-}
-
-func getEnvByteSize(key string, defaultValue int) int {
-	return getEnvInt(key, defaultValue)
-}
-
-func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
-}
-
 // RequestLog defines the JSON structure for a log entry.
 type RequestLog struct {
 	Timestamp  time.Time           `json:"timestamp"`
@@ -72,6 +40,7 @@ type RequestLogger struct {
 	logCh  chan RequestLog
 	doneCh chan struct{}
 	wg     sync.WaitGroup
+	closed bool
 }
 
 // newFileName generates a new log filename by applying the current timestamp
@@ -257,8 +226,16 @@ func (logger *RequestLogger) LogRequest(r *http.Request) {
 }
 
 // Shutdown signals the logger to flush its buffer and close the file.
-// Call Shutdown() from your application’s graceful shutdown handler.
+// Call Shutdown() from your application's graceful shutdown handler.
 func (logger *RequestLogger) Shutdown() {
+	logger.mu.Lock()
+	if logger.closed {
+		logger.mu.Unlock()
+		return
+	}
+	logger.closed = true
+	logger.mu.Unlock()
+
 	close(logger.doneCh)
 	logger.wg.Wait()
 }
@@ -284,28 +261,4 @@ func NewLogger(fileTemplate string, maxSize int64, maxFiles, bufferSize int, flu
 	go logger.run()
 
 	return logger, nil
-}
-
-var RLogger *RequestLogger
-
-func init() {
-	// Read configuration from environment variables
-	// API_GATEWAY_LOG_FILE_PATH_TEMPLATE is now a template, e.g. "/var/log/requests-%s.jsonl"
-	fileTemplate := getEnv("LLM_GATEWAY_LOG_FILE_PATH_TEMPLATE", "/var/log/llm-gateway/requests-%s.jsonl")
-	maxSize := getEnvByteSize("LLM_GATEWAY_LOG_MAX_SIZE", 10_485_760)                 // default 10 MB
-	maxFiles := getEnvInt("LLM_GATEWAY_LOG_MAX_FILES", 5)                             // default 5
-	bufferSize := getEnvInt("LLM_GATEWAY_LOG_BUFFER_SIZE", 100)                       // default 100
-	flushInterval := getEnvDuration("LLM_GATEWAY_LOG_FLUSH_INTERVAL", 60*time.Second) // default 60 seconds
-
-	// Create the logger using the file template.
-	var err error
-	RLogger, err = NewLogger(fileTemplate, int64(maxSize), maxFiles, bufferSize, flushInterval)
-	if err != nil {
-		// Errorf is assumed to be a helper that logs errors.
-		Errorf("Failed to create request logger: %v", err)
-		// If logger creation failed, we schedule shutdown (if it was partially created).
-		if RLogger != nil {
-			defer RLogger.Shutdown()
-		}
-	}
 }

@@ -21,13 +21,14 @@ import (
 
 // Dependencies aggregates all services the HTTP layer needs.
 type Dependencies struct {
-	APIKeys    auth.APIKeyStore
-	AdminStore auth.AdminStore
-	Providers  providers.Registry
-	RateLimit  ratelimit.Limiter
-	Billing    billing.Service
-	Logger     logging.Sink
-	Metrics    metrics.Metrics
+	APIKeys       auth.APIKeyStore
+	AdminStore    auth.AdminStore
+	Providers     providers.Registry
+	RateLimit     ratelimit.Limiter
+	Billing       billing.Service
+	Logger        logging.Sink
+	Metrics       metrics.Metrics
+	RequestLogger *logging.RequestLogger
 }
 
 // NewRouter creates an HTTP router with all dependencies wired up
@@ -125,15 +126,28 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		BatchSize: 1000,
 	})
 
+	// Initialize request logger
+	requestLogger, err := logging.NewLogger(
+		cfg.RequestLogger.FilePathTemplate,
+		cfg.RequestLogger.MaxSize,
+		cfg.RequestLogger.MaxFiles,
+		cfg.RequestLogger.BufferSize,
+		cfg.RequestLogger.FlushInterval,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize request logger: %w", err)
+	}
+
 	// Create dependencies
 	deps := &Dependencies{
-		APIKeys:    NewDatabaseAPIKeyStore(apiKeyRepo),
-		AdminStore: NewAdminStoreAdapter(adminUserRepo, adminTokenRepo),
-		Providers:  registry,
-		RateLimit:  rateLimiter,
-		Billing:    billingService,
-		Logger:     NewRedisLoggingSink(logBuffer),
-		Metrics:    metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
+		APIKeys:       NewDatabaseAPIKeyStore(apiKeyRepo),
+		AdminStore:    NewAdminStoreAdapter(adminUserRepo, adminTokenRepo),
+		Providers:     registry,
+		RateLimit:     rateLimiter,
+		Billing:       billingService,
+		Logger:        NewRedisLoggingSink(logBuffer),
+		Metrics:       metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
+		RequestLogger: requestLogger,
 	}
 
 	// Create router
