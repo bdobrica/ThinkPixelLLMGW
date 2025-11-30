@@ -1,0 +1,4 @@
+# Requirements for E2E Testing
+
+# OpenAI Python SDK for testing the gateway
+openai>=1.0.0

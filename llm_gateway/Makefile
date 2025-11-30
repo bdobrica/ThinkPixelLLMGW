@@ -1,6 +1,6 @@
 # Makefile for LLM Gateway
 
-.PHONY: help test test-unit test-integration test-integration-setup test-integration-teardown build run clean
+.PHONY: help test test-unit test-integration test-integration-setup test-integration-teardown test-e2e test-e2e-setup test-e2e-run test-e2e-teardown test-e2e-logs build run clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -111,3 +111,32 @@ ci-test: ## Run tests in CI environment
 
 ci-coverage: ## Generate coverage report
 	go tool cover -html=coverage.out -o coverage.html
+
+# End-to-End Testing
+test-e2e: ## Run end-to-end test (starts docker-compose, tests gateway, cleans up)
+	@echo "Running end-to-end test..."
+	@echo "This will start all services, run tests, and clean up"
+	@echo ""
+	cd .. && ~/.venvs/py-openai/bin/python tests/test_e2e.py
+
+test-e2e-setup: ## Start services for manual e2e testing
+	@echo "Starting all services for e2e testing..."
+	cd .. && docker compose up -d
+	@echo ""
+	@echo "Services are starting up. Gateway will be available at http://localhost:8080"
+	@echo "Run 'make test-e2e-run' to execute the test suite"
+	@echo "Run 'make test-e2e-teardown' when done"
+
+test-e2e-run: ## Run e2e test script (assumes services already running)
+	@echo "Running e2e test against running services..."
+	cd .. && ~/.venvs/py-openai/bin/python -c "from tests.test_e2e import test_chat_completion, test_invalid_api_key, test_model_alias, print_step, print_success, print_error; import sys; tests = [test_chat_completion(), test_invalid_api_key(), test_model_alias()]; passed = sum(tests); total = len(tests); print_step(f'Results: {passed}/{total} passed'); sys.exit(0 if passed == total else 1)"
+
+test-e2e-teardown: ## Stop all services after e2e testing
+	@echo "Stopping all services..."
+	cd .. && docker compose down -v
+	@echo "Services stopped and cleaned up"
+
+test-e2e-logs: ## Show gateway logs
+	@echo "Gateway logs (last 50 lines):"
+	@echo ""
+	docker logs --tail 50 gw-gateway
