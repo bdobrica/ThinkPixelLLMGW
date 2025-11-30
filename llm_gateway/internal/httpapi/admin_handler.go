@@ -131,13 +131,3 @@ func (d *Dependencies) handleAdminKeys(w http.ResponseWriter, r *http.Request) {
 		"message": "admin keys endpoint not implemented yet",
 	})
 }
-
-// handleAdminProviders manages providers & model aliases.
-func (d *Dependencies) handleAdminProviders(w http.ResponseWriter, r *http.Request) {
-	// TODO: handle CRUD for providers and model aliases.
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"message": "admin providers endpoint not implemented yet",
-	})
-}

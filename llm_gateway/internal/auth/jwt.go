@@ -164,3 +164,22 @@ func ValidateAdminJWT(tokenString string, cfg *config.Config) (*AdminClaims, err
 
 	return nil, errors.New("invalid token")
 }
+
+// GenerateJWTWithClaims generates a JWT with custom claims (useful for testing)
+func GenerateJWTWithClaims(claims *AdminClaims, cfg *config.Config) (string, int64, error) {
+	expirationTime := time.Now().Add(24 * time.Hour) // Default to 24 hours
+
+	claims.RegisteredClaims = jwt.RegisteredClaims{
+		ExpiresAt: jwt.NewNumericDate(expirationTime),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		Subject:   claims.AdminID,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString(cfg.JWTSecret)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to sign token: %w", err)
+	}
+
+	return signedToken, expirationTime.Unix(), nil
+}

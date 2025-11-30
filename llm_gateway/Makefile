@@ -36,8 +36,17 @@ test-integration: ## Run integration tests (requires services to be running)
 	@echo ""
 	@echo "Running Redis queue integration tests..."
 	REDIS_TEST_ADDR=localhost:6379 go test -v ./internal/queue/... -run TestRedis
+	@echo ""
+	@echo "Running HTTP API integration tests..."
+	DATABASE_URL="postgres://gateway:password@localhost:5432/gateway?sslmode=disable" go test -v ./internal/httpapi/... -run TestAdminProviders
 
 test-integration-all: test-integration-setup test-integration test-integration-teardown ## Setup, run, and teardown integration tests
+
+test-httpapi: ## Run HTTP API integration tests (requires postgres to be running)
+	@echo "Running HTTP API integration tests..."
+	@echo "Make sure PostgreSQL is running: make dev-up"
+	@echo ""
+	DATABASE_URL="postgres://gateway:password@localhost:5432/gateway?sslmode=disable" go test -v ./internal/httpapi/... -run TestAdminProviders
 
 build: ## Build the gateway binary
 	go build -o bin/gateway ./cmd/gateway

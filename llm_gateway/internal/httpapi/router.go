@@ -33,6 +33,9 @@ type Dependencies struct {
 	// Queue workers for async processing
 	BillingWorker *billing.BillingQueueWorker
 	UsageWorker   *storage.UsageQueueWorker
+	// Database and encryption for admin handlers
+	DB         *storage.DB
+	Encryption *storage.Encryption
 }
 
 // NewRouter creates an HTTP router with all dependencies wired up
@@ -220,6 +223,8 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		RequestLogger: requestLogger,
 		BillingWorker: billingWorker,
 		UsageWorker:   usageWorker,
+		DB:            db,
+		Encryption:    encryption,
 	}
 
 	// Create router
@@ -302,7 +307,40 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 
 	// Admin management endpoints - protected with AdminJWTMiddleware
 	// Require at least "viewer" role
-	viewerMiddleware := middleware.AdminJWTMiddleware(cfg, "viewer")
+	viewerMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleViewer.String())
 	mux.Handle("/admin/keys", viewerMiddleware(http.HandlerFunc(deps.handleAdminKeys)))
-	mux.Handle("/admin/providers", viewerMiddleware(http.HandlerFunc(deps.handleAdminProviders)))
+
+	// Provider management endpoints
+	adminProvidersHandler := NewAdminProvidersHandler(deps.DB, deps.Encryption, deps.Providers)
+	// Admin role required for create, update, delete
+	adminMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleAdmin.String())
+	mux.Handle("/admin/providers", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// List providers - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminProvidersHandler.List)).ServeHTTP(w, r)
+		case http.MethodPost:
+			// Create provider - admin role required
+			adminMiddleware(http.HandlerFunc(adminProvidersHandler.Create)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	// Provider detail endpoints with ID
+	mux.Handle("/admin/providers/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// Get provider details - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminProvidersHandler.GetByID)).ServeHTTP(w, r)
+		case http.MethodPut:
+			// Update provider - admin role required
+			adminMiddleware(http.HandlerFunc(adminProvidersHandler.Update)).ServeHTTP(w, r)
+		case http.MethodDelete:
+			// Disable provider - admin role required
+			adminMiddleware(http.HandlerFunc(adminProvidersHandler.Delete)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 }
