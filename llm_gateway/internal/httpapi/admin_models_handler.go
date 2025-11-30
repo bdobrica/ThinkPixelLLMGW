@@ -674,8 +674,8 @@ func (h *AdminModelsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 			Direction: string(pc.Direction),
 			Modality:  string(pc.Modality),
 			Unit:      string(pc.Unit),
-			Tier:      stringPtrValue(pc.Tier),
-			Scope:     stringPtrValue(pc.Scope),
+			Tier:      utils.StringPtrValue(pc.Tier),
+			Scope:     utils.StringPtrValue(pc.Scope),
 			Price:     pc.Price,
 			Metadata:  metadata,
 		})
@@ -765,16 +765,16 @@ func (h *AdminModelsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		MaxInputTokensPerRequest:  model.MaxInputTokensPerRequest,
 
 		Currency:                      model.Currency,
-		PricingComponentSchemaVersion: stringPtrValue(model.PricingComponentSchemaVersion),
+		PricingComponentSchemaVersion: utils.StringPtrValue(model.PricingComponentSchemaVersion),
 		PricingComponents:             pricingComponents,
 
 		AverageLatencyMs: model.AverageLatencyMs,
 		P95LatencyMs:     model.P95LatencyMs,
 		AvailabilitySLO:  model.AvailabilitySLO,
-		SLATier:          stringPtrValue(model.SLATier),
+		SLATier:          utils.StringPtrValue(model.SLATier),
 		SupportsSLA:      model.SupportsSLA,
 
-		MetadataSchemaVersion: stringPtrValue(model.MetadataSchemaVersion),
+		MetadataSchemaVersion: utils.StringPtrValue(model.MetadataSchemaVersion),
 		Metadata:              metadata,
 
 		CreatedAt: model.CreatedAt.Format(time.RFC3339),
@@ -1078,11 +1078,4 @@ func extractFeatures(m *models.Model) []string {
 	}
 
 	return features
-}
-
-func stringPtrValue(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

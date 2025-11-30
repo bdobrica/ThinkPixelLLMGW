@@ -15,6 +15,7 @@ import (
 	"llm_gateway/internal/middleware"
 	"llm_gateway/internal/models"
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
 
 // Integration tests for AdminAliasesHandler
@@ -174,7 +175,7 @@ func TestAdminAliasesHandlerCreate(t *testing.T) {
 					"max_tokens":  4096,
 					"temperature": 0.7,
 				},
-				Enabled: boolPtr(true),
+				Enabled: utils.BoolPtr(true),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusCreated,
@@ -198,7 +199,7 @@ func TestAdminAliasesHandlerCreate(t *testing.T) {
 				AliasName:     "test-disabled-alias",
 				TargetModelID: testModel.ID.String(),
 				ProviderID:    provider.ID.String(),
-				Enabled:       boolPtr(false),
+				Enabled:       utils.BoolPtr(false),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusCreated,
@@ -775,7 +776,7 @@ func TestAdminAliasesHandlerUpdate(t *testing.T) {
 			name:    "update_alias_name",
 			aliasID: testAlias.ID.String(),
 			payload: UpdateAliasRequest{
-				AliasName: stringPtr("test-updated-alias"),
+				AliasName: utils.StringPtr("test-updated-alias"),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -794,7 +795,7 @@ func TestAdminAliasesHandlerUpdate(t *testing.T) {
 			name:    "update_target_model",
 			aliasID: testAlias.ID.String(),
 			payload: UpdateAliasRequest{
-				TargetModelID: stringPtr(model2.ID.String()),
+				TargetModelID: utils.StringPtr(model2.ID.String()),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -813,7 +814,7 @@ func TestAdminAliasesHandlerUpdate(t *testing.T) {
 			name:    "update_enabled_status",
 			aliasID: testAlias.ID.String(),
 			payload: UpdateAliasRequest{
-				Enabled: boolPtr(false),
+				Enabled: utils.BoolPtr(false),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -886,8 +887,8 @@ func TestAdminAliasesHandlerUpdate(t *testing.T) {
 			name:    "update_multiple_fields",
 			aliasID: testAlias.ID.String(),
 			payload: UpdateAliasRequest{
-				AliasName: stringPtr("test-multi-update"),
-				Enabled:   boolPtr(true),
+				AliasName: utils.StringPtr("test-multi-update"),
+				Enabled:   utils.BoolPtr(true),
 				Tags: map[string]string{
 					"environment": "production",
 				},
@@ -906,7 +907,7 @@ func TestAdminAliasesHandlerUpdate(t *testing.T) {
 			name:    "update_with_invalid_target_model",
 			aliasID: testAlias.ID.String(),
 			payload: UpdateAliasRequest{
-				TargetModelID: stringPtr(uuid.New().String()),
+				TargetModelID: utils.StringPtr(uuid.New().String()),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusNotFound,

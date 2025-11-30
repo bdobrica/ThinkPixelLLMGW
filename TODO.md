@@ -3,7 +3,7 @@
 This document tracks all implementation tasks for the LLM Gateway project.
 
 **Last Updated:** November 30, 2025  
-**Project Status:** Core gateway fully functional with OpenAI provider. Async queue system, admin JWT authentication, and full admin CRUD endpoints for providers/models/aliases implemented. Only API key management endpoint remains for MVP completion.
+**Project Status:** ✅ **MVP COMPLETE!** Core gateway fully functional with OpenAI provider. Async queue system, admin JWT authentication, and full admin CRUD endpoints for providers/models/aliases/API keys implemented.
 
 ## 📊 Current Implementation Summary
 
@@ -19,6 +19,7 @@ This document tracks all implementation tasks for the LLM Gateway project.
 - **HTTP API**: Chat completions endpoint, health checks, graceful shutdown
 - **Admin API**: 
   - JWT authentication (email/password and service token flows)
+  - Complete CRUD for API keys (Create, Read, Update, Delete, Regenerate)
   - Complete CRUD for providers (Create, Read, Update, Delete with encryption)
   - Complete CRUD for models (100+ fields, pricing, features, capabilities)
   - Complete CRUD for model aliases (custom configs, tags, resolution)
@@ -27,7 +28,6 @@ This document tracks all implementation tasks for the LLM Gateway project.
 
 ### 🚧 Partially Implemented
 - **S3 Logging**: Writer and sink implemented, background worker integration pending
-- **Admin API Keys**: Endpoint registered but not implemented (placeholder)
 - **Metrics**: Noop implementation, Prometheus integration pending
 - **Providers**: OpenAI complete, VertexAI and Bedrock stubs exist
 
@@ -37,10 +37,48 @@ This document tracks all implementation tasks for the LLM Gateway project.
 - Integration tests for queue system and admin CRUD endpoints
 - Manual testing guide with Docker setup (`TESTING_GUIDE.md`)
 
-### 🎯 Next Priority: API Key Management Endpoint
-Implement the AdminKeysHandler to provide REST endpoints for creating, listing, updating, and revoking API keys. This is the final piece needed to complete the admin API MVP.
+### 🎯 Next Priorities
+1. **S3 Logging Background Worker**: Complete the log draining pipeline
+2. **Metrics with Prometheus**: Add instrumentation for monitoring
+3. **Additional Providers**: Implement VertexAI and Bedrock providers
+4. **Advanced Features**: Caching, embeddings, function calling, fine-tuning
 
 ## ✅ Recently Completed
+
+### API Key Management Admin Endpoints (November 30, 2025)
+- **Files Created/Updated:** 4 files (~1,000 lines of code + documentation)
+- **Core Features:**
+  - Complete CRUD operations for API keys with SHA-256 hashing
+  - Cryptographically secure key generation (sk-<32 hex chars>)
+  - Usage statistics integration (requests, tokens, costs)
+  - Key regeneration with automatic invalidation
+  - Soft delete (revoke) functionality
+  - Tags and metadata support
+- **Implementation:**
+  - `internal/httpapi/admin_api_keys_handler.go` - Main handler (530 lines)
+  - `internal/httpapi/admin_api_keys_handler_integration_test.go` - Full test suite (450 lines)
+  - `API_KEY_MANAGEMENT.md` - Complete documentation (600 lines)
+  - `API_KEY_QUICKREF.md` - Quick reference guide (280 lines)
+  - Updated `internal/httpapi/router.go` - Wired up all endpoints with proper role-based access
+  - Removed placeholder `handleAdminKeys` from `admin_handler.go`
+- **Endpoints:**
+  - POST `/admin/keys` - Create new API key (admin)
+  - GET `/admin/keys` - List all keys with pagination (viewer)
+  - GET `/admin/keys/:id` - Get details with usage stats (viewer)
+  - PUT `/admin/keys/:id` - Update settings (admin)
+  - DELETE `/admin/keys/:id` - Revoke key (admin)
+  - POST `/admin/keys/:id/regenerate` - Generate new key (admin)
+- **Security Features:**
+  - Plaintext keys only returned during creation/regeneration
+  - SHA-256 hashing before database storage
+  - Role-based access control (viewer/admin)
+  - Rate limiting and budget enforcement
+  - Expiration date support
+- **Testing:**
+  - 6 comprehensive integration tests
+  - Tests for create, list, get, update, delete, regenerate
+  - Error case coverage (validation, permissions, not found)
+- **Status:** ✅ **Complete - MVP ACHIEVED!**
 
 ### Admin CRUD Endpoints for Providers, Models & Aliases (November 30, 2025)
 - **Files Created/Updated:** 6 files (~2,600 lines of code)
@@ -292,7 +330,7 @@ With JWT authentication and CRUD endpoints now complete, only API key management
 
 ---
 
-## 🎯 Milestone 1: MVP - Core Functionality ✅ NEARLY COMPLETE (API Key Management Pending)
+## 🎯 Milestone 1: MVP - Core Functionality ✅ **COMPLETE!**
 
 **Status**: All core functionality implemented and tested. Gateway is operational with OpenAI provider. Admin CRUD endpoints complete for providers, models, and aliases. Only API key management endpoint implementation remains.
 
@@ -597,7 +635,7 @@ With JWT authentication and CRUD endpoints now complete, only API key management
   - [x] Graceful shutdown with buffer flush
   - [x] Integration in router with complete lifecycle management
 
-### 1.7 Admin API - Basic Operations ✅ (Nearly Complete - Only API Key Management Pending)
+### 1.7 Admin API - Basic Operations ✅ **COMPLETE!**
 - [x] **Admin User & Token Models** (`internal/models/admin_user.go`, `admin_token.go`) ✅
   - [x] AdminUser model with email/password authentication
   - [x] AdminToken model with service_name/token authentication
@@ -639,19 +677,21 @@ With JWT authentication and CRUD endpoints now complete, only API key management
   - [x] GET `/admin/test` - Protected test endpoint
   - [x] Response includes: token, expires_at, admin_id, auth_type
 
-- [ ] **API Key Management** 🔨 **NEXT PRIORITY**
-  - [ ] Implement AdminKeysHandler (currently placeholder in admin_handler.go)
-  - [ ] POST `/admin/keys` - Create new API key
-    - [ ] Generate cryptographically secure random key (32+ chars)
-    - [ ] Hash key with SHA-256
-    - [ ] Store in database with permissions and metadata
-    - [ ] Return plaintext key (only time it's visible)
-  - [ ] GET `/admin/keys` - List all keys (paginated, without hashes)
-  - [ ] GET `/admin/keys/:id` - Get key details with usage stats
-  - [ ] PUT `/admin/keys/:id` - Update key (rate limits, budget, allowed models)
-  - [ ] DELETE `/admin/keys/:id` - Revoke key (set enabled=false)
-  - [ ] POST `/admin/keys/:id/regenerate` - Generate new key, revoke old
-  - [ ] Wire up proper routing in router.go (currently just placeholder)
+- [x] **API Key Management** ✅ **COMPLETED**
+  - [x] Implement AdminAPIKeysHandler in admin_api_keys_handler.go
+  - [x] POST `/admin/keys` - Create new API key
+    - [x] Generate cryptographically secure random key (32+ chars)
+    - [x] Hash key with SHA-256
+    - [x] Store in database with permissions and metadata
+    - [x] Return plaintext key (only time it's visible)
+  - [x] GET `/admin/keys` - List all keys (paginated, without hashes)
+  - [x] GET `/admin/keys/:id` - Get key details with usage stats
+  - [x] PUT `/admin/keys/:id` - Update key (rate limits, budget, allowed models)
+  - [x] DELETE `/admin/keys/:id` - Revoke key (set enabled=false)
+  - [x] POST `/admin/keys/:id/regenerate` - Generate new key, revoke old
+  - [x] Wire up proper routing in router.go
+  - [x] Integration tests (admin_api_keys_handler_integration_test.go)
+  - [x] Documentation (API_KEY_MANAGEMENT.md, API_KEY_QUICKREF.md)
 
 - [x] **Provider Management** (`internal/httpapi/admin_providers_handler.go`) ✅
   - [x] POST `/admin/providers` - Create new provider (admin role)

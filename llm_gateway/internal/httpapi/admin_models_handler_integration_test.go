@@ -15,6 +15,7 @@ import (
 	"llm_gateway/internal/middleware"
 	"llm_gateway/internal/models"
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
 
 // Integration tests for AdminModelsHandler
@@ -669,7 +670,7 @@ func TestAdminModelsHandlerUpdate(t *testing.T) {
 			name:    "update_version",
 			modelID: testModel.ID.String(),
 			payload: UpdateModelRequest{
-				Version: stringPtr("v2"),
+				Version: utils.StringPtr("v2"),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -688,7 +689,7 @@ func TestAdminModelsHandlerUpdate(t *testing.T) {
 			name:    "mark_as_deprecated",
 			modelID: testModel.ID.String(),
 			payload: UpdateModelRequest{
-				IsDeprecated: boolPtr(true),
+				IsDeprecated: utils.BoolPtr(true),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -707,8 +708,8 @@ func TestAdminModelsHandlerUpdate(t *testing.T) {
 			name:    "update_latency_metrics",
 			modelID: testModel.ID.String(),
 			payload: UpdateModelRequest{
-				AverageLatencyMs: float64Ptr(150.0),
-				P95LatencyMs:     float64Ptr(300.0),
+				AverageLatencyMs: utils.Float64Ptr(150.0),
+				P95LatencyMs:     utils.Float64Ptr(300.0),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -901,9 +902,4 @@ func TestAdminModelsHandlerDelete(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Helper functions
-func float64Ptr(f float64) *float64 {
-	return &f
 }

@@ -14,13 +14,14 @@ test: ## Run all tests (unit + integration if services available)
 test-unit: ## Run only unit tests
 	go test ./... -v -short
 
-test-integration-setup: ## Start integration test services (Minio, Redis)
+test-integration-setup: ## Start integration test services (Postgres, Minio, Redis)
 	@echo "Starting integration test services..."
-	cd .. && docker compose up -d minio minio-create-bucket redis
+	cd .. && docker compose up -d postgres minio minio-create-bucket redis
 	@echo "Waiting for services to be ready..."
-	@sleep 5
+	@sleep 10
 	@echo "Services ready!"
 	@echo ""
+	@echo "PostgreSQL:    localhost:5432 (gateway/password)"
 	@echo "Minio Console: http://localhost:9001 (minioadmin/minioadmin)"
 	@echo "Minio API:     http://localhost:9000"
 	@echo "Redis:         localhost:6379"

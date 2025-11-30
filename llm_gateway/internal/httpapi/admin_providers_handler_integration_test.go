@@ -20,6 +20,7 @@ import (
 	"llm_gateway/internal/models"
 	"llm_gateway/internal/providers"
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
 
 // Integration tests for AdminProvidersHandler
@@ -172,7 +173,8 @@ func cleanupTestProviders(t *testing.T, db *storage.DB) {
 
 	for _, p := range providers {
 		// Only delete test providers (those created in tests)
-		if p.Name == "test-provider" || p.Name == "test-openai" || p.Name == "test-anthropic" {
+		if p.Name == "test-provider" || p.Name == "test-openai" || p.Name == "test-anthropic" ||
+			p.Name == "test-provider-1" || p.Name == "test-provider-2" {
 			_ = providerRepo.Delete(ctx, p.ID)
 		}
 	}
@@ -184,6 +186,9 @@ func TestAdminProvidersHandlerCreate(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
+
+	// Cleanup BEFORE creating registry to avoid loading invalid providers
+	cleanupTestProviders(t, db)
 	defer cleanupTestProviders(t, db)
 
 	encryption := setupTestEncryption(t)
@@ -305,6 +310,9 @@ func TestAdminProvidersHandlerList(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
+
+	// Cleanup BEFORE creating registry to avoid loading invalid providers
+	cleanupTestProviders(t, db)
 	defer cleanupTestProviders(t, db)
 
 	encryption := setupTestEncryption(t)
@@ -318,20 +326,33 @@ func TestAdminProvidersHandlerList(t *testing.T) {
 	ctx := context.Background()
 	providerRepo := storage.NewProviderRepository(db)
 
+	// Encrypt test API key
+	testAPIKey := "test-api-key-12345"
+	encryptedAPIKey, err := encryption.Encrypt([]byte(testAPIKey))
+	if err != nil {
+		t.Fatalf("Failed to encrypt API key: %v", err)
+	}
+
 	testProviders := []*models.Provider{
 		{
 			ID:           uuid.New(),
 			Name:         "test-provider-1",
 			DisplayName:  "Test Provider 1",
 			ProviderType: string(models.ProviderTypeOpenAI),
-			Enabled:      true,
+			EncryptedCredentials: models.JSONB{
+				"api_key": encryptedAPIKey,
+			},
+			Enabled: true,
 		},
 		{
 			ID:           uuid.New(),
 			Name:         "test-provider-2",
 			DisplayName:  "Test Provider 2",
 			ProviderType: string(models.ProviderTypeVertexAI),
-			Enabled:      false,
+			EncryptedCredentials: models.JSONB{
+				"credentials_json": encryptedAPIKey,
+			},
+			Enabled: false,
 		},
 	}
 
@@ -352,14 +373,19 @@ func TestAdminProvidersHandlerList(t *testing.T) {
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *httptest.ResponseRecorder) {
-				var results []ProviderResponse
-				if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+				var response struct {
+					Items      []ProviderResponse `json:"items"`
+					TotalCount int                `json:"total_count"`
+					Page       int                `json:"page"`
+					PageSize   int                `json:"page_size"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 					t.Fatalf("Failed to decode response: %v", err)
 				}
 
 				// Should have at least our test providers
-				if len(results) < 2 {
-					t.Errorf("Expected at least 2 providers, got %d", len(results))
+				if len(response.Items) < 2 {
+					t.Errorf("Expected at least 2 providers, got %d", len(response.Items))
 				}
 			},
 		},
@@ -368,13 +394,18 @@ func TestAdminProvidersHandlerList(t *testing.T) {
 			roles:          []string{auth.RoleViewer.String()},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *httptest.ResponseRecorder) {
-				var results []ProviderResponse
-				if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+				var response struct {
+					Items      []ProviderResponse `json:"items"`
+					TotalCount int                `json:"total_count"`
+					Page       int                `json:"page"`
+					PageSize   int                `json:"page_size"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 					t.Fatalf("Failed to decode response: %v", err)
 				}
 
 				// Verify no credentials are exposed
-				for _, p := range results {
+				for _, p := range response.Items {
 					// Credentials should not be in the list response
 					if len(p.Config) > 0 {
 						// Config is OK, but make sure no sensitive data
@@ -393,11 +424,15 @@ func TestAdminProvidersHandlerList(t *testing.T) {
 			token := generateAdminJWT(t, cfg, tt.roles...)
 			req.Header.Set("Authorization", "Bearer "+token)
 
-			// Apply JWT middleware
-			viewerMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleViewer.String())
+			// Apply JWT middleware - use the role from the test
+			requiredRole := auth.RoleViewer.String() // Default to viewer as minimum
+			if len(tt.roles) > 0 {
+				requiredRole = tt.roles[0]
+			}
+			gwtMiddleware := middleware.AdminJWTMiddleware(cfg, requiredRole)
 			resp := httptest.NewRecorder()
 
-			viewerMiddleware(http.HandlerFunc(handler.List)).ServeHTTP(resp, req)
+			gwtMiddleware(http.HandlerFunc(handler.List)).ServeHTTP(resp, req)
 
 			if resp.Code != tt.expectedStatus {
 				t.Errorf("Expected status %d, got %d. Body: %s", tt.expectedStatus, resp.Code, resp.Body.String())
@@ -416,6 +451,9 @@ func TestAdminProvidersHandlerGetByID(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
+
+	// Cleanup BEFORE creating registry to avoid loading invalid providers
+	cleanupTestProviders(t, db)
 	defer cleanupTestProviders(t, db)
 
 	encryption := setupTestEncryption(t)
@@ -529,11 +567,15 @@ func TestAdminProvidersHandlerGetByID(t *testing.T) {
 			token := generateAdminJWT(t, cfg, tt.roles...)
 			req.Header.Set("Authorization", "Bearer "+token)
 
-			// Apply JWT middleware
-			viewerMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleViewer.String())
+			// Apply JWT middleware - use the role from the test
+			requiredRole := auth.RoleViewer.String() // Default to viewer as minimum
+			if len(tt.roles) > 0 {
+				requiredRole = tt.roles[0]
+			}
+			gwtMiddleware := middleware.AdminJWTMiddleware(cfg, requiredRole)
 			resp := httptest.NewRecorder()
 
-			viewerMiddleware(http.HandlerFunc(handler.GetByID)).ServeHTTP(resp, req)
+			gwtMiddleware(http.HandlerFunc(handler.GetByID)).ServeHTTP(resp, req)
 
 			if resp.Code != tt.expectedStatus {
 				t.Errorf("Expected status %d, got %d. Body: %s", tt.expectedStatus, resp.Code, resp.Body.String())
@@ -552,6 +594,9 @@ func TestAdminProvidersHandlerUpdate(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
+
+	// Cleanup BEFORE creating registry to avoid loading invalid providers
+	cleanupTestProviders(t, db)
 	defer cleanupTestProviders(t, db)
 
 	encryption := setupTestEncryption(t)
@@ -589,7 +634,7 @@ func TestAdminProvidersHandlerUpdate(t *testing.T) {
 			name:       "update_display_name",
 			providerID: testProvider.ID.String(),
 			payload: UpdateProviderRequest{
-				DisplayName: stringPtr("Updated Name"),
+				DisplayName: utils.StringPtr("Updated Name"),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -608,7 +653,7 @@ func TestAdminProvidersHandlerUpdate(t *testing.T) {
 			name:       "update_enabled_status",
 			providerID: testProvider.ID.String(),
 			payload: UpdateProviderRequest{
-				Enabled: boolPtr(false),
+				Enabled: utils.BoolPtr(false),
 			},
 			roles:          []string{auth.RoleAdmin.String()},
 			expectedStatus: http.StatusOK,
@@ -677,6 +722,9 @@ func TestAdminProvidersHandlerDelete(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
+
+	// Cleanup BEFORE creating registry to avoid loading invalid providers
+	cleanupTestProviders(t, db)
 	defer cleanupTestProviders(t, db)
 
 	encryption := setupTestEncryption(t)
@@ -759,13 +807,4 @@ func TestAdminProvidersHandlerDelete(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Helper functions
-func stringPtr(s string) *string {
-	return &s
-}
-
-func boolPtr(b bool) *bool {
-	return &b
 }

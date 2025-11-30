@@ -121,13 +121,3 @@ func (h *AdminAuthHandler) TestProtected(w http.ResponseWriter, r *http.Request)
 		"service_name": claims.ServiceName,
 	})
 }
-
-// handleAdminKeys serves the key management API (create/revoke/regenerate).
-func (d *Dependencies) handleAdminKeys(w http.ResponseWriter, r *http.Request) {
-	// TODO: route by method, e.g. POST=create, GET=list, etc.
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"message": "admin keys endpoint not implemented yet",
-	})
-}

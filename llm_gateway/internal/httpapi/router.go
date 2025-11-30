@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"llm_gateway/internal/auth"
@@ -308,12 +309,50 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 	// Admin management endpoints - protected with AdminJWTMiddleware
 	// Require at least "viewer" role
 	viewerMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleViewer.String())
-	mux.Handle("/admin/keys", viewerMiddleware(http.HandlerFunc(deps.handleAdminKeys)))
+	// Admin role required for create, update, delete operations
+	adminMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleAdmin.String())
+
+	// API Key management endpoints
+	adminAPIKeysHandler := NewAdminAPIKeysHandler(deps.DB)
+	mux.Handle("/admin/keys", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// List API keys - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminAPIKeysHandler.List)).ServeHTTP(w, r)
+		case http.MethodPost:
+			// Create API key - admin role required
+			adminMiddleware(http.HandlerFunc(adminAPIKeysHandler.Create)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	// API Key detail endpoints with ID
+	mux.Handle("/admin/keys/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if this is a regenerate request
+		if strings.HasSuffix(r.URL.Path, "/regenerate") && r.Method == http.MethodPost {
+			// Regenerate API key - admin role required
+			adminMiddleware(http.HandlerFunc(adminAPIKeysHandler.Regenerate)).ServeHTTP(w, r)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodGet:
+			// Get API key details - viewer role sufficient
+			viewerMiddleware(http.HandlerFunc(adminAPIKeysHandler.GetByID)).ServeHTTP(w, r)
+		case http.MethodPut:
+			// Update API key - admin role required
+			adminMiddleware(http.HandlerFunc(adminAPIKeysHandler.Update)).ServeHTTP(w, r)
+		case http.MethodDelete:
+			// Revoke API key - admin role required
+			adminMiddleware(http.HandlerFunc(adminAPIKeysHandler.Delete)).ServeHTTP(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 
 	// Provider management endpoints
 	adminProvidersHandler := NewAdminProvidersHandler(deps.DB, deps.Encryption, deps.Providers)
-	// Admin role required for create, update, delete
-	adminMiddleware := middleware.AdminJWTMiddleware(cfg, auth.RoleAdmin.String())
 	mux.Handle("/admin/providers", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
