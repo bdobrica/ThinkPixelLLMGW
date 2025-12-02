@@ -3,48 +3,49 @@
 This document tracks all implementation tasks for the LLM Gateway project.
 
 **Last Updated:** December 2, 2025  
-**Project Status:** ✅ **MVP COMPLETE!** Core gateway fully functional with OpenAI provider. Async queue system, admin JWT authentication, full admin CRUD endpoints, and database-driven cost calculation with billing integration implemented.
+**Project Status:** ✅ **MVP COMPLETE!** Core gateway fully functional with OpenAI provider, complete Admin API, async processing, and database-driven cost calculation.
 
-## 📊 Current Implementation Summary
+## 📊 Current Implementation Summary (December 2, 2025)
 
 ### ✅ Fully Implemented (Production-Ready)
-- **Database Layer**: Complete PostgreSQL integration with LRU caching, repositories for all entities
-- **Authentication**: SHA256 API key hashing, Argon2id admin password hashing, JWT tokens with role-based access
-- **Provider System**: Pluggable architecture, OpenAI provider with streaming, registry with auto-reload
-- **Async Processing**: Hybrid queue system (Memory/Redis), billing and usage workers with batch processing
-- **Rate Limiting**: Redis-backed sliding window algorithm with atomic operations
-- **Billing**: Redis cache with 5-minute background sync, budget checks, cost tracking
-- **Cost Calculation**: Database-driven pricing with multi-dimensional support (direction, modality, unit, tier)
-- **Logging**: Request logger with file rotation, Redis buffer, S3 writer (background worker TODO)
-- **Encryption**: AES-256-GCM for provider credentials with environment-based key management
-- **HTTP API**: Chat completions endpoint, health checks, graceful shutdown
-- **Admin API**: 
-  - JWT authentication (email/password and service token flows)
-  - Complete CRUD for API keys (Create, Read, Update, Delete, Regenerate)
-  - Complete CRUD for providers (Create, Read, Update, Delete with encryption)
-  - Complete CRUD for models (100+ fields, pricing, features, capabilities)
-  - Complete CRUD for model aliases (custom configs, tags, resolution)
-  - Role-based access control (viewer, editor, admin)
-- **Configuration**: Complete environment-based config with all sections (DB, Redis, Cache, Logging, Provider)
+- **Database Layer**: Complete PostgreSQL integration with LRU caching, 7 tables, repositories for all entities
+- **Authentication**: 
+  - API Keys: SHA256 hashing with database lookup and caching
+  - Admin: Argon2id password/token hashing, JWT with 24h expiry, role-based access control
+- **Admin API**: Complete CRUD for API keys, providers, models, and aliases (11 endpoints, 6 handlers)
+- **Provider System**: Pluggable architecture, OpenAI fully implemented with streaming, auto-reload registry
+- **Async Processing**: Hybrid queue system (Memory/Redis), billing and usage workers with DLQ
+- **Billing**: Redis cache with 5-minute DB sync, budget checks, atomic cost tracking
+- **Cost Calculation**: Database-driven pricing with multi-dimensional support (input/output/cached/reasoning tokens)
+- **Logging**: File logger with rotation, Redis buffer (100K entries), S3Writer implementation
+- **Encryption**: AES-256-GCM for provider credentials
+- **HTTP API**: Chat completions proxy, health checks, graceful shutdown with 30s timeout
+- **Testing**: 28 test files, comprehensive integration tests for admin APIs
+- **Infrastructure**: Docker Compose (postgres, redis, minio), Makefile with test targets
 
-### 🚧 Partially Implemented
-- **S3 Logging**: Writer and sink implemented, background worker integration pending
-- **Metrics**: Noop implementation, Prometheus integration pending
-- **Providers**: OpenAI complete, VertexAI and Bedrock stubs exist
+### ⏳ Implemented But Not Wired
+- **Rate Limiting**: `RateLimiter` exists (Redis-backed, < 5ms latency) but `NoopLimiter` currently in use
+- **S3 Logging**: `S3Writer` and `S3Sink` complete but background worker not integrated
+- **Metrics**: `NoopMetrics` placeholder, Prometheus integration pending
+
+### 🚧 TODO - High Priority
+1. **Wire Rate Limiter**: Replace NoopLimiter with RateLimiter in proxy handler
+2. **S3 Background Worker**: Drain Redis log buffer to S3 periodically
+3. **Streaming Cost Calculation**: Parse SSE chunks for accurate token counts
+4. **Prometheus Metrics**: Add instrumentation for request count, latency, costs, errors
 
 ### 📝 Test Coverage
-- **30+ test files** covering auth, models, storage, queue, billing, logging, utils, httpapi
-- Unit tests for core functionality (JWT, Argon2, encryption, queues, workers)
-- Integration tests for queue system and admin CRUD endpoints
+- **96 Go files, 28 test files** covering all major components
+- Integration tests: Admin API (providers, models, aliases, API keys), S3 logging, Redis queues
+- Unit tests: Auth (JWT, Argon2), models (cost calculation), storage (encryption), queues, billing
 - Manual testing guide with Docker setup (`TESTING_GUIDE.md`)
 
-### 🎯 Next Priorities
-1. **Streaming Cost Calculation**: Parse SSE chunks to calculate accurate costs for streaming responses
-2. **S3 Logging Background Worker**: Complete the log draining pipeline
-3. **Metrics with Prometheus**: Add instrumentation for monitoring
-4. **Additional Providers**: Implement VertexAI and Bedrock providers
-5. **BerriAI Model Sync**: Automated sync of pricing data from BerriAI catalog
-6. **Advanced Features**: Caching, embeddings, function calling, fine-tuning
+### 🎯 Next Steps After Wiring
+1. **Additional Providers**: Implement VertexAI and Bedrock (stubs exist)
+2. **BerriAI Model Sync**: Automated sync of pricing data from BerriAI catalog
+3. **Advanced Features**: Response caching, embeddings support, function calling
+4. **Load Testing**: Verify 1000+ req/s throughput target
+5. **Kubernetes Deployment**: Production deployment guide and manifests
 
 ## ✅ Recently Completed
 
@@ -258,11 +259,9 @@ This document tracks all implementation tasks for the LLM Gateway project.
   - `GET /admin/test` - Protected test endpoint (requires JWT)
 - **Status:** ✅ **Ready for admin API implementation!**
 
-### Next Steps for Admin API
+### Admin API - Complete! ✅
 
-With JWT authentication and CRUD endpoints now complete, only API key management remains:
-
-**Completed Endpoints:**
+**All Admin CRUD Endpoints Implemented and Tested:**
 - ✅ `POST /admin/auth/login` - Email/password login → JWT
 - ✅ `POST /admin/auth/token` - Service name + token → JWT
 - ✅ `GET/POST /admin/providers` - List and create providers (viewer/admin roles)
@@ -271,18 +270,18 @@ With JWT authentication and CRUD endpoints now complete, only API key management
 - ✅ `GET/PUT/DELETE /admin/models/:id` - Model CRUD (viewer/admin roles)
 - ✅ `GET/POST /admin/aliases` - List and create aliases (viewer/admin roles)
 - ✅ `GET/PUT/DELETE /admin/aliases/:id` - Alias CRUD (viewer/admin roles)
+- ✅ `GET/POST /admin/keys` - List and create API keys (viewer/admin roles)
+- ✅ `GET/PUT/DELETE /admin/keys/:id` - API key CRUD (viewer/admin roles)
+- ✅ `POST /admin/keys/:id/regenerate` - Regenerate API key (admin role)
 
-**Remaining Endpoint (Final MVP Task):**
-- ❌ `GET/POST /admin/keys` - List and create API keys (viewer/editor roles)
-- ❌ `GET/PUT/DELETE /admin/keys/:id` - API key CRUD (viewer/editor/admin roles)
-- ❌ `POST /admin/keys/:id/regenerate` - Regenerate API key (editor role)
-
-**Implementation Notes:**
-- Replace placeholder in `admin_handler.go` `handleAdminKeys()` with full implementation
-- Create `AdminKeysHandler` similar to existing admin handlers
-- Use existing `APIKeyRepository` from storage layer
-- Follow same patterns as providers/models/aliases handlers
-- Include integration tests following existing test patterns
+**API Key Management Implementation:**
+- ✅ `AdminAPIKeysHandler` fully implemented (520 lines)
+- ✅ Cryptographically secure key generation (32+ random bytes)
+- ✅ SHA-256 key hashing for secure storage
+- ✅ Plaintext keys only returned during create/regenerate
+- ✅ Complete CRUD with role-based access control
+- ✅ Integration tests with 6 comprehensive test cases (474 lines)
+- ✅ All endpoints wired in router.go with proper middleware
 
 ### Proxy Handler & HTTP Router (November 23, 2025)
 - **Files Created/Updated:** 5 files (~600 lines of code)
@@ -366,7 +365,17 @@ With JWT authentication and CRUD endpoints now complete, only API key management
 
 ## 🎯 Milestone 1: MVP - Core Functionality ✅ **COMPLETE!**
 
-**Status**: All core functionality implemented and tested. Gateway is operational with OpenAI provider. Admin CRUD endpoints complete for providers, models, and aliases. Only API key management endpoint implementation remains.
+**Status**: ✅ **ALL CORE FUNCTIONALITY COMPLETE!** Gateway is fully operational with:
+- ✅ OpenAI provider with streaming support
+- ✅ Complete Admin API (auth, API keys, providers, models, aliases)
+- ✅ Database layer with LRU caching (PostgreSQL + Redis)
+- ✅ Async queue system for billing and usage tracking
+- ✅ Request logging to Redis buffer
+- ✅ S3 writer implementation (background worker integration pending)
+- ✅ Rate limiter implementation (wiring to proxy handler pending)
+- ✅ 96 Go files, 28 test files with comprehensive integration tests
+- ✅ Docker Compose setup (postgres, redis, minio)
+- ✅ Complete documentation (TESTING_GUIDE, ENV_VARIABLES, DATABASE_SCHEMA)
 
 ### 1.1 Database Layer ✅
 - [x] **Design PostgreSQL schema** (see `DATABASE_SCHEMA.md`)
@@ -640,25 +649,43 @@ With JWT authentication and CRUD endpoints now complete, only API key management
   - [x] Clear method for maintenance
   - [x] Configurable queue key, max size, and batch size
 
-- [x] **S3 Writer** (`internal/logging/s3_writer.go`) ✅
+- [x] **S3 Writer** (`internal/logging/s3_writer.go`) ✅ **COMPLETE**
   - [x] AWS SDK v2 integration for S3 uploads
   - [x] WriteBatch method for uploading log records
   - [x] File naming: `logs/<year>/<month>/<day>/<pod>-<timestamp>-<nano>.jsonl`
   - [x] JSON Lines format (application/x-ndjson)
   - [x] Structured logging with utils.Logger
-  - [ ] Background worker to drain Redis buffer (TODO)
-  - [ ] Compression (gzip) for storage efficiency (TODO)
-  - [ ] Graceful shutdown (flush pending logs) (TODO)
+  - [x] S3Sink implementation with queue integration
+  - [x] Integration tests (s3_integration_test.go)
+  
+- [ ] **S3 Background Worker** (TODO - Next Priority)
+  - [ ] Wire S3Sink into router.go instead of RedisBuffer
+  - [ ] Background goroutine to drain Redis buffer → S3
+  - [ ] Configurable flush interval and batch size
+  - [ ] Graceful shutdown (flush pending logs before exit)
+  - [ ] Compression (gzip) for storage efficiency
+  - [ ] Monitoring: queue depth, upload latency, error rate
 
 - [x] **Logging Sink** (`internal/logging/sink.go`) ✅
   - [x] Define Sink interface (Enqueue, Shutdown)
   - [x] Define LogRecord struct (timestamp, API key, provider, model, costs, errors)
-  - [x] NoopSink implementation for testing
-  - [x] S3Sink with in-memory queue and periodic flushing
-  - [x] RedisLoggingSink adapter in httpapi layer
-  - [x] Integration in router.go with Redis buffer
-  - [ ] Wire S3Sink background worker for persistent storage (TODO)
-  - [ ] Metrics for log queue depth (TODO)
+
+### 1.6.1 Rate Limiting Implementation Status
+
+- [x] **Redis RateLimiter** (`internal/ratelimit/ratelimiter.go`) ✅ **IMPLEMENTATION COMPLETE**
+  - [x] Sliding window algorithm with Redis sorted sets
+  - [x] Token bucket algorithm (alternative)
+  - [x] Atomic operations with pipelining
+  - [x] Per-key limits with distributed support
+  - [x] GetCurrentUsage and Reset operations
+  - [x] Performance: < 5ms latency, ~10k checks/sec
+  
+- [ ] **Wire Rate Limiter** (TODO - High Priority)
+  - [ ] Replace NoopLimiter in router.go with RateLimiter
+  - [ ] Create wrapper to read per-key limits from API key model
+  - [ ] Integration: proxy_handler.go → rate limiter check
+  - [ ] Error handling: return 429 Too Many Requests
+  - [ ] Response headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
 
 - [x] **Request Logger** (`internal/logging/request_logger.go`) ✅
   - [x] File-based request logging with rotation
@@ -844,8 +871,75 @@ With JWT authentication and CRUD endpoints now complete, only API key management
   - [x] Testing guide with Docker setup instructions
   - [x] SQL examples for seeding test data
   - [x] Example curl commands for all scenarios
-  - [ ] Docker Compose with PostgreSQL, Redis, MinIO
+  - [x] Docker Compose with PostgreSQL, Redis, MinIO
   - [ ] Automated seed script for test API keys and providers
+
+---
+
+## 🔨 Immediate Priorities - Wire Existing Implementations
+
+**Status**: Core implementations exist but need integration into the main request flow.
+
+### Priority 1: Wire Redis Rate Limiter (HIGH)
+**Current State:**
+- ✅ `RateLimiter` fully implemented in `internal/ratelimit/ratelimiter.go`
+- ✅ Sliding window algorithm with Redis sorted sets
+- ✅ Performance tested: < 5ms latency, ~10k checks/sec
+- ❌ Currently using `NoopLimiter` in router.go
+
+**Tasks:**
+- [ ] Replace `NoopLimiter` with `RateLimiter` in router.go
+- [ ] Create wrapper to read per-key rate limits from API key model
+- [ ] Add rate limit check in proxy_handler.go before provider call
+- [ ] Return 429 Too Many Requests on limit exceeded
+- [ ] Add response headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+- [ ] Test with multiple concurrent requests
+
+### Priority 2: S3 Background Worker (HIGH)
+**Current State:**
+- ✅ `S3Writer` fully implemented with WriteBatch method
+- ✅ `S3Sink` with queue integration and graceful shutdown
+- ✅ Integration tests passing
+- ❌ Currently using `RedisBuffer` only (logs accumulate in Redis)
+
+**Tasks:**
+- [ ] Add S3Sink option in config.go (enabled via env var)
+- [ ] Initialize S3Sink in router.go when S3 enabled
+- [ ] Background goroutine to periodically drain Redis buffer → S3
+- [ ] Configurable flush interval (default: 60s) and batch size (default: 1000)
+- [ ] Graceful shutdown: flush pending logs before exit
+- [ ] Add compression (gzip) for storage efficiency
+- [ ] Monitoring: track queue depth, upload latency, error rate
+- [ ] Test with simulated high-volume logging
+
+### Priority 3: Streaming Cost Calculation (MEDIUM)
+**Current State:**
+- ✅ Streaming responses work (proxy_handler.go passes SSE through)
+- ❌ Cost calculated from request only (no token counts from response)
+
+**Tasks:**
+- [ ] Parse SSE chunks in OpenAI provider to extract token usage
+- [ ] Accumulate tokens during streaming
+- [ ] Calculate cost after stream completes
+- [ ] Update billing queue with accurate costs
+- [ ] Test with various streaming responses
+
+### Priority 4: Prometheus Metrics (MEDIUM)
+**Current State:**
+- ✅ `metrics.NewNoopMetrics()` placeholder in router.go
+- ❌ No actual metrics collected
+
+**Tasks:**
+- [ ] Implement `PrometheusMetrics` with prometheus client
+- [ ] Track metrics:
+  - Request count (by model, provider, status code)
+  - Request latency (histogram)
+  - Token usage (by model, type: input/output/cached)
+  - Cost (by API key, model)
+  - Rate limit hits
+  - Error rate
+- [ ] Add /metrics HTTP handler
+- [ ] Test with Prometheus scraper
 
 ---
 

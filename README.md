@@ -32,12 +32,13 @@ The gateway is now **fully functional** with a complete implementation of:
 - Graceful shutdown with resource cleanup
 
 **Next Priorities** (see [TODO.md](TODO.md) for details):
-1. Streaming cost calculation (parse SSE chunks for accurate token counts)
-2. S3 writer for log persistence (background worker integration)
-3. Metrics with Prometheus (instrumentation for monitoring)
-4. Additional providers (VertexAI and Bedrock implementation)
-5. BerriAI model catalog sync (automated pricing data updates)
-6. Testing suite and Docker Compose (ongoing)
+1. **S3 Background Worker**: Drain Redis log buffer to S3 (S3Writer exists, needs worker integration)
+2. **Rate Limiting**: Wire up Redis-backed RateLimiter (implementation exists, currently using NoopLimiter)
+3. **Streaming Cost Calculation**: Parse SSE chunks for accurate token counts
+4. **Metrics with Prometheus**: Add instrumentation for monitoring
+5. **Additional Providers**: VertexAI and Bedrock implementation (stubs exist)
+6. **BerriAI Model Catalog Sync**: Automated pricing data updates
+7. **Testing Suite**: Expand test coverage (28 test files exist, need more coverage)
 
 ## Overview
 
@@ -197,10 +198,10 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 ### API Key Features ✅
 - **Authentication**: SHA-256 hashed keys with database lookup and LRU caching
 - **Permissions**: Model allowlist per key (ready for implementation)
-- **Rate Limiting**: Redis-backed sliding window (< 5ms latency, ~10k checks/sec)
+- **Rate Limiting**: ⏳ Redis implementation exists (< 5ms latency, ~10k checks/sec), currently using NoopLimiter
 - **Budgets**: Monthly USD limits with Redis cache and background DB sync
 - **Tags**: Flexible metadata support via key_metadata table
-- **Lifecycle**: Create, revoke, regenerate operations (admin API pending)
+- **Lifecycle**: ✅ Complete CRUD operations via Admin API (create, list, get, update, delete, regenerate)
 - **Expiration**: Configurable expiration dates with automatic validation
 
 ### Admin API & Authentication ✅
@@ -253,7 +254,8 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
   - Token usage and cost calculation
   - Timestamp and metadata
 - **Redis Buffer**: ✅ Queue with batch operations (< 3ms enqueue, ~15k ops/sec)
-- **S3 Upload**: ⏳ Background worker to drain buffer (pending)
+- **S3 Writer**: ✅ AWS SDK v2 integration complete (WriteBatch, JSON Lines format)
+- **S3 Background Worker**: ⏳ Worker to drain Redis buffer to S3 (pending integration)
 - **Metrics**: ⏳ Prometheus integration (placeholder endpoint exists)
 - **Health Checks**: ✅ Database and Redis health monitoring
 
@@ -360,11 +362,13 @@ See [TODO.md](TODO.md) for detailed task tracking.
 **Status:** Gateway is production-ready with complete cost tracking and admin capabilities!
 
 ### 🔨 Milestone 2: Enhanced Features (In Progress)
-- [ ] Streaming cost calculation (parse SSE chunks)
-- [ ] S3 writer for log persistence
-- [ ] Prometheus metrics integration
-- [ ] Unit and integration tests (30+ test files exist, expand coverage)
-- [ ] Docker Compose setup
+- [ ] S3 background worker (drain Redis buffer to S3)
+- [ ] Wire Redis rate limiter (implementation exists, currently NoopLimiter)
+- [ ] Streaming cost calculation (parse SSE chunks for accurate token counts)
+- [ ] Prometheus metrics integration (instrumentation)
+- [x] Docker Compose setup (postgres, redis, minio services configured)
+- [x] Integration tests (28 test files, comprehensive coverage for admin APIs)
+- [ ] Unit test expansion (increase coverage)
 - [ ] BerriAI model catalog sync (automated pricing updates)
 
 ### 📋 Milestone 3: Multi-Provider Support
@@ -393,70 +397,142 @@ See [TODO.md](TODO.md) for detailed task tracking.
 
 ```
 ThinkPixelLLMGW/
-├── README.md                   # This file - project overview
-├── QUICKSTART.md              # 5-minute setup guide
+├── README.md                   # Project overview and quick start
 ├── TODO.md                    # Comprehensive task tracking
 ├── TESTING_GUIDE.md           # Complete testing and setup guide
-├── COST_CALCULATION.md        # Cost calculation system documentation
-├── BILLING_INTEGRATION.md     # Billing integration guide
-├── IMPLEMENTATION_SUMMARY.md  # Implementation details and results
-├── COST_CALCULATION_QUICK_REF.md  # Quick reference for cost calculation
 ├── ENV_VARIABLES.md           # Environment configuration reference
 ├── DATABASE_SCHEMA.md         # Database schema documentation
+├── docker-compose.yaml        # Development services (postgres, redis, minio)
 ├── LICENSE                    # License file
-└── llm-gateway/               # Main Go application
-    ├── cmd/
-    │   └── gateway/
-    │       └── main.go        # Application entry point
+│
+└── llm_gateway/               # Main Go application (96 files, 28 tests)
+    ├── cmd/gateway/
+    │   └── main.go           # Application entry point with graceful shutdown
+    │
     ├── internal/
-    │   ├── auth/              # ✅ API key & JWT authentication
-    │   │   ├── api_key.go    # API key store interface and record
-    │   │   ├── jwt.go        # JWT handling (placeholder)
-    │   │   ├── hash.go       # SHA-256 hashing utilities
-    │   │   └── errors.go     # Auth errors
-    │   ├── billing/           # ✅ Cost tracking & budget enforcement
-    │   │   └── billing.go    # Redis cache with DB sync
-    │   ├── config/            # ✅ Configuration management
-    │   │   └── config.go     # Environment variable parsing
-    │   ├── httpapi/           # ✅ HTTP handlers & routing
-    │   │   ├── router.go     # Dependency injection and routes
-    │   │   ├── proxy_handler.go      # Chat completions endpoint
-    │   │   ├── api_key_store.go      # DB adapter for auth
-    │   │   ├── logging_sink.go       # Redis adapter for logging
-    │   │   ├── admin_handler.go      # Admin API (placeholder)
-    │   │   └── jwt_middleware.go     # JWT middleware (placeholder)
-    │   ├── logging/           # ✅ Redis buffer (S3 pending)
-    │   │   ├── sink.go       # Logging interface
-    │   │   ├── redis_buffer.go       # Redis queue implementation
-    │   │   └── s3_writer.go  # S3 uploader (TODO)
-    │   ├── metrics/           # ⏳ Prometheus metrics
-    │   │   └── metrics.go    # Placeholder
-    │   ├── models/            # ✅ Data models
-    │   │   ├── api_key.go    # API key with validation
-    │   │   ├── provider.go   # Provider configuration
-    │   │   ├── alias.go      # Model aliases
-    │   │   └── errors.go     # Error types
-    │   ├── providers/         # ✅ LLM provider implementations
-    │   │   ├── provider.go   # Provider interface
-    │   │   ├── factory.go    # Factory pattern
-    │   │   ├── registry.go   # Auto-reload registry
-    │   │   ├── openai.go     # OpenAI (complete)
-    │   │   ├── vertexai.go   # Vertex AI (stub)
-    │   │   └── bedrock.go    # Bedrock (stub)
-    │   ├── ratelimit/         # ✅ Redis-based rate limiting
-    │   │   └── ratelimiter.go # Sliding window algorithm
-    │   └── storage/           # ✅ Database & encryption
-    │       ├── db.go         # Connection pool and LRU cache
-    │       ├── cache.go      # Thread-safe LRU implementation
-    │       ├── encryption.go # AES-256 encryption
-    │       ├── redis.go      # Redis client
-    │       ├── api_key_repository.go    # API key CRUD
-    │       ├── model_repository.go      # Model CRUD with aliases
-    │       ├── provider_repository.go   # Provider CRUD
-    │       ├── usage_repository.go      # Usage tracking
-    │       └── migrations/   # SQL migrations
-    └── go.mod
+    │   ├── auth/             # ✅ Authentication & authorization (5 files)
+    │   │   ├── api_key.go         # API key store interface
+    │   │   ├── jwt.go             # JWT generation & validation
+    │   │   ├── roles.go           # Role constants (viewer, editor, admin)
+    │   │   ├── errors.go          # Auth error types
+    │   │   └── *_test.go          # Comprehensive test coverage
+    │   │
+    │   ├── billing/          # ✅ Cost tracking & budget enforcement (4 files)
+    │   │   ├── billing.go              # Redis cache with 5-min DB sync
+    │   │   ├── billing_queue_worker.go # Async billing updates
+    │   │   └── *_test.go               # Unit & integration tests
+    │   │
+    │   ├── config/           # ✅ Configuration management (1 file)
+    │   │   └── config.go          # Environment variable parsing
+    │   │
+    │   ├── httpapi/          # ✅ HTTP handlers & routing (14 files)
+    │   │   ├── router.go                        # Dependency injection & routes
+    │   │   ├── proxy_handler.go                 # Chat completions endpoint
+    │   │   ├── admin_handler.go                 # Admin auth endpoints
+    │   │   ├── admin_api_keys_handler.go        # API key CRUD (520 lines)
+    │   │   ├── admin_providers_handler.go       # Provider CRUD (474 lines)
+    │   │   ├── admin_models_handler.go          # Model CRUD (580 lines)
+    │   │   ├── admin_aliases_handler.go         # Alias CRUD (520 lines)
+    │   │   ├── admin_store.go                   # Admin store adapter
+    │   │   ├── api_key_store.go                 # API key store adapter
+    │   │   ├── logging_sink.go                  # Logging sink adapter
+    │   │   └── *_integration_test.go            # 6 comprehensive test files
+    │   │
+    │   ├── logging/          # ✅ Logging & audit trail (6 files)
+    │   │   ├── sink.go             # Logging interface & implementations
+    │   │   ├── redis_buffer.go     # Redis queue for log buffering
+    │   │   ├── s3_writer.go        # S3 batch uploader (AWS SDK v2)
+    │   │   ├── request_logger.go   # File-based logger with rotation
+    │   │   └── *_test.go           # Unit & S3 integration tests
+    │   │
+    │   ├── metrics/          # ⏳ Prometheus metrics (1 file)
+    │   │   └── metrics.go          # Noop implementation (TODO: instrument)
+    │   │
+    │   ├── middleware/       # ✅ HTTP middleware (3 files)
+    │   │   ├── api_key_middleware.go  # API key authentication
+    │   │   ├── jwt_middleware.go      # JWT validation & RBAC
+    │   │   └── *_test.go              # Middleware tests
+    │   │
+    │   ├── models/           # ✅ Data models (11 files)
+    │   │   ├── api_key.go          # API key with validation
+    │   │   ├── provider.go         # Provider configuration
+    │   │   ├── model.go            # Model with pricing (100+ fields)
+    │   │   ├── model_alias.go      # Model alias configuration
+    │   │   ├── pricing_component.go # Multi-dimensional pricing
+    │   │   ├── usage_record.go     # Usage tracking
+    │   │   ├── admin_user.go       # Admin user with roles
+    │   │   ├── admin_token.go      # Service account tokens
+    │   │   ├── jsonb.go            # JSONB helpers
+    │   │   ├── errors.go           # Model errors
+    │   │   └── *_test.go           # Cost calculation & validation tests
+    │   │
+    │   ├── providers/        # ✅ LLM provider implementations (7 files)
+    │   │   ├── provider.go    # Provider interface
+    │   │   ├── factory.go     # Factory pattern
+    │   │   ├── registry.go    # Auto-reload registry (5-min interval)
+    │   │   ├── auth.go        # Authentication helpers
+    │   │   ├── openai.go      # OpenAI complete with streaming
+    │   │   ├── vertexai.go    # Vertex AI stub (TODO: implement)
+    │   │   ├── bedrock.go     # Bedrock stub (TODO: implement)
+    │   │   └── *_test.go      # Provider examples & tests
+    │   │
+    │   ├── queue/            # ✅ Async queue system (9 files)
+    │   │   ├── queue.go       # Queue interface
+    │   │   ├── memory.go      # In-memory queue implementation
+    │   │   ├── redis.go       # Redis-backed queue
+    │   │   ├── errors.go      # Queue errors
+    │   │   └── *_test.go      # Memory, Redis, integration tests
+    │   │
+    │   ├── ratelimit/        # ✅ Rate limiting (1 file, not wired)
+    │   │   └── ratelimiter.go # Redis sliding window (< 5ms, 10k req/s)
+    │   │
+    │   ├── storage/          # ✅ Database & encryption (15 files)
+    │   │   ├── db.go                      # Connection pool & LRU cache
+    │   │   ├── cache.go                   # Thread-safe LRU
+    │   │   ├── redis.go                   # Redis client
+    │   │   ├── encryption.go              # AES-256-GCM encryption
+    │   │   ├── api_key_repository.go      # API key CRUD
+    │   │   ├── model_repository.go        # Model CRUD with pricing
+    │   │   ├── provider_repository.go     # Provider CRUD
+    │   │   ├── alias_repository.go        # Alias CRUD
+    │   │   ├── usage_repository.go        # Usage tracking
+    │   │   ├── admin_user_repository.go   # Admin user CRUD
+    │   │   ├── admin_token_repository.go  # Admin token CRUD
+    │   │   ├── usage_queue_worker.go      # Usage worker
+    │   │   ├── errors.go                  # Storage errors
+    │   │   └── *_test.go                  # Encryption & worker tests
+    │   │
+    │   └── utils/            # ✅ Utility functions (10 files)
+    │       ├── logger.go           # Structured logging
+    │       ├── hash.go             # Argon2id password hashing
+    │       ├── rest.go             # REST response helpers
+    │       ├── errors.go           # Error handling
+    │       ├── memory.go           # Memory utilities
+    │       ├── data_conversion.go  # Type conversions
+    │       └── *_test.go           # Comprehensive test coverage
+    │
+    ├── migrations/           # ✅ Database migrations (5 files)
+    │   ├── 20251125000001_initial_schema.up.sql
+    │   ├── 20251125000001_initial_schema.down.sql
+    │   ├── 20251125000002_seed_data.up.sql
+    │   ├── 20251125000002_seed_data.down.sql
+    │   └── README.md
+    │
+    ├── examples/             # Example code
+    │   ├── encryption_example.go
+    │   └── s3_logging_example.go
+    │
+    ├── Makefile             # Build & test targets
+    ├── go.mod               # Go module definition
+    └── go.sum               # Dependency checksums
 ```
+
+**File Statistics (December 2, 2025):**
+- Total Go files: 96
+- Test files: 28 (comprehensive coverage)
+- Lines of code: ~15,000+ (excluding tests)
+- Integration tests: 6 files covering admin APIs
+- Documentation: 10+ markdown files
 
 ## Contributing
 
