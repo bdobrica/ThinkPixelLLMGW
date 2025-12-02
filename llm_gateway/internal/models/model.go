@@ -117,8 +117,105 @@ type Model struct {
 }
 
 // CalculateCost calculates the cost for a given token usage
+// It matches token types from the usage record to pricing components
 func (m *Model) CalculateCost(usageRecord UsageRecord) float64 {
 	cost := 0.0
 
+	// Calculate input tokens cost (excluding cached tokens)
+	if usageRecord.InputTokens > 0 {
+		if component := m.findPricingComponent(PricingDirectionInput, PricingModalityText); component != nil {
+			cost += m.calculateComponentCost(component, usageRecord.InputTokens)
+		}
+	}
+
+	// Calculate output tokens cost (excluding reasoning tokens to avoid double counting)
+	if usageRecord.OutputTokens > 0 {
+		if component := m.findPricingComponent(PricingDirectionOutput, PricingModalityText); component != nil {
+			cost += m.calculateComponentCost(component, usageRecord.OutputTokens)
+		}
+	}
+
+	// Calculate cached tokens cost (typically cheaper or free)
+	// Some APIs return cached tokens separately, others include them in input tokens
+	if usageRecord.CachedTokens > 0 {
+		// Try to find cache-specific pricing first
+		if component := m.findPricingComponent(PricingDirectionCache, PricingModalityText); component != nil {
+			cost += m.calculateComponentCost(component, usageRecord.CachedTokens)
+		}
+	}
+
+	// Calculate reasoning tokens cost (for reasoning models like o1)
+	// Reasoning tokens are separate from regular output tokens
+	if usageRecord.ReasoningTokens > 0 {
+		// Use output pricing for reasoning tokens (they're a type of output)
+		// Note: Some providers may have separate reasoning token pricing in the future
+		if component := m.findPricingComponent(PricingDirectionOutput, PricingModalityText); component != nil {
+			cost += m.calculateComponentCost(component, usageRecord.ReasoningTokens)
+		}
+	}
+
 	return cost
+}
+
+// findPricingComponent finds a pricing component by direction and modality
+// Returns the first matching component, preferring default tier
+func (m *Model) findPricingComponent(direction PricingDirection, modality PricingModality) *PricingComponent {
+	var defaultComponent *PricingComponent
+	var otherComponent *PricingComponent
+
+	for i := range m.PricingComponents {
+		component := &m.PricingComponents[i]
+
+		// Check if direction and modality match
+		if component.Direction != direction || component.Modality != modality {
+			continue
+		}
+
+		// Prefer default tier
+		if component.Tier != nil && *component.Tier == string(PricingTierDefault) {
+			defaultComponent = component
+			break
+		} else if component.Tier == nil {
+			// Component with no tier is considered default
+			defaultComponent = component
+			break
+		} else if otherComponent == nil {
+			// Keep first non-default component as fallback
+			otherComponent = component
+		}
+	}
+
+	if defaultComponent != nil {
+		return defaultComponent
+	}
+	return otherComponent
+}
+
+// calculateComponentCost calculates cost for a specific pricing component and token count
+func (m *Model) calculateComponentCost(component *PricingComponent, tokens int) float64 {
+	if component == nil || tokens == 0 {
+		return 0.0
+	}
+
+	// Calculate based on pricing unit
+	switch component.Unit {
+	case PricingUnit1KTokens:
+		// Price is per 1K tokens
+		return (float64(tokens) / 1000.0) * component.Price
+
+	case PricingUnitToken:
+		// Price is per token
+		return float64(tokens) * component.Price
+
+	case PricingUnitCharacter:
+		// Assuming tokens ≈ 4 characters (rough estimate)
+		// This should be refined based on actual provider behavior
+		characters := tokens * 4
+		return float64(characters) * component.Price
+
+	default:
+		// For other units (image, pixel, second, etc.), return 0
+		// These would need separate handling based on request type
+		return 0.0
+	}
 }

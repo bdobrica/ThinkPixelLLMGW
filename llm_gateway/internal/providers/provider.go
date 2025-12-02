@@ -95,6 +95,10 @@ type Registry interface {
 	// ResolveModel resolves a model or alias name to a provider and model name
 	ResolveModel(ctx context.Context, modelNameOrAlias string) (Provider, string, error)
 
+	// ResolveModelWithDetails resolves a model or alias name to a provider, model name, and full model details
+	// This includes pricing components for accurate cost calculation
+	ResolveModelWithDetails(ctx context.Context, modelNameOrAlias string) (Provider, string, interface{}, error)
+
 	// GetProvider retrieves a provider by ID
 	GetProvider(ctx context.Context, providerID string) (Provider, error)
 

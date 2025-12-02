@@ -10,6 +10,12 @@ import (
 	"llm_gateway/internal/models"
 )
 
+// ModelWithDetails wraps a model with its pricing components
+type ModelWithDetails struct {
+	*models.Model
+	PricingComponents []models.PricingComponent
+}
+
 // ModelRepository handles model database operations with caching
 type ModelRepository struct {
 	db    *DB

@@ -268,12 +268,12 @@ func extractUsageFromResponse(body []byte) *UsageInfo {
 }
 
 // extractCostFromResponse extracts token usage and calculates cost
-// In production, you'd use the model pricing from database
+// This is a fallback when model pricing is not available
 func extractCostFromResponse(body []byte) float64 {
 	usage := extractUsageFromResponse(body)
 
-	// This is a placeholder calculation
-	// In production, fetch model pricing from database and use Model.CalculateCost()
+	// Fallback: Use approximate OpenAI GPT-4 pricing
+	// This should only be used when model pricing components are not available
 	inputCost := float64(usage.InputTokens) * 0.00001   // $0.01 per 1K tokens
 	outputCost := float64(usage.OutputTokens) * 0.00003 // $0.03 per 1K tokens
 

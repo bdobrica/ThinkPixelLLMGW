@@ -16,6 +16,7 @@ import (
 	"llm_gateway/internal/middleware"
 	"llm_gateway/internal/models"
 	"llm_gateway/internal/providers"
+	"llm_gateway/internal/storage"
 )
 
 // handleChat is the entry point for OpenAI-compatible chat completions.
@@ -89,8 +90,8 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 7. Resolve model → provider + providerModel
-	provider, providerModel, err := d.Providers.ResolveModel(ctx, modelName)
+	// 7. Resolve model → provider + providerModel + model details (with pricing)
+	provider, providerModel, modelDetails, err := d.Providers.ResolveModelWithDetails(ctx, modelName)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("unknown model: %s", modelName))
 		return
@@ -134,7 +135,7 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 		d.handleStreamingResponse(w, r, pResp, apiKeyRecord, reqID, modelName, providerModel, provider, payload, start, providerLatency)
 	} else {
 		// Non-streaming response
-		d.handleNonStreamingResponse(w, pResp, apiKeyRecord, reqID, modelName, providerModel, provider, payload, start, providerLatency)
+		d.handleNonStreamingResponse(w, pResp, apiKeyRecord, reqID, modelName, providerModel, provider, payload, start, providerLatency, modelDetails)
 	}
 }
 
@@ -150,11 +151,30 @@ func (d *Dependencies) handleNonStreamingResponse(
 	payload map[string]any,
 	start time.Time,
 	providerLatency time.Duration,
+	modelDetails interface{},
 ) {
 	// Parse response to extract usage and cost
 	var responseBody map[string]any
 	if err := json.Unmarshal(pResp.Body, &responseBody); err == nil {
 		// Successfully parsed response
+	}
+
+	// Calculate accurate cost using model pricing components
+	actualCost := pResp.CostUSD // Use provider's fallback calculation
+	if modelDetails != nil {
+		// Type assert to get the actual model with pricing components
+		if details, ok := modelDetails.(*storage.ModelWithDetails); ok && details.Model != nil {
+			// Create usage record from response
+			usageRecord := models.UsageRecord{
+				InputTokens:     pResp.InputTokens,
+				OutputTokens:    pResp.OutputTokens,
+				CachedTokens:    pResp.CachedTokens,
+				ReasoningTokens: pResp.ReasoningTokens,
+			}
+
+			// Calculate cost using model's pricing components
+			actualCost = details.Model.CalculateCost(usageRecord)
+		}
 	}
 
 	// Create log record
@@ -168,7 +188,7 @@ func (d *Dependencies) handleNonStreamingResponse(
 		Alias:           modelName,
 		ProviderMs:      providerLatency.Milliseconds(),
 		GatewayMs:       time.Since(start).Milliseconds(),
-		CostUSD:         pResp.CostUSD,
+		CostUSD:         actualCost,
 		RequestPayload:  payload,
 		ResponsePayload: json.RawMessage(pResp.Body),
 	}
@@ -177,10 +197,10 @@ func (d *Dependencies) handleNonStreamingResponse(
 	_ = d.Logger.Enqueue(logRec)
 
 	// Queue billing update asynchronously
-	if pResp.CostUSD > 0 && d.BillingWorker != nil {
+	if actualCost > 0 && d.BillingWorker != nil {
 		billingUpdate := &billing.BillingUpdate{
 			APIKeyID:  apiKeyRecord.ID,
-			CostUSD:   pResp.CostUSD,
+			CostUSD:   actualCost,
 			Timestamp: time.Now(),
 		}
 		_ = d.BillingWorker.Enqueue(context.Background(), billingUpdate)

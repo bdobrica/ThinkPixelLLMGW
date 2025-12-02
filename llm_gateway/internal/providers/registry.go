@@ -101,6 +101,49 @@ func (r *ProviderRegistry) ResolveModel(ctx context.Context, modelNameOrAlias st
 	return nil, "", fmt.Errorf("model or alias not found: %s", modelNameOrAlias)
 }
 
+// ResolveModelWithDetails resolves a model name or alias to a provider, model name, and full model details
+// This includes pricing components needed for accurate cost calculation
+func (r *ProviderRegistry) ResolveModelWithDetails(ctx context.Context, modelNameOrAlias string) (Provider, string, interface{}, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var actualModelName string
+	var providerID string
+
+	// First check if it's an alias
+	if pID, exists := r.aliasToProvider[modelNameOrAlias]; exists {
+		providerID = pID
+		actualModelName = r.aliasToModel[modelNameOrAlias]
+	} else if pID, exists := r.modelToProvider[modelNameOrAlias]; exists {
+		// It's a direct model name
+		providerID = pID
+		actualModelName = modelNameOrAlias
+	} else {
+		return nil, "", nil, fmt.Errorf("model or alias not found: %s", modelNameOrAlias)
+	}
+
+	// Get the provider
+	provider, ok := r.providers[providerID]
+	if !ok {
+		return nil, "", nil, fmt.Errorf("provider %s not found", providerID)
+	}
+
+	// Get full model details with pricing components
+	modelRepo := storage.NewModelRepository(r.db)
+	model, err := modelRepo.GetByName(ctx, actualModelName)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to get model details: %w", err)
+	}
+
+	// Wrap in ModelWithDetails
+	modelDetails := &storage.ModelWithDetails{
+		Model:             model,
+		PricingComponents: model.PricingComponents,
+	}
+
+	return provider, actualModelName, modelDetails, nil
+}
+
 // GetProvider retrieves a provider by ID
 func (r *ProviderRegistry) GetProvider(ctx context.Context, providerID string) (Provider, error) {
 	r.mu.RLock()
