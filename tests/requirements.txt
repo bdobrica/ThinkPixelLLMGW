@@ -2,3 +2,9 @@
 
 # OpenAI Python SDK for testing the gateway
 openai>=1.0.0
+
+# AWS SDK for S3 testing (Minio)
+boto3>=1.28.0
+
+# Redis client for log buffer testing
+redis>=5.0.0

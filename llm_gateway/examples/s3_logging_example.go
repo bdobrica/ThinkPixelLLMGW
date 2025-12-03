@@ -6,14 +6,17 @@ import (
 	"log"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"llm_gateway/internal/config"
 	"llm_gateway/internal/logging"
 )
 
 // This example demonstrates how to use the S3 logging sink
-// to buffer request logs in-memory and flush them to S3 periodically.
+// to buffer request logs in Redis and flush them to S3 periodically.
 //
 // Prerequisites:
+// - Redis running (for buffering logs)
 // - AWS credentials configured (via ~/.aws/credentials, IAM role, or env vars)
 // - S3 bucket created
 // - Environment variables set (see below)
@@ -27,10 +30,31 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// Create Redis client for buffering
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Address,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	defer redisClient.Close()
+
+	// Test Redis connection
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
+	// Create Redis buffer
+	buffer := logging.NewRedisBuffer(redisClient, logging.RedisBufferConfig{
+		QueueKey:  "demo:logs",
+		MaxSize:   10000,
+		BatchSize: 100,
+	})
+
 	// Create S3 sink if enabled
 	var sink logging.Sink
 	if cfg.LoggingSink.Enabled && cfg.LoggingSink.S3Bucket != "" {
 		sinkConfig := logging.S3SinkConfig{
+			Enabled:       cfg.LoggingSink.Enabled,
 			BufferSize:    cfg.LoggingSink.BufferSize,
 			FlushSize:     cfg.LoggingSink.FlushSize,
 			FlushInterval: cfg.LoggingSink.FlushInterval,
@@ -40,7 +64,7 @@ func main() {
 			PodName:       cfg.LoggingSink.PodName,
 		}
 
-		sink, err = logging.NewS3Sink(ctx, sinkConfig)
+		sink, err = logging.NewS3Sink(ctx, sinkConfig, buffer)
 		if err != nil {
 			log.Fatalf("Failed to create S3 sink: %v", err)
 		}

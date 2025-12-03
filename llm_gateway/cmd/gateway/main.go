@@ -64,6 +64,13 @@ func main() {
 		deps.RequestLogger.Shutdown()
 	}
 
+	// Shutdown S3 logging sink to flush remaining logs to S3
+	if deps.Logger != nil {
+		if err := deps.Logger.Shutdown(ctx); err != nil {
+			log.Printf("Failed to shutdown logging sink: %v", err)
+		}
+	}
+
 	// Shutdown billing service to sync final data
 	if billingService, ok := deps.Billing.(interface{ Shutdown(context.Context) error }); ok {
 		_ = billingService.Shutdown(ctx)

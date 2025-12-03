@@ -32,7 +32,7 @@ python3 -m venv ~/.venvs/py-openai
 source ~/.venvs/py-openai/bin/activate
 
 # Install dependencies
-pip install openai
+pip install -r tests/requirements.txt
 
 # Deactivate
 deactivate
@@ -106,6 +106,23 @@ The e2e test suite includes:
 - **Test**: Uses a model alias (e.g., 'gpt-4' → 'gpt-4o')
 - **Validates**: Alias is correctly resolved to actual model
 
+### 4. Redis Log Buffer Test
+- **Purpose**: Validates Redis log buffering
+- **Test**: Checks that logs are being buffered in Redis
+- **Validates**:
+  - Connection to Redis
+  - Log queue existence and size
+  - Log record structure in Redis
+
+### 5. S3 Logging Pipeline Test
+- **Purpose**: Validates complete S3 logging workflow
+- **Test**: Makes API request, waits for flush, verifies S3 logs
+- **Validates**:
+  - Logs are written to Minio S3
+  - Files are gzip compressed
+  - JSON Lines format is correct
+  - Required fields present (timestamp, request_id, provider, model, etc.)
+
 ## Test Output
 
 The test script provides colored, detailed output:
@@ -146,6 +163,23 @@ Running Tests...
   Requested: gpt-4 (alias)
   Actual model: gpt-4o-2024-05-13
 
+► Testing Redis log buffering...
+✓ Connected to Redis
+  Redis log queue size: 3
+✓ Logs are being buffered in Redis (3 pending)
+
+► Testing S3 logging pipeline...
+  Making request to generate logs...
+✓ Request completed, logs should be buffered in Redis
+  Waiting 10 seconds for background worker to flush to S3...
+  Checking for logs in Minio S3...
+✓ Found 2 log file(s) in S3!
+  Latest log: logs/2024-01-15T12-30-00Z.jsonl.gz (1234 bytes)
+✓ Log file is gzip compressed ✓
+  Log contains 5 record(s)
+✓ Log structure validated ✓
+  Sample: Provider=openai, Model=gpt-4o-2024-05-13
+
 ► Stopping docker-compose services...
 ✓ Docker-compose services stopped and cleaned up
 
@@ -153,8 +187,8 @@ Running Tests...
 Test Results
 ============================================================
 
-Tests run: 3
-Tests passed: 3
+Tests run: 5
+Tests passed: 5
 Tests failed: 0
 
 ✓ All tests passed!
@@ -174,6 +208,26 @@ Or directly:
 docker logs gw-gateway
 docker logs --tail 50 gw-gateway
 docker logs --follow gw-gateway
+```
+
+### Check Minio S3 Console
+
+The Minio console is available at http://localhost:9001
+
+- Username: `minioadmin`
+- Password: `minioadmin`
+
+You can browse the `llm-logs` bucket to inspect log files.
+
+### Check Redis Logs
+
+```bash
+docker exec -it gw-redis redis-cli
+
+# In Redis CLI:
+LLEN gateway:logs           # Check queue size
+LINDEX gateway:logs 0       # Peek at first log
+LRANGE gateway:logs 0 10    # Get first 10 logs
 ```
 
 ### Check Service Health
@@ -288,3 +342,4 @@ When adding new e2e tests:
 
 3. Document the test case in this README
 4. Test locally before submitting PR
+

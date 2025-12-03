@@ -2,16 +2,21 @@ package logging
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
-	"llm_gateway/internal/queue"
 	"llm_gateway/internal/utils"
 )
+
+// LogBuffer defines the interface for buffering log records
+type LogBuffer interface {
+	Enqueue(ctx context.Context, record *LogRecord) error
+	Dequeue(ctx context.Context, count int) ([]*LogRecord, error)
+	Size(ctx context.Context) (int64, error)
+}
 
 // LogRecord is the structure that will be logged to S3 via in-memory buffering.
 type LogRecord struct {
@@ -53,9 +58,9 @@ func (s *NoopSink) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// S3Sink buffers log records in-memory and flushes to S3 periodically or when buffer fills
+// S3Sink drains log records from Redis buffer and flushes to S3 periodically
 type S3Sink struct {
-	queue         queue.Queue
+	buffer        LogBuffer
 	writer        *S3Writer
 	flushSize     int
 	flushInterval time.Duration
@@ -74,47 +79,35 @@ type S3Sink struct {
 	//         command: ["/bin/sh", "-c", "sleep 30"]
 }
 
-// NewS3Sink creates a new S3-based logging sink
-func NewS3Sink(ctx context.Context, config S3SinkConfig) (*S3Sink, error) {
+// NewS3Sink creates a new S3-based logging sink with Redis buffer
+func NewS3Sink(ctx context.Context, config S3SinkConfig, buffer LogBuffer) (*S3Sink, error) {
 	// Create S3 writer
 	writer, err := NewS3Writer(ctx, config.S3Bucket, config.S3Region, config.S3Prefix, config.PodName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create in-memory queue (no Redis needed for logging)
-	queueConfig := &queue.Config{
-		QueueName:    "logging",
-		BatchSize:    config.FlushSize,
-		BatchTimeout: config.FlushInterval,
-		MaxRetries:   0, // No retries for logging
-		RetryBackoff: 0,
-		UseRedis:     false,
-	}
-	memQueue := queue.NewMemoryQueue(queueConfig)
-
 	sink := &S3Sink{
-		queue:         memQueue,
+		buffer:        buffer,
 		writer:        writer,
 		flushSize:     config.FlushSize,
 		flushInterval: config.FlushInterval,
-		logger:        utils.NewLogger("s3-sink"),
+		logger:        utils.NewLogger("s3-sink", utils.Info),
 		stopChan:      make(chan struct{}),
 		stoppedChan:   make(chan struct{}),
 	}
 
-	// Start background flusher
+	// Start background worker that drains Redis buffer to S3
+	sink.logger.Info("Starting S3 sink background worker")
 	sink.wg.Add(1)
 	go sink.run(ctx)
-
-	// Setup signal handlers for graceful shutdown
-	sink.setupSignalHandlers()
 
 	return sink, nil
 }
 
 // S3SinkConfig holds configuration for S3Sink
 type S3SinkConfig struct {
+	Enabled       bool
 	BufferSize    int
 	FlushSize     int
 	FlushInterval time.Duration
@@ -124,13 +117,13 @@ type S3SinkConfig struct {
 	PodName       string
 }
 
-// Enqueue adds a log record to the in-memory queue
+// Enqueue adds a log record to the Redis buffer
 func (s *S3Sink) Enqueue(rec *LogRecord) error {
 	ctx := context.Background()
-	return s.queue.Enqueue(ctx, rec)
+	return s.buffer.Enqueue(ctx, rec)
 }
 
-// run is the main worker loop that flushes batches to S3
+// run is the main background worker loop that drains Redis buffer and flushes batches to S3
 func (s *S3Sink) run(ctx context.Context) {
 	defer s.wg.Done()
 	defer close(s.stoppedChan)
@@ -139,8 +132,13 @@ func (s *S3Sink) run(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Also create a ticker for checking flush size
-	sizeTicker := time.NewTicker(100 * time.Millisecond)
+	sizeTicker := time.NewTicker(1 * time.Second)
 	defer sizeTicker.Stop()
+
+	s.logger.Info("S3 background worker started",
+		"flush_interval", s.flushInterval,
+		"flush_size", s.flushSize,
+	)
 
 	for {
 		select {
@@ -153,43 +151,30 @@ func (s *S3Sink) run(ctx context.Context) {
 			s.flushAll(ctx)
 			return
 		case <-ticker.C:
+			// Periodic flush
 			s.flush(ctx)
 		case <-sizeTicker.C:
 			// Check if we've reached flush size
-			length, err := s.queue.Length(ctx)
+			size, err := s.buffer.Size(ctx)
 			if err != nil {
-				s.logger.Error("Failed to get queue length", "error", err)
+				s.logger.Error("Failed to get buffer size", "error", err)
 				continue
 			}
 
-			if length >= s.flushSize {
+			if size >= int64(s.flushSize) {
 				s.flush(ctx)
 			}
 		}
 	}
 }
 
-// flush writes a batch of records to S3
+// flush writes a batch of records from Redis buffer to S3
 func (s *S3Sink) flush(ctx context.Context) {
-	// Dequeue up to flushSize items with short timeout
-	items, err := s.queue.DequeueWithTimeout(ctx, s.flushSize, 100*time.Millisecond)
+	// Dequeue up to flushSize items from Redis
+	records, err := s.buffer.Dequeue(ctx, s.flushSize)
 	if err != nil {
-		s.logger.Error("Failed to dequeue records", "error", err)
+		s.logger.Error("Failed to dequeue records from Redis", "error", err)
 		return
-	}
-
-	if len(items) == 0 {
-		return
-	}
-
-	// Convert items to LogRecords
-	records := make([]*LogRecord, 0, len(items))
-	for _, item := range items {
-		if rec, ok := item.(*LogRecord); ok {
-			records = append(records, rec)
-		} else {
-			s.logger.Warn("Invalid item type in queue", "type", fmt.Sprintf("%T", item))
-		}
 	}
 
 	if len(records) == 0 {
@@ -204,32 +189,23 @@ func (s *S3Sink) flush(ctx context.Context) {
 		return
 	}
 
-	s.logger.Debug("Flushed batch to S3", "key", key, "count", len(records))
+	s.logger.Info("Flushed batch to S3", "key", key, "count", len(records))
 }
 
-// flushAll drains the entire queue and writes to S3
+// flushAll drains the entire Redis buffer and writes to S3
 func (s *S3Sink) flushAll(ctx context.Context) {
 	totalFlushed := 0
 	for {
-		items, err := s.queue.DequeueWithTimeout(ctx, s.flushSize, 100*time.Millisecond)
-		if err != nil || len(items) == 0 {
+		records, err := s.buffer.Dequeue(ctx, s.flushSize)
+		if err != nil || len(records) == 0 {
 			break
 		}
 
-		records := make([]*LogRecord, 0, len(items))
-		for _, item := range items {
-			if rec, ok := item.(*LogRecord); ok {
-				records = append(records, rec)
-			}
-		}
-
-		if len(records) > 0 {
-			_, err := s.writer.WriteBatch(ctx, records)
-			if err != nil {
-				s.logger.Error("Failed to write final batch to S3", "error", err)
-			} else {
-				totalFlushed += len(records)
-			}
+		_, err = s.writer.WriteBatch(ctx, records)
+		if err != nil {
+			s.logger.Error("Failed to write final batch to S3", "error", err)
+		} else {
+			totalFlushed += len(records)
 		}
 	}
 
@@ -253,7 +229,7 @@ func (s *S3Sink) setupSignalHandlers() {
 	}()
 }
 
-// Shutdown gracefully stops the sink and flushes remaining records
+// Shutdown gracefully stops the sink and flushes remaining records from Redis to S3
 func (s *S3Sink) Shutdown(ctx context.Context) error {
 	s.logger.Info("Shutting down S3 sink")
 	close(s.stopChan)
@@ -276,10 +252,26 @@ func (s *S3Sink) Shutdown(ctx context.Context) error {
 }
 
 // NewSinkFromConfig creates the appropriate sink based on configuration
-func NewSinkFromConfig(ctx context.Context, config S3SinkConfig) (Sink, error) {
-	if config.S3Bucket == "" {
+func NewSinkFromConfig(ctx context.Context, config S3SinkConfig, buffer LogBuffer) (Sink, error) {
+	logger := utils.NewLogger("sink-factory", utils.Info)
+
+	if !config.Enabled {
+		logger.Info("S3 logging sink disabled (LOGGING_SINK_ENABLED=false)")
 		return NewNoopSink(), nil
 	}
 
-	return NewS3Sink(ctx, config)
+	if config.S3Bucket == "" {
+		logger.Warn("S3 logging sink disabled (LOGGING_SINK_S3_BUCKET not set)")
+		return NewNoopSink(), nil
+	}
+
+	logger.Info("Initializing S3 logging sink",
+		"bucket", config.S3Bucket,
+		"region", config.S3Region,
+		"prefix", config.S3Prefix,
+		"flushInterval", config.FlushInterval,
+		"flushSize", config.FlushSize,
+	)
+
+	return NewS3Sink(ctx, config, buffer)
 }

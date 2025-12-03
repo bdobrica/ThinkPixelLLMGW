@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"llm_gateway/internal/queue"
 	"llm_gateway/internal/utils"
 )
 
@@ -502,18 +502,13 @@ func splitLines(s string) []string {
 
 // Helper to create test S3 sink with custom writer
 func createTestS3Sink(t *testing.T, config S3SinkConfig, writer *S3Writer) *S3Sink {
-	queueConfig := &queue.Config{
-		QueueName:    "test-logging",
-		BatchSize:    config.FlushSize,
-		BatchTimeout: config.FlushInterval,
-		MaxRetries:   0,
-		RetryBackoff: 0,
-		UseRedis:     false,
+	// Create a mock Redis buffer using an in-memory implementation
+	mockBuffer := &mockRedisBuffer{
+		records: make([]*LogRecord, 0),
 	}
-	memQueue := queue.NewMemoryQueue(queueConfig)
 
 	sink := &S3Sink{
-		queue:         memQueue,
+		buffer:        mockBuffer,
 		writer:        writer,
 		flushSize:     config.FlushSize,
 		flushInterval: config.FlushInterval,
@@ -527,6 +522,43 @@ func createTestS3Sink(t *testing.T, config S3SinkConfig, writer *S3Writer) *S3Si
 	go sink.run(context.Background())
 
 	return sink
+}
+
+// mockRedisBuffer is a simple in-memory implementation for testing
+type mockRedisBuffer struct {
+	mu      sync.Mutex
+	records []*LogRecord
+}
+
+func (m *mockRedisBuffer) Enqueue(ctx context.Context, record *LogRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records = append(m.records, record)
+	return nil
+}
+
+func (m *mockRedisBuffer) Dequeue(ctx context.Context, count int) ([]*LogRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.records) == 0 {
+		return nil, nil
+	}
+
+	if count > len(m.records) {
+		count = len(m.records)
+	}
+
+	result := m.records[:count]
+	m.records = m.records[count:]
+
+	return result, nil
+}
+
+func (m *mockRedisBuffer) Size(ctx context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return int64(len(m.records)), nil
 }
 
 // NewTestLogger creates a logger for testing

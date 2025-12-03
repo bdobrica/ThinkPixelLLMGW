@@ -134,6 +134,22 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		BatchSize: 1000,
 	})
 
+	// Initialize S3 logging sink
+	s3SinkConfig := logging.S3SinkConfig{
+		Enabled:       cfg.LoggingSink.Enabled,
+		BufferSize:    cfg.LoggingSink.BufferSize,
+		FlushSize:     cfg.LoggingSink.FlushSize,
+		FlushInterval: cfg.LoggingSink.FlushInterval,
+		S3Bucket:      cfg.LoggingSink.S3Bucket,
+		S3Region:      cfg.LoggingSink.S3Region,
+		S3Prefix:      cfg.LoggingSink.S3Prefix,
+		PodName:       cfg.LoggingSink.PodName,
+	}
+	s3Sink, err := logging.NewSinkFromConfig(context.Background(), s3SinkConfig, logBuffer)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize S3 sink: %w", err)
+	}
+
 	// Initialize request logger
 	requestLogger, err := logging.NewLogger(
 		cfg.RequestLogger.FilePathTemplate,
@@ -219,7 +235,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		Providers:     registry,
 		RateLimit:     rateLimiter,
 		Billing:       billingService,
-		Logger:        NewRedisLoggingSink(logBuffer),
+		Logger:        s3Sink,                   // S3 sink with Redis buffer and background worker
 		Metrics:       metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
 		RequestLogger: requestLogger,
 		BillingWorker: billingWorker,

@@ -26,19 +26,19 @@ The gateway is now **fully functional** with a complete implementation of:
 - Automatic billing updates via async queue workers
 - Model aliasing (e.g., "gpt4" → "gpt-4")
 - Streaming responses (Server-Sent Events)
-- Request/response logging to Redis
+- **S3 Background Worker**: Logs drain from Redis → S3 with gzip compression
+- Request/response logging to Redis buffer with automatic S3 upload
 - Admin API with JWT authentication (email/password and service tokens)
 - Complete CRUD operations for API keys, providers, models, and aliases
-- Graceful shutdown with resource cleanup
+- Graceful shutdown with resource cleanup and log flushing
 
 **Next Priorities** (see [TODO.md](TODO.md) for details):
-1. **S3 Background Worker**: Drain Redis log buffer to S3 (S3Writer exists, needs worker integration)
-2. **Rate Limiting**: Wire up Redis-backed RateLimiter (implementation exists, currently using NoopLimiter)
-3. **Streaming Cost Calculation**: Parse SSE chunks for accurate token counts
-4. **Metrics with Prometheus**: Add instrumentation for monitoring
-5. **Additional Providers**: VertexAI and Bedrock implementation (stubs exist)
-6. **BerriAI Model Catalog Sync**: Automated pricing data updates
-7. **Testing Suite**: Expand test coverage (28 test files exist, need more coverage)
+1. **Rate Limiting**: Wire up Redis-backed RateLimiter (implementation exists, currently using NoopLimiter)
+2. **Streaming Cost Calculation**: Parse SSE chunks for accurate token counts
+3. **Metrics with Prometheus**: Add instrumentation for monitoring
+4. **Additional Providers**: VertexAI and Bedrock implementation (stubs exist)
+5. **BerriAI Model Catalog Sync**: Automated pricing data updates
+6. **Testing Suite**: Expand test coverage (28 test files exist, need more coverage)
 
 ## Overview
 
@@ -82,17 +82,24 @@ ThinkPixelLLMGW is a production-ready gateway service that provides:
 │   └────────────────────────────────┘    │
 │                                         │
 │   ┌────────────────────────────────┐    │
-│   │  Admin API 🔨                  │    │
+│   │  Admin API ✅                  │    │
 │   │  - API Key Management          │    │
 │   │  - Provider Management         │    │
 │   │  - Model Alias Management      │    │
+│   └────────────────────────────────┘    │
+│                                         │
+│   ┌────────────────────────────────┐    │
+│   │  S3 Background Worker ✅       │    │
+│   │  - Drains Redis → S3           │    │
+│   │  - Gzip compression            │    │
+│   │  - Graceful shutdown           │    │
 │   └────────────────────────────────┘    │
 └────────┬────────────┬────────────┬──────┘
          │            │            │
    ┌─────▼─────┐ ┌────▼────┐ ┌─────▼────┐
    │PostgreSQL │ │  Redis  │ │ S3/MinIO │
    │  (Config) │ │(Runtime)│ │ (Logs)   │
-   │     ✅    │ │   ✅    │ │   🔨     │
+   │     ✅    │ │   ✅    │ │   ✅     │
    └───────────┘ └─────────┘ └──────────┘
 
 Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
@@ -121,8 +128,9 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 
 #### 3. **Storage Layer**
 - **PostgreSQL**: API keys, providers, aliases, budgets, historical costs
-- **Redis**: Rate limiting, real-time cost tracking, log buffering
-- **S3**: Long-term request/response audit logs
+- **Redis**: Rate limiting, real-time cost tracking, log buffering (drained to S3)
+- **S3**: Long-term request/response audit logs (gzip-compressed JSON Lines)
+- **Background Worker**: Drains Redis buffer to S3 with configurable flush interval and batch size
 
 #### 4. **Provider Plugins**
 - OpenAI (GPT-4, GPT-3.5, etc.)
@@ -254,8 +262,14 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
   - Token usage and cost calculation
   - Timestamp and metadata
 - **Redis Buffer**: ✅ Queue with batch operations (< 3ms enqueue, ~15k ops/sec)
-- **S3 Writer**: ✅ AWS SDK v2 integration complete (WriteBatch, JSON Lines format)
-- **S3 Background Worker**: ⏳ Worker to drain Redis buffer to S3 (pending integration)
+- **S3 Writer**: ✅ AWS SDK v2 integration with gzip compression
+- **S3 Background Worker**: ✅ Drains Redis buffer to S3 with:
+  - Configurable flush interval (default: 5 minutes)
+  - Configurable batch size (default: 1000 records)
+  - Size-based and time-based flushing
+  - Graceful shutdown with buffer drain
+  - Gzip compression (~80% storage reduction)
+  - Structured file naming: `logs/YYYY/MM/DD/pod-timestamp-nano.jsonl.gz`
 - **Metrics**: ⏳ Prometheus integration (placeholder endpoint exists)
 - **Health Checks**: ✅ Database and Redis health monitoring
 
@@ -292,6 +306,15 @@ export REDIS_PASSWORD=""
 export REDIS_DB="0"
 export CACHE_API_KEY_SIZE="1000"
 export CACHE_MODEL_SIZE="500"
+
+# S3 Logging (optional)
+export LOGGING_SINK_ENABLED="true"
+export LOGGING_SINK_S3_BUCKET="my-llm-logs"
+export LOGGING_SINK_S3_REGION="us-east-1"
+export LOGGING_SINK_S3_PREFIX="logs/"
+export LOGGING_SINK_FLUSH_SIZE="1000"
+export LOGGING_SINK_FLUSH_INTERVAL="5m"
+export POD_NAME="gateway-0"
 ```
 
 **3. Seed Test Data:**
@@ -354,15 +377,16 @@ See [TODO.md](TODO.md) for detailed task tracking.
 - [x] **Automatic billing integration** with async queue workers
 - [x] **Admin API** with JWT authentication
 - [x] **Complete CRUD endpoints** for keys, providers, models, aliases
+- [x] **S3 Background Worker** with gzip compression and graceful shutdown
 - [x] Proxy handler with full request flow
 - [x] Graceful shutdown and resource cleanup
 - [x] Configuration management
-- [x] Comprehensive documentation (COST_CALCULATION.md, BILLING_INTEGRATION.md, TESTING_GUIDE.md)
+- [x] Comprehensive documentation (COST_CALCULATION.md, BILLING_INTEGRATION.md, TESTING_GUIDE.md, S3_BACKGROUND_WORKER_IMPLEMENTATION.md)
 
-**Status:** Gateway is production-ready with complete cost tracking and admin capabilities!
+**Status:** Gateway is production-ready with complete cost tracking, admin capabilities, and S3 log archival!
 
 ### 🔨 Milestone 2: Enhanced Features (In Progress)
-- [ ] S3 background worker (drain Redis buffer to S3)
+- [x] S3 background worker (drain Redis buffer to S3 with gzip compression)
 - [ ] Wire Redis rate limiter (implementation exists, currently NoopLimiter)
 - [ ] Streaming cost calculation (parse SSE chunks for accurate token counts)
 - [ ] Prometheus metrics integration (instrumentation)
@@ -438,12 +462,13 @@ ThinkPixelLLMGW/
     │   │   ├── logging_sink.go                  # Logging sink adapter
     │   │   └── *_integration_test.go            # 6 comprehensive test files
     │   │
-    │   ├── logging/          # ✅ Logging & audit trail (6 files)
-    │   │   ├── sink.go             # Logging interface & implementations
-    │   │   ├── redis_buffer.go     # Redis queue for log buffering
-    │   │   ├── s3_writer.go        # S3 batch uploader (AWS SDK v2)
-    │   │   ├── request_logger.go   # File-based logger with rotation
-    │   │   └── *_test.go           # Unit & S3 integration tests
+    │   ├── logging/          # ✅ Logging & audit trail (7 files)
+    │   │   ├── sink.go                  # LogBuffer interface & S3Sink with background worker
+    │   │   ├── redis_buffer.go          # Redis queue for log buffering
+    │   │   ├── s3_writer.go             # S3 batch uploader with gzip compression
+    │   │   ├── request_logger.go        # File-based logger with rotation
+    │   │   ├── s3_integration_test.go   # S3 integration tests with Minio
+    │   │   └── *_test.go                # Unit tests with mock buffer
     │   │
     │   ├── metrics/          # ⏳ Prometheus metrics (1 file)
     │   │   └── metrics.go          # Noop implementation (TODO: instrument)

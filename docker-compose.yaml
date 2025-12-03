@@ -128,12 +128,17 @@ services:
       # Logging
       LOG_BUFFER_MAX_SIZE: "100000"
       
-      # S3 / MinIO (optional - for future S3 writer)
-      S3_ENDPOINT: "http://gw-minio:9000"
-      S3_BUCKET: "llm-logs"
-      S3_REGION: "us-east-1"
-      S3_ACCESS_KEY: "minioadmin"
-      S3_SECRET_KEY: "minioadmin"
+      # S3 Logging Background Worker
+      LOGGING_SINK_ENABLED: "true"
+      LOGGING_SINK_TYPE: "s3"
+      LOGGING_SINK_S3_BUCKET: "llm-logs"
+      LOGGING_SINK_S3_PREFIX: "logs/"
+      LOGGING_SINK_S3_REGION: "us-east-1"
+      LOGGING_SINK_FLUSH_INTERVAL: "30s"  # Flush every 30s for testing (5m in production)
+      LOGGING_SINK_BATCH_SIZE: "100"      # Smaller batch for testing (1000 in production)
+      AWS_ENDPOINT_URL_S3: "http://gw-minio:9000"
+      AWS_ACCESS_KEY_ID: "minioadmin"
+      AWS_SECRET_ACCESS_KEY: "minioadmin"
       
       # Security (CHANGE IN PRODUCTION!)
       ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
