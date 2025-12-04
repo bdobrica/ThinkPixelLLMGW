@@ -37,11 +37,12 @@ func (s *DatabaseAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (
 
 	// Convert models.APIKey to auth.APIKeyRecord
 	record := &auth.APIKeyRecord{
-		ID:            apiKey.ID.String(),
-		Name:          apiKey.Name,
-		AllowedModels: apiKey.AllowedModels,
-		Tags:          apiKey.Tags,
-		Revoked:       !apiKey.Enabled || apiKey.IsExpired(), // Revoked if disabled or expired
+		ID:                 apiKey.ID.String(),
+		Name:               apiKey.Name,
+		AllowedModels:      apiKey.AllowedModels,
+		RateLimitPerMinute: apiKey.RateLimitPerMinute,
+		Tags:               apiKey.Tags,
+		Revoked:            !apiKey.Enabled || apiKey.IsExpired(), // Revoked if disabled or expired
 	}
 
 	return record, nil

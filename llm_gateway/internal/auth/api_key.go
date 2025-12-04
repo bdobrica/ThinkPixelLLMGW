@@ -9,11 +9,12 @@ import (
 
 // APIKeyRecord is the view of an API key needed at request time.
 type APIKeyRecord struct {
-	ID            string
-	Name          string
-	AllowedModels []string
-	Tags          map[string]string
-	Revoked       bool
+	ID                 string
+	Name               string
+	AllowedModels      []string
+	RateLimitPerMinute int
+	Tags               map[string]string
+	Revoked            bool
 }
 
 // AllowsModel checks whether this key may call a given model/alias.
@@ -44,11 +45,12 @@ func NewInMemoryAPIKeyStore() *InMemoryAPIKeyStore {
 	// Seed with a demo key: "demo-key"
 	hash := utils.HashPassword("demo-key")
 	s.keys[hash] = &APIKeyRecord{
-		ID:            "demo-key-id",
-		Name:          "Demo Key",
-		AllowedModels: []string{}, // all models
-		Tags:          map[string]string{"env": "dev"},
-		Revoked:       false,
+		ID:                 "demo-key-id",
+		Name:               "Demo Key",
+		AllowedModels:      []string{}, // all models
+		RateLimitPerMinute: 60,         // 60 requests per minute
+		Tags:               map[string]string{"env": "dev"},
+		Revoked:            false,
 	}
 
 	return s

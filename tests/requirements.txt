@@ -8,3 +8,6 @@ boto3>=1.28.0
 
 # Redis client for log buffer testing
 redis>=5.0.0
+
+# Requests library for HTTP header inspection
+requests>=2.31.0

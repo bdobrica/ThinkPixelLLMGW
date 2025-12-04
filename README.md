@@ -2,13 +2,13 @@
 
 An enterprise-grade LLM Gateway for managing multi-provider LLM access with authentication, rate limiting, cost tracking, and comprehensive logging.
 
-## 🎯 Project Status (December 2, 2025)
+## 🎯 Project Status (December 4, 2025)
 
 **Current Phase**: Core MVP Complete - Production Ready
 
 The gateway is now **fully functional** with a complete implementation of:
 - ✅ **Database Layer**: PostgreSQL with schema migrations, full repository layer, and LRU caching
-- ✅ **Redis Integration**: Rate limiting, billing cache, and log buffering
+- ✅ **Redis Integration**: Rate limiting (fully wired Dec 4), billing cache, and log buffering
 - ✅ **Provider System**: Pluggable architecture with OpenAI fully implemented (streaming support)
 - ✅ **Proxy Endpoint**: Complete request flow from auth to response
 - ✅ **Middleware**: API key authentication with database lookup
@@ -20,7 +20,7 @@ The gateway is now **fully functional** with a complete implementation of:
 **What's Working Right Now**:
 - Make chat completion requests to OpenAI via the gateway
 - API key authentication with SHA-256 hashing
-- Rate limiting (100 req/min default, configurable per key)
+- **Rate limiting with per-key limits** (Redis sliding window, < 5ms latency) - December 4, 2025
 - Budget tracking with real-time enforcement
 - **Database-driven cost calculation** with pricing components (input, output, cached, reasoning tokens)
 - Automatic billing updates via async queue workers
@@ -33,12 +33,11 @@ The gateway is now **fully functional** with a complete implementation of:
 - Graceful shutdown with resource cleanup and log flushing
 
 **Next Priorities** (see [TODO.md](TODO.md) for details):
-1. **Rate Limiting**: Wire up Redis-backed RateLimiter (implementation exists, currently using NoopLimiter)
-2. **Streaming Cost Calculation**: Parse SSE chunks for accurate token counts
-3. **Metrics with Prometheus**: Add instrumentation for monitoring
-4. **Additional Providers**: VertexAI and Bedrock implementation (stubs exist)
-5. **BerriAI Model Catalog Sync**: Automated pricing data updates
-6. **Testing Suite**: Expand test coverage (28 test files exist, need more coverage)
+1. **Streaming Cost Calculation**: Parse SSE chunks for accurate token counts
+2. **Metrics with Prometheus**: Add instrumentation for monitoring
+3. **Additional Providers**: VertexAI and Bedrock implementation (stubs exist)
+4. **BerriAI Model Catalog Sync**: Automated pricing data updates
+5. **Testing Suite**: Expand test coverage (29 test files exist, need more coverage)
 
 ## Overview
 
@@ -48,7 +47,7 @@ ThinkPixelLLMGW is a production-ready gateway service that provides:
 - **Database-Driven Pricing**: Multi-dimensional cost calculation (direction, modality, unit, tier)
 - **Cost Management**: Accurate per-request cost calculation with automatic billing integration
 - **Budget Enforcement**: Real-time budget checks with Redis-backed tracking and PostgreSQL persistence
-- **Rate Limiting**: Redis-backed distributed rate limiting with sliding window algorithm
+- **Rate Limiting**: Redis-backed distributed rate limiting with per-key limits (sliding window, < 5ms)
 - **Admin API**: Complete CRUD for API keys, providers, models, and aliases with JWT authentication
 - **Audit Logging**: Request/response logging to Redis buffer (S3 upload pending)
 - **Metrics & Monitoring**: Prometheus-compatible metrics for latency, costs, and usage
@@ -160,7 +159,7 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 - [x] **Complete CRUD endpoints** for API keys, providers, models, and aliases
 - [x] Graceful server shutdown with resource cleanup
 - [x] Database-backed API key authentication with caching
-- [x] Redis-backed rate limiting (sliding window algorithm)
+- [x] **Redis-backed rate limiting** with per-key limits and sliding window algorithm (December 4, 2025)
 - [x] Billing cache with atomic cost tracking and PostgreSQL sync
 - [x] Logging to Redis buffer (ready for S3 upload)
 - [x] Configuration management via environment variables
@@ -179,7 +178,6 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 
 **Immediate Priorities:**
 - [ ] Streaming cost calculation (parse SSE chunks for token counts)
-- [ ] S3 writer implementation to drain Redis log buffer to S3/MinIO
 - [ ] Metrics with Prometheus (add instrumentation)
 - [ ] BerriAI model catalog sync script (populate models table with pricing)
 - [ ] Docker Compose setup for development environment
@@ -206,7 +204,7 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 ### API Key Features ✅
 - **Authentication**: SHA-256 hashed keys with database lookup and LRU caching
 - **Permissions**: Model allowlist per key (ready for implementation)
-- **Rate Limiting**: ⏳ Redis implementation exists (< 5ms latency, ~10k checks/sec), currently using NoopLimiter
+- **Rate Limiting**: ✅ Redis-backed sliding window (< 5ms latency, ~10k checks/sec) with per-key limits
 - **Budgets**: Monthly USD limits with Redis cache and background DB sync
 - **Tags**: Flexible metadata support via key_metadata table
 - **Lifecycle**: ✅ Complete CRUD operations via Admin API (create, list, get, update, delete, regenerate)
@@ -387,7 +385,7 @@ See [TODO.md](TODO.md) for detailed task tracking.
 
 ### 🔨 Milestone 2: Enhanced Features (In Progress)
 - [x] S3 background worker (drain Redis buffer to S3 with gzip compression)
-- [ ] Wire Redis rate limiter (implementation exists, currently NoopLimiter)
+- [x] Wire Redis rate limiter (December 4, 2025)
 - [ ] Streaming cost calculation (parse SSE chunks for accurate token counts)
 - [ ] Prometheus metrics integration (instrumentation)
 - [x] Docker Compose setup (postgres, redis, minio services configured)
@@ -508,8 +506,9 @@ ThinkPixelLLMGW/
     │   │   ├── errors.go      # Queue errors
     │   │   └── *_test.go      # Memory, Redis, integration tests
     │   │
-    │   ├── ratelimit/        # ✅ Rate limiting (1 file, not wired)
-    │   │   └── ratelimiter.go # Redis sliding window (< 5ms, 10k req/s)
+    │   ├── ratelimit/        # ✅ Rate limiting (2 files, fully integrated)
+    │   │   ├── ratelimiter.go      # Redis sliding window (< 5ms, 10k req/s)
+    │   │   └── ratelimiter_test.go # Comprehensive test suite
     │   │
     │   ├── storage/          # ✅ Database & encryption (15 files)
     │   │   ├── db.go                      # Connection pool & LRU cache
@@ -552,10 +551,10 @@ ThinkPixelLLMGW/
     └── go.sum               # Dependency checksums
 ```
 
-**File Statistics (December 2, 2025):**
+**File Statistics (December 4, 2025):**
 - Total Go files: 96
-- Test files: 28 (comprehensive coverage)
-- Lines of code: ~15,000+ (excluding tests)
+- Test files: 29 (comprehensive coverage including rate limiter)
+- Lines of code: ~15,500+ (excluding tests)
 - Integration tests: 6 files covering admin APIs
 - Documentation: 10+ markdown files
 

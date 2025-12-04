@@ -26,13 +26,12 @@ import (
 //  1. Validate method
 //  2. Get authenticated API key from context (set by middleware)
 //  3. Decode JSON body
-//  4. Extract model + check key permissions
-//  5. Rate limit
-//  6. Budget check
-//  7. Resolve model → provider + providerModel
+//  4. Resolve model/alias → provider + actual model name + model details
+//  5. Check key permissions (against resolved model name)
+//  6. Rate limit
+//  7. Budget check
 //  8. Call provider
 //  9. Log + update billing
-//
 // 10. Return provider response
 func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -70,15 +69,43 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Check if streaming is requested
 	isStreaming, _ := payload["stream"].(bool)
 
-	// 4. Check if key is allowed to call this model/alias.
-	if !apiKeyRecord.AllowsModel(modelName) {
+	// 4. Resolve model → provider + providerModel + model details (with pricing)
+	// This also resolves aliases to actual model names
+	provider, providerModel, modelDetails, err := d.Providers.ResolveModelWithDetails(ctx, modelName)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("unknown model: %s", modelName))
+		return
+	}
+
+	// 5. Check if key is allowed to call this model (use the resolved model name)
+	if !apiKeyRecord.AllowsModel(providerModel) {
 		writeJSONError(w, http.StatusForbidden, "API key not allowed to use this model")
 		return
 	}
 
-	// 5. Rate limit check
-	allowed := d.RateLimit.Allow(ctx, apiKeyRecord.ID)
+	// 6. Rate limit check with detailed information
+	allowed, remaining, resetAt, err := d.RateLimit.AllowWithDetails(ctx, apiKeyRecord.ID, apiKeyRecord.RateLimitPerMinute)
+	if err != nil {
+		// Log the error but don't fail the request - fallback to allowing
+		// TODO: Add proper error logging
+		writeJSONError(w, http.StatusInternalServerError, "rate limit check error")
+		return
+	}
+
+	// Set rate limit headers
+	w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", apiKeyRecord.RateLimitPerMinute))
+	if apiKeyRecord.RateLimitPerMinute > 0 {
+		w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetAt.Unix()))
+	}
+
 	if !allowed {
+		// Add Retry-After header (seconds until reset)
+		retryAfter := int(time.Until(resetAt).Seconds())
+		if retryAfter < 0 {
+			retryAfter = 60 // Default to 60 seconds
+		}
+		w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
 		writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded")
 		return
 	}
@@ -90,14 +117,7 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 7. Resolve model → provider + providerModel + model details (with pricing)
-	provider, providerModel, modelDetails, err := d.Providers.ResolveModelWithDetails(ctx, modelName)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("unknown model: %s", modelName))
-		return
-	}
-
-	// 9. Call provider
+	// 7. Call provider
 	pReq := providers.ChatRequest{
 		Model:   providerModel,
 		Payload: payload,

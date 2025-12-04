@@ -140,3 +140,10 @@ test-e2e-logs: ## Show gateway logs
 	@echo "Gateway logs (last 50 lines):"
 	@echo ""
 	docker logs --tail 50 gw-gateway
+
+test-rate-limit: ## Run rate limiting tests only (requires services running)
+	@echo "Running rate limiting tests..."
+	@echo "NOTE: This requires services to be running (make test-e2e-setup)"
+	@echo "This will make 65+ rapid requests to test rate limiting"
+	@echo ""
+	cd .. && ~/.venvs/py-openai/bin/python -c "from tests.test_e2e import test_rate_limiting, test_rate_limit_headers, print_step, print_success, print_error; import sys; tests = [test_rate_limiting(), test_rate_limit_headers()]; passed = sum(tests); total = len(tests); print_step(f'Rate Limit Tests: {passed}/{total} passed'); sys.exit(0 if passed == total else 1)"

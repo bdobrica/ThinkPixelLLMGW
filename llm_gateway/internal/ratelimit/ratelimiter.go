@@ -13,6 +13,12 @@ type Limiter interface {
 	Allow(ctx context.Context, key string) bool
 }
 
+// LimiterWithDetails is an extended interface that provides rate limit information
+type LimiterWithDetails interface {
+	Limiter
+	AllowWithDetails(ctx context.Context, apiKeyID string, limit int) (allowed bool, remaining int, resetAt time.Time, err error)
+}
+
 // NoopLimiter allows all requests (no rate limiting yet).
 type NoopLimiter struct{}
 
@@ -35,8 +41,17 @@ func NewRateLimiter(client *redis.Client) *RateLimiter {
 }
 
 // Allow checks if a request should be allowed for the given key
+// This is a simplified version that uses a default limit
+// For production use, use AllowWithDetails which takes the actual limit
+func (rl *RateLimiter) Allow(ctx context.Context, apiKeyID string) bool {
+	// This method shouldn't be used directly - use AllowWithDetails instead
+	// Default to allowing (caller should use AllowWithDetails)
+	return true
+}
+
+// CheckLimit checks if a request should be allowed for the given key with a specific limit
 // Uses sliding window algorithm with Redis sorted sets
-func (rl *RateLimiter) Allow(ctx context.Context, apiKeyID string, limit int) (bool, error) {
+func (rl *RateLimiter) CheckLimit(ctx context.Context, apiKeyID string, limit int) (bool, error) {
 	return rl.AllowN(ctx, apiKeyID, limit, 1)
 }
 
@@ -100,6 +115,64 @@ func (rl *RateLimiter) GetCurrentUsage(ctx context.Context, apiKeyID string) (in
 	}
 
 	return count, nil
+}
+
+// AllowWithDetails checks rate limit and returns detailed information about remaining quota
+func (rl *RateLimiter) AllowWithDetails(ctx context.Context, apiKeyID string, limit int) (allowed bool, remaining int, resetAt time.Time, err error) {
+	if limit <= 0 {
+		// No limit configured - unlimited
+		return true, -1, time.Time{}, nil
+	}
+
+	key := fmt.Sprintf("ratelimit:%s", apiKeyID)
+	now := time.Now()
+	windowStart := now.Add(-1 * time.Minute)
+
+	// Remove old entries outside the window
+	if err := rl.client.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart.UnixMilli())).Err(); err != nil {
+		return false, 0, time.Time{}, fmt.Errorf("failed to clean old entries: %w", err)
+	}
+
+	// Count current requests in window (BEFORE adding the new one)
+	currentCount, err := rl.client.ZCard(ctx, key).Result()
+	if err != nil {
+		return false, 0, time.Time{}, fmt.Errorf("failed to get count: %w", err)
+	}
+
+	// Check if we're within the limit
+	allowed = int(currentCount) < limit
+
+	if allowed {
+		// Only add the request if we're allowing it
+		// Use nanoseconds for member to ensure uniqueness even in tight loops
+		timestamp := now.UnixMilli()
+		member := fmt.Sprintf("%d:%d", timestamp, now.UnixNano())
+		err = rl.client.ZAdd(ctx, key, redis.Z{
+			Score:  float64(timestamp),
+			Member: member,
+		}).Err()
+		if err != nil {
+			return false, 0, time.Time{}, fmt.Errorf("failed to record request: %w", err)
+		}
+
+		// Set expiry on the key (cleanup old keys)
+		rl.client.Expire(ctx, key, 2*time.Minute)
+
+		// Calculate remaining AFTER adding this request
+		remaining = limit - int(currentCount) - 1
+	} else {
+		// Not allowed - remaining is 0
+		remaining = 0
+	}
+
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	// Reset time is 1 minute from the window start
+	resetAt = windowStart.Add(1 * time.Minute)
+
+	return allowed, remaining, resetAt, nil
 }
 
 // Reset resets the rate limit for a key

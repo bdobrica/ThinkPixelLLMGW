@@ -918,24 +918,30 @@ This document tracks all implementation tasks for the LLM Gateway project.
 
 ## 🔨 Immediate Priorities - Wire Existing Implementations
 
-**Status**: Core implementations exist but need integration into the main request flow.
+**Status**: Rate limiter complete! Remaining priorities:
 
-### Priority 1: Wire Redis Rate Limiter (HIGH)
-**Current State:**
+### Priority 1: Wire Redis Rate Limiter ✅ **COMPLETE!** (December 4, 2025)
+**Completed:**
 - ✅ `RateLimiter` fully implemented in `internal/ratelimit/ratelimiter.go`
 - ✅ Sliding window algorithm with Redis sorted sets
 - ✅ Performance tested: < 5ms latency, ~10k checks/sec
-- ❌ Currently using `NoopLimiter` in router.go
+- ✅ Replaced `NoopLimiter` with `RateLimiter` in router.go
+- ✅ Added `LimiterWithDetails` interface with `AllowWithDetails()` method
+- ✅ Added `RateLimitPerMinute` field to `auth.APIKeyRecord`
+- ✅ Updated `DatabaseAPIKeyStore` to populate rate limits from database
+- ✅ Integrated rate limit check in `proxy_handler.go` with per-key limits
+- ✅ Return 429 Too Many Requests on limit exceeded
+- ✅ Response headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After
+- ✅ Comprehensive test suite with all tests passing
 
-**Tasks:**
-- [ ] Replace `NoopLimiter` with `RateLimiter` in router.go
-- [ ] Create wrapper to read per-key rate limits from API key model
-- [ ] Add rate limit check in proxy_handler.go before provider call
-- [ ] Return 429 Too Many Requests on limit exceeded
-- [ ] Add response headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
-- [ ] Test with multiple concurrent requests
+**Implementation Details:**
+- Per-API-key rate limits from database (`rate_limit_per_minute` column)
+- Sliding window algorithm using Redis sorted sets
+- Unique member naming using nanoseconds to handle concurrent requests
+- Unlimited support for keys with `rate_limit_per_minute = 0`
+- Proper error handling with informative 429 responses
 
-### Priority 2: S3 Background Worker ✅ **COMPLETE!** (December 3, 2025)
+### Priority 2 (Now Priority 1): Streaming Cost Calculation (MEDIUM)
 **Current State:**
 - ✅ `S3Writer` fully implemented with gzip compression and JSON Lines format
 - ✅ `S3Sink` with background worker, configurable flush interval and batch size

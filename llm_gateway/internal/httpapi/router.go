@@ -26,7 +26,7 @@ type Dependencies struct {
 	APIKeys       auth.APIKeyStore
 	AdminStore    auth.AdminStore
 	Providers     providers.Registry
-	RateLimit     ratelimit.Limiter
+	RateLimit     ratelimit.LimiterWithDetails
 	Billing       billing.Service
 	Logger        logging.Sink
 	Metrics       metrics.Metrics
@@ -117,8 +117,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	}
 
 	// Initialize rate limiter
-	// TODO: Create a wrapper that implements the Limiter interface with per-API-key limits
-	rateLimiter := ratelimit.NewNoopLimiter()
+	rateLimiter := ratelimit.NewRateLimiter(redisClient.Client())
 
 	// Initialize billing service
 	billingService := billing.NewRedisBillingService(

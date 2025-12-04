@@ -75,7 +75,25 @@ make test-e2e-run
 make test-e2e-teardown
 ```
 
-### Option 3: Direct Python Execution
+### Option 3: Rate Limiting Tests Only
+
+To test only the rate limiting functionality:
+
+```bash
+cd llm_gateway
+
+# Make sure services are running first
+make test-e2e-setup
+
+# Run rate limiting tests
+make test-rate-limit
+
+# Or run manually
+cd ..
+~/.venvs/py-openai/bin/python -c "from tests.test_e2e import test_rate_limiting, test_rate_limit_headers; import sys; tests = [test_rate_limiting(), test_rate_limit_headers()]; sys.exit(0 if all(tests) else 1)"
+```
+
+### Option 4: Direct Python Execution
 
 You can also run the test script directly:
 
@@ -122,6 +140,22 @@ The e2e test suite includes:
   - Files are gzip compressed
   - JSON Lines format is correct
   - Required fields present (timestamp, request_id, provider, model, etc.)
+
+### 6. Rate Limiting Test
+- **Purpose**: Validates per-API-key rate limiting
+- **Test**: Makes 65 rapid requests (exceeding 60/min limit)
+- **Validates**:
+  - Rate limiter blocks requests after limit reached
+  - 429 Too Many Requests responses
+  - Rate limit is enforced correctly
+
+### 7. Rate Limit Headers Test
+- **Purpose**: Validates rate limit response headers
+- **Test**: Inspects HTTP response headers
+- **Validates**:
+  - X-RateLimit-Limit header present
+  - X-RateLimit-Remaining header present
+  - X-RateLimit-Reset header present
 
 ## Test Output
 

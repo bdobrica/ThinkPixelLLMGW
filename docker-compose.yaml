@@ -11,7 +11,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./llm_gateway/migrations:/docker-entrypoint-initdb.d
+      # Only mount the .up.sql files to avoid running .down.sql migrations
+      - ./llm_gateway/migrations/20251125000001_initial_schema.up.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./llm_gateway/migrations/20251125000002_seed_data.up.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway"]
       interval: 10s
