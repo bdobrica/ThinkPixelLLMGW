@@ -60,6 +60,24 @@ ThinkPixelLLMGW is a production-ready gateway service that provides:
 - **[Testing Guide](TESTING_GUIDE.md)** - Complete setup and testing instructions
 - **[Environment Variables](ENV_VARIABLES.md)** - Configuration reference
 
+## 🎨 Web UI & Admin Interface
+
+A minimal web-based admin interface is available in the `./webui` directory:
+
+- **Frontend** (`./webui/frontend`): React + TypeScript SPA with PicoCSS for a clean, minimal UI
+  - View and manage API keys, models, and billing
+  - Protected routes with automatic authentication
+  - Built with Vite for fast development and optimized builds
+  - See [frontend README](./webui/frontend/README.md) for setup instructions
+
+- **BFF** (`./webui/bff`): FastAPI backend-for-frontend service
+  - Cookie-based authentication (HttpOnly, signed cookies)
+  - Proxies admin API requests to the Go gateway
+  - No database - stateless proxy layer
+  - See [BFF README](./webui/bff/README.md) for setup instructions
+
+The Web UI provides an easy-to-use interface for common admin tasks without requiring direct API calls or command-line tools.
+
 ## Architecture
 
 ```
