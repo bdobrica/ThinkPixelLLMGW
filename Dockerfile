@@ -16,11 +16,16 @@ RUN go mod download
 # Copy source code
 COPY llm_gateway/ ./
 
-# Build static binary
+# Build static binaries (gateway and init-admin)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -o /build/gateway \
     ./cmd/gateway
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -o /build/init-admin \
+    ./cmd/init-admin
 
 # Runtime stage
 FROM alpine:latest
@@ -35,8 +40,9 @@ RUN addgroup -g 1000 gateway && \
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder
+# Copy binaries from builder
 COPY --from=builder /build/gateway /app/gateway
+COPY --from=builder /build/init-admin /app/init-admin
 
 # Copy migrations (if needed for runtime)
 COPY --from=builder /build/internal/storage/migrations /app/migrations

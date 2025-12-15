@@ -57,6 +57,8 @@ ThinkPixelLLMGW is a production-ready gateway service that provides:
 
 ## 📚 Documentation
 
+- **[Quick Start Guide](QUICKSTART.md)** - Get up and running in 5 minutes
+- **[Bootstrap Admin Setup](BOOTSTRAP_ADMIN.md)** - Create initial admin user for Kubernetes deployments
 - **[Testing Guide](TESTING_GUIDE.md)** - Complete setup and testing instructions
 - **[Environment Variables](ENV_VARIABLES.md)** - Configuration reference
 

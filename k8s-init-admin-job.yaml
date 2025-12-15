@@ -1,0 +1,180 @@
+---
+# Kubernetes Secret for bootstrap admin credentials
+# IMPORTANT: Create this secret before running the init job
+# kubectl create secret generic llm-gateway-bootstrap \
+#   --from-literal=email=admin@example.com \
+#   --from-literal=password=your-secure-password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-gateway-bootstrap
+  namespace: default  # Change to your namespace
+type: Opaque
+data:
+  # Base64 encoded values - replace with your actual values
+  # echo -n "admin@example.com" | base64
+  email: YWRtaW5AZXhhbXBsZS5jb20=
+  # echo -n "your-secure-password" | base64
+  password: eW91ci1zZWN1cmUtcGFzc3dvcmQ=
+
+---
+# Kubernetes Job to initialize the bootstrap admin user
+# This job should run ONCE before the gateway deployment starts
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llm-gateway-init-admin
+  namespace: default  # Change to your namespace
+  labels:
+    app: llm-gateway
+    component: init-admin
+spec:
+  # Only run once, don't retry on failure (manual intervention required)
+  backoffLimit: 0
+  
+  # Clean up completed jobs after 1 hour
+  ttlSecondsAfterFinished: 3600
+  
+  template:
+    metadata:
+      labels:
+        app: llm-gateway
+        component: init-admin
+    spec:
+      restartPolicy: Never
+      
+      # Use the same service account as the gateway (if applicable)
+      # serviceAccountName: llm-gateway
+      
+      containers:
+      - name: init-admin
+        image: your-registry/llm-gateway:latest  # Replace with your image
+        command: ["/app/init-admin"]
+        
+        env:
+        # Bootstrap credentials from secret
+        - name: ADMIN_BOOTSTRAP_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: llm-gateway-bootstrap
+              key: email
+        
+        - name: ADMIN_BOOTSTRAP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: llm-gateway-bootstrap
+              key: password
+        
+        # Database connection (should match gateway config)
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: llm-gateway-db  # Your database secret
+              key: url
+        
+        # Optional: Override database connection pool settings for init job
+        - name: DB_MAX_OPEN_CONNS
+          value: "5"
+        
+        - name: DB_MAX_IDLE_CONNS
+          value: "2"
+        
+        # JWT secret (required by config.Load(), but not used by init-admin)
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: llm-gateway-secrets  # Your secrets
+              key: jwt-secret
+              optional: true  # Not critical for init-admin
+        
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+---
+# Example: How to reference this job in your gateway deployment
+# You can use initContainers or a separate job dependency mechanism
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+  namespace: default  # Change to your namespace
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: llm-gateway
+  template:
+    metadata:
+      labels:
+        app: llm-gateway
+    spec:
+      # Ensure the init job completes before starting gateway pods
+      # This is just an example - you might use Helm hooks or ArgoCD sync waves
+      
+      containers:
+      - name: gateway
+        image: your-registry/llm-gateway:latest
+        command: ["/app/gateway"]
+        # ... rest of your gateway configuration
+        
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: llm-gateway-db
+              key: url
+        # ... other env vars
+
+---
+# Alternative: Using an initContainer to wait for the job
+# This approach ensures pods wait for the init job to complete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway-with-init
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: llm-gateway
+  template:
+    metadata:
+      labels:
+        app: llm-gateway
+    spec:
+      initContainers:
+      # This container waits for the init-admin job to complete
+      - name: wait-for-admin-init
+        image: busybox:latest
+        command: 
+        - sh
+        - -c
+        - |
+          echo "Waiting for admin initialization..."
+          until kubectl wait --for=condition=complete --timeout=5m job/llm-gateway-init-admin 2>/dev/null; do
+            echo "Waiting for init-admin job to complete..."
+            sleep 5
+          done
+          echo "Admin initialization complete!"
+        # Note: This requires RBAC permissions for the pod to access jobs
+      
+      containers:
+      - name: gateway
+        image: your-registry/llm-gateway:latest
+        command: ["/app/gateway"]
+        # ... rest of configuration

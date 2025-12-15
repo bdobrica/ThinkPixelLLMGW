@@ -1,10 +1,32 @@
-# End-to-End Testing
+# Testing Guide
 
-This directory contains end-to-end tests for the LLM Gateway.
+This directory contains integration and end-to-end tests for the LLM Gateway.
 
-## Overview
+## Test Suites
 
-The e2e test (`test_e2e.py`) validates the complete LLM Gateway stack by:
+### 1. Bootstrap Admin Integration Test (`test_init_admin.py`)
+
+Tests the admin bootstrap and authentication workflow:
+
+- **Purpose**: Validates that init-admin tool creates working admin users
+- **Coverage**:
+  - Bootstrap admin creation via init-admin
+  - Admin login and JWT token generation
+  - API key creation with admin credentials
+  - API key verification
+  - init-admin idempotency
+- **Runtime**: ~30-45 seconds
+- **Dependencies**: PostgreSQL, Redis, Gateway only (no external APIs)
+
+**Run with:**
+```bash
+cd llm_gateway
+make test-init-admin
+```
+
+### 2. End-to-End Test (`test_e2e.py`)
+
+The e2e test validates the complete LLM Gateway stack by:
 
 1. **Starting Services**: Launches all docker-compose services (Postgres, Redis, MinIO, Gateway)
 2. **Health Checks**: Waits for services to be healthy and ready

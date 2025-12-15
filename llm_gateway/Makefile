@@ -119,6 +119,16 @@ test-e2e: ## Run end-to-end test (starts docker-compose, tests gateway, cleans u
 	@echo ""
 	cd .. && ~/.venvs/py-openai/bin/python tests/test_e2e.py
 
+# Bootstrap Admin Testing
+test-init-admin: ## Run init-admin integration test (bootstrap → login → create user → create API key)
+	@echo "Running init-admin integration test..."
+	@echo "This will test the complete admin bootstrap workflow"
+	@echo ""
+	@echo "Building Docker image with init-admin binary..."
+	cd .. && docker compose build gateway
+	@echo ""
+	cd .. && python3 tests/test_init_admin.py
+
 test-e2e-setup: ## Start services for manual e2e testing
 	@echo "Starting all services for e2e testing..."
 	cd .. && docker compose up -d

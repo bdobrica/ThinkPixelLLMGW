@@ -44,19 +44,22 @@ func AdminJWTMiddleware(cfg *config.Config, requiredRoles ...string) func(http.H
 
 			// Check if user/token has required roles (if specified)
 			if len(requiredRoles) > 0 {
-				hasRole := false
-				for _, requiredRole := range requiredRoles {
-					for _, userRole := range claims.Roles {
-						if userRole == requiredRole {
-							hasRole = true
+				hasPermission := false
+				for _, requiredRoleStr := range requiredRoles {
+					requiredRole := auth.Role(requiredRoleStr)
+					for _, userRoleStr := range claims.Roles {
+						userRole := auth.Role(userRoleStr)
+						// Use HasPermission method which allows admin to access viewer endpoints
+						if userRole.HasPermission(requiredRole) {
+							hasPermission = true
 							break
 						}
 					}
-					if hasRole {
+					if hasPermission {
 						break
 					}
 				}
-				if !hasRole {
+				if !hasPermission {
 					utils.RespondWithError(w, http.StatusForbidden, "Insufficient permissions")
 					return
 				}
