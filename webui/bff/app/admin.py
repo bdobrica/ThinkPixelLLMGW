@@ -54,21 +54,22 @@ async def list_models(
     return data
 
 
-@router.get("/billing")
-async def get_billing(
-    jwt_token: Annotated[str, Depends(get_current_admin_token)],
-):
-    """Get billing information by proxying to the Go gateway."""
-    status_code, data = await gateway_request(
-        method="GET",
-        path="/admin/billing",
-        jwt_token=jwt_token,
-    )
-    
-    if status_code != 200:
-        raise HTTPException(
-            status_code=status_code,
-            detail=data.get("detail", "Failed to get billing info") if data else "Failed to get billing info"
-        )
-    
-    return data
+# NOTE: /admin/billing endpoint is not implemented in the Go gateway yet
+# @router.get("/billing")
+# async def get_billing(
+#     jwt_token: Annotated[str, Depends(get_current_admin_token)],
+# ):
+#     """Get billing information by proxying to the Go gateway."""
+#     status_code, data = await gateway_request(
+#         method="GET",
+#         path="/admin/billing",
+#         jwt_token=jwt_token,
+#     )
+#     
+#     if status_code != 200:
+#         raise HTTPException(
+#             status_code=status_code,
+#             detail=data.get("detail", "Failed to get billing info") if data else "Failed to get billing info"
+#         )
+#     
+#     return data

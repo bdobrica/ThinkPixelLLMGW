@@ -34,7 +34,7 @@ async def login(request: LoginRequest, response: Response):
     # Call Go gateway login endpoint
     status_code, data = await gateway_request(
         method="POST",
-        path="/admin/login",
+        path="/admin/auth/login",
         json_data={"email": request.email, "password": request.password}
     )
     
@@ -77,13 +77,13 @@ async def logout(response: Response):
 
 @router.get("/me")
 async def me(jwt_token: Annotated[str, Depends(get_current_admin_token)]):
-    """Get current admin user info by proxying to gateway /admin/me.
+    """Get current admin user info by proxying to gateway /admin/test.
     
     This endpoint verifies the cookie and calls the gateway to get user details.
     """
     status_code, data = await gateway_request(
         method="GET",
-        path="/admin/me",
+        path="/admin/test",
         jwt_token=jwt_token
     )
     
