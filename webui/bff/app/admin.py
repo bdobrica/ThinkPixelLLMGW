@@ -31,6 +31,72 @@ async def list_api_keys(
     return data
 
 
+@router.post("/api-keys")
+async def create_api_key(
+    jwt_token: Annotated[str, Depends(get_current_admin_token)],
+    payload: dict = None,
+):
+    """Create API key by proxying to the Go gateway."""
+    status_code, data = await gateway_request(
+        method="POST",
+        path="/admin/keys",
+        jwt_token=jwt_token,
+        json_data=payload
+    )
+    
+    if status_code != 201:
+        raise HTTPException(
+            status_code=status_code,
+            detail=data.get("detail", "Failed to create API key") if data else "Failed to create API key"
+        )
+    
+    return data
+
+
+@router.put("/api-keys/{key_id}")
+async def update_api_key(
+    key_id: str,
+    jwt_token: Annotated[str, Depends(get_current_admin_token)],
+    payload: dict = None,
+):
+    """Update API key by proxying to the Go gateway."""
+    status_code, data = await gateway_request(
+        method="PUT",
+        path=f"/admin/keys/{key_id}",
+        jwt_token=jwt_token,
+        json_data=payload
+    )
+    
+    if status_code != 200:
+        raise HTTPException(
+            status_code=status_code,
+            detail=data.get("detail", "Failed to update API key") if data else "Failed to update API key"
+        )
+    
+    return data
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key(
+    key_id: str,
+    jwt_token: Annotated[str, Depends(get_current_admin_token)],
+):
+    """Revoke API key by proxying to the Go gateway."""
+    status_code, data = await gateway_request(
+        method="DELETE",
+        path=f"/admin/keys/{key_id}",
+        jwt_token=jwt_token,
+    )
+    
+    if status_code != 200:
+        raise HTTPException(
+            status_code=status_code,
+            detail=data.get("detail", "Failed to revoke API key") if data else "Failed to revoke API key"
+        )
+    
+    return data
+
+
 @router.get("/models")
 async def list_models(
     jwt_token: Annotated[str, Depends(get_current_admin_token)],

@@ -18,12 +18,51 @@ export interface ApiKey {
   monthly_budget_usd?: number
   enabled: boolean
   expires_at?: string
+  tags?: Record<string, string>
   created_at: string
   updated_at: string
 }
 
+export interface CreateApiKeyRequest {
+  name: string
+  allowed_models?: string[]
+  rate_limit_per_minute: number
+  monthly_budget_usd?: number
+  enabled?: boolean
+  expires_at?: string
+  tags?: Record<string, string>
+}
+
+export interface UpdateApiKeyRequest {
+  name?: string
+  allowed_models?: string[]
+  rate_limit_per_minute?: number
+  monthly_budget_usd?: number
+  enabled?: boolean
+  expires_at?: string
+  tags?: Record<string, string>
+}
+
+export interface ApiKeyCreatedResponse extends ApiKey {
+  key: string // Plaintext key - only returned once
+}
+
+export interface Model {
+  id: string
+  name: string
+  provider_name: string
+  enabled: boolean
+}
+
 export interface ApiKeysResponse {
   items: ApiKey[]
+  total_count: number
+  page: number
+  page_size: number
+}
+
+export interface ModelsResponse {
+  items: Model[]
   total_count: number
   page: number
   page_size: number
@@ -87,7 +126,27 @@ export const adminAPI = {
     return fetchJSON(`${API_BASE}/admin/api-keys?page=${page}&page_size=${pageSize}`)
   },
 
-  async listModels(page = 1, pageSize = 20): Promise<any> {
+  async createApiKey(request: CreateApiKeyRequest): Promise<ApiKeyCreatedResponse> {
+    return fetchJSON(`${API_BASE}/admin/api-keys`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  },
+
+  async updateApiKey(keyId: string, request: UpdateApiKeyRequest): Promise<ApiKey> {
+    return fetchJSON(`${API_BASE}/admin/api-keys/${keyId}`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    })
+  },
+
+  async revokeApiKey(keyId: string): Promise<{ success: boolean }> {
+    return fetchJSON(`${API_BASE}/admin/api-keys/${keyId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async listModels(page = 1, pageSize = 20): Promise<ModelsResponse> {
     return fetchJSON(`${API_BASE}/admin/models?page=${page}&page_size=${pageSize}`)
   },
 
