@@ -459,4 +459,4 @@ ORDER BY mus.year DESC, mus.month DESC;
 4. **Enable S3 Upload:** Implement S3 writer to drain Redis log buffer
 5. **Add Admin API:** Implement JWT-protected admin endpoints
 
-For complete testing instructions, see [TESTING_GUIDE.md](TESTING_GUIDE.md).
+For complete testing instructions, see [Testing Guide](testing-guide.md).

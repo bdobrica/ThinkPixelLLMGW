@@ -57,10 +57,10 @@ ThinkPixelLLMGW is a production-ready gateway service that provides:
 
 ## 📚 Documentation
 
-- **[Quick Start Guide](QUICKSTART.md)** - Get up and running in 5 minutes
-- **[Bootstrap Admin Setup](BOOTSTRAP_ADMIN.md)** - Create initial admin user for Kubernetes deployments
-- **[Testing Guide](TESTING_GUIDE.md)** - Complete setup and testing instructions
-- **[Environment Variables](ENV_VARIABLES.md)** - Configuration reference
+- **[Quick Start Guide](docs/quickstart.md)** - Get up and running in 5 minutes
+- **[Bootstrap Admin Setup](docs/bootstrap-admin.md)** - Create initial admin user for Kubernetes deployments
+- **[Testing Guide](docs/testing-guide.md)** - Complete setup and testing instructions
+- **[Environment Variables](docs/env-variables.md)** - Configuration reference
 
 ## 🎨 Web UI & Admin Interface
 
@@ -82,46 +82,38 @@ The Web UI provides an easy-to-use interface for common admin tasks without requ
 
 ## Architecture
 
-```
-             ┌─────────────┐
-             │  Clients    │
-             └──────┬──────┘
-                    │ Bearer <API-Key>
-┌───────────────────▼─────────────────────┐
-│         LLM Gateway (Go)                │
-│   ┌────────────────────────────────┐    │
-│   │  Proxy Handler ✅              │    │
-│   │  1. Auth (API Key lookup)      │    │
-│   │  2. Rate Limiting (Redis)      │    │
-│   │  3. Budget Check (Redis)       │    │
-│   │  4. Model Resolution (DB)      │    │
-│   │  5. Provider Call (OpenAI)     │    │
-│   │  6. Logging (Redis Buffer)     │    │
-│   │  7. Billing Update (Redis)     │    │
-│   └────────────────────────────────┘    │
-│                                         │
-│   ┌────────────────────────────────┐    │
-│   │  Admin API ✅                  │    │
-│   │  - API Key Management          │    │
-│   │  - Provider Management         │    │
-│   │  - Model Alias Management      │    │
-│   └────────────────────────────────┘    │
-│                                         │
-│   ┌────────────────────────────────┐    │
-│   │  S3 Background Worker ✅       │    │
-│   │  - Drains Redis → S3           │    │
-│   │  - Gzip compression            │    │
-│   │  - Graceful shutdown           │    │
-│   └────────────────────────────────┘    │
-└────────┬────────────┬────────────┬──────┘
-         │            │            │
-   ┌─────▼─────┐ ┌────▼────┐ ┌─────▼────┐
-   │PostgreSQL │ │  Redis  │ │ S3/MinIO │
-   │  (Config) │ │(Runtime)│ │ (Logs)   │
-   │     ✅    │ │   ✅    │ │   ✅     │
-   └───────────┘ └─────────┘ └──────────┘
+```mermaid
+graph TD
+    Clients(["Clients"])
+    Clients -- "Bearer API-Key" --> Gateway
 
-Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
+    subgraph Gateway["LLM Gateway (Go)"]
+        direction TB
+        subgraph Proxy["Proxy Handler"]
+            P1["1. Auth (API Key lookup)"]
+            P2["2. Rate Limiting (Redis)"]
+            P3["3. Budget Check (Redis)"]
+            P4["4. Model Resolution (DB)"]
+            P5["5. Provider Call (OpenAI)"]
+            P6["6. Logging (Redis Buffer)"]
+            P7["7. Billing Update (Redis)"]
+            P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+        end
+        subgraph Admin["Admin API"]
+            A1["API Key Management"]
+            A2["Provider Management"]
+            A3["Model Alias Management"]
+        end
+        subgraph S3Worker["S3 Background Worker"]
+            W1["Drains Redis → S3"]
+            W2["Gzip compression"]
+            W3["Graceful shutdown"]
+        end
+    end
+
+    Gateway --> PostgreSQL[("PostgreSQL<br/>Config")]
+    Gateway --> Redis[("Redis<br/>Runtime")]
+    Gateway --> S3[("S3 / MinIO<br/>Logs")]
 ```
 
 ### Components
@@ -302,7 +294,7 @@ Legend: ✅ Implemented | 🔨 In Progress | ⏸ Planned
 
 ### Quick Start
 
-See **[TESTING_GUIDE.md](TESTING_GUIDE.md)** for complete setup instructions.
+See **[Testing Guide](docs/testing-guide.md)** for complete setup instructions.
 
 **1. Setup Database:**
 ```bash
@@ -378,7 +370,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-For detailed testing scenarios, monitoring queries, and troubleshooting, see **[TESTING_GUIDE.md](TESTING_GUIDE.md)**.
+For detailed testing scenarios, monitoring queries, and troubleshooting, see **[Testing Guide](docs/testing-guide.md)**.
 
 ## Development Roadmap
 

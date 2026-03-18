@@ -4,172 +4,149 @@ This document describes the PostgreSQL database schema for ThinkPixelLLMGW.
 
 ## Entity Relationship Diagram
 
-```
-┌─────────────────────┐
-│     providers       │
-├─────────────────────┤
-│ id (PK)            │◄────┐
-│ name (unique)      │     │
-│ display_name       │     │
-│ provider_type      │     │
-│ encrypted_creds    │     │
-│ config (jsonb)     │     │
-│ enabled            │     │
-│ created_at         │     │
-│ updated_at         │     │
-└─────────────────────┘     │
-                            │
-                            │ (provider_id FK)
-┌─────────────────────┐     │
-│       models        │     │
-├─────────────────────┤     │
-│ id (PK)            │◄────┼────┐
-│ model_name (unique)│     │    │
-│ litellm_provider   │     │    │
-│ input_cost_per_*   │     │    │
-│ output_cost_per_*  │     │    │
-│ max_input_tokens   │     │    │
-│ max_output_tokens  │     │    │
-│ max_tokens         │     │    │
-│ mode               │     │    │
-│ supports_* (bool)  │     │    │
-│ supported_* (arr)  │     │    │
-│ metadata (jsonb)   │     │    │
-│ sync_source        │     │    │
-│ sync_version       │     │    │
-│ last_synced_at     │     │    │
-│ created_at         │     │    │
-│ updated_at         │     │    │
-└─────────────────────┘     │    │
-         ▲                  │    │
-         │                  │    │
-         │ (target_model_id)│    │
-         │                  │    │
-┌─────────────────────┐     │    │
-│   model_aliases     │     │    │
-├─────────────────────┤     │    │
-│ id (PK)            │◄────┐│    │
-│ alias (unique)     │     ││    │
-│ target_model_id FK │─────┘│    │
-│ provider_id FK     │──────┼────┘
-│ custom_config      │      │
-│ enabled            │      │
-│ created_at         │      │
-│ updated_at         │      │
-└─────────────────────┘      │
-         ▲                   │
-         │                   │
-         │ (model_alias_id)  │
-         │                   │
-┌─────────────────────┐      │
-│ model_alias_tags    │      │
-├─────────────────────┤      │
-│ id (PK)            │      │
-│ model_alias_id FK  │──────┘
-│ key                │
-│ value              │
-│ created_at         │
-└─────────────────────┘
+```mermaid
+erDiagram
+    providers ||--o{ models : "litellm_provider"
+    providers ||--o{ model_aliases : "provider_id"
+    models ||--o{ model_aliases : "target_model_id"
+    model_aliases ||--o{ model_alias_tags : "model_alias_id"
+    api_keys ||--o{ api_key_tags : "api_key_id"
+    api_keys ||--o{ usage_records : "api_key_id"
+    models ||--o{ usage_records : "model_id"
+    providers ||--o{ usage_records : "provider_id"
+    api_keys ||--o{ monthly_usage_summary : "api_key_id"
 
+    providers {
+        uuid id PK
+        string name UK
+        string display_name
+        string provider_type
+        jsonb encrypted_credentials
+        jsonb config
+        boolean enabled
+        timestamp created_at
+        timestamp updated_at
+    }
 
-┌─────────────────────┐
-│   admin_users       │
-├─────────────────────┤
-│ id (PK)            │
-│ email (unique)     │
-│ password_hash      │
-│ roles[]            │
-│ enabled            │
-│ last_login_at      │
-│ created_at         │
-│ updated_at         │
-└─────────────────────┘
+    models {
+        uuid id PK
+        string model_name UK
+        string litellm_provider
+        numeric input_cost_per_token
+        numeric output_cost_per_token
+        int max_input_tokens
+        int max_output_tokens
+        int max_tokens
+        string mode
+        boolean supports_streaming
+        boolean supports_function_calling
+        jsonb metadata
+        string sync_source
+        string sync_version
+        timestamp last_synced_at
+        timestamp created_at
+        timestamp updated_at
+    }
 
-┌─────────────────────┐
-│   admin_tokens      │
-├─────────────────────┤
-│ id (PK)            │
-│ service_name (uniq)│
-│ token_hash (unique)│
-│ roles[]            │
-│ enabled            │
-│ expires_at         │
-│ last_used_at       │
-│ created_at         │
-│ updated_at         │
-└─────────────────────┘
+    model_aliases {
+        uuid id PK
+        string alias UK
+        uuid target_model_id FK
+        uuid provider_id FK
+        jsonb custom_config
+        boolean enabled
+        timestamp created_at
+        timestamp updated_at
+    }
 
-┌─────────────────────┐
-│     api_keys        │
-├─────────────────────┤
-│ id (PK)            │◄────┐
-│ name               │     │
-│ key_hash (unique)  │     │
-│ allowed_models[]   │     │
-│ rate_limit_per_min │     │
-│ monthly_budget_usd │     │
-│ enabled            │     │
-│ expires_at         │     │
-│ created_at         │     │
-│ updated_at         │     │
-└─────────────────────┘     │
-         ▲                  │
-         │                  │
-         │ (api_key_id FK)  │
-         │                  │
-┌─────────────────────┐     │
-│   api_key_tags      │     │
-├─────────────────────┤     │
-│ id (PK)            │     │
-│ api_key_id FK      │─────┘
-│ key                │
-│ value              │
-│ created_at         │
-└─────────────────────┘
-                            │
-                            │ (api_key_id FK)
-┌─────────────────────┐     │
-│   usage_records     │     │
-├─────────────────────┤     │
-│ id (PK)            │     │
-│ api_key_id FK      │─────┘
-│ model_id FK        │────►(models.id)
-│ provider_id FK     │────►(providers.id)
-│ request_id         │
-│ model_name         │
-│ endpoint           │
-│ input_tokens       │
-│ output_tokens      │
-│ cached_tokens      │
-│ reasoning_tokens   │
-│ input_cost_usd     │
-│ output_cost_usd    │
-│ cache_cost_usd     │
-│ total_cost_usd     │
-│ response_time_ms   │
-│ status_code        │
-│ error_message      │
-│ metadata (jsonb)   │
-│ created_at         │
-└─────────────────────┘
-         │
-         │ (aggregates to)
-         ▼
-┌─────────────────────┐
-│monthly_usage_summary│
-├─────────────────────┤
-│ id (PK)            │
-│ api_key_id FK      │────►(api_keys.id)
-│ year               │
-│ month              │
-│ total_requests     │
-│ total_input_tokens │
-│ total_output_tokens│
-│ total_cost_usd     │
-│ last_request_at    │
-│ created_at         │
-│ updated_at         │
-└─────────────────────┘
+    model_alias_tags {
+        uuid id PK
+        uuid model_alias_id FK
+        string key
+        string value
+        timestamp created_at
+    }
+
+    admin_users {
+        uuid id PK
+        string email UK
+        string password_hash
+        text_arr roles
+        boolean enabled
+        timestamp last_login_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    admin_tokens {
+        uuid id PK
+        string service_name UK
+        string token_hash UK
+        text_arr roles
+        boolean enabled
+        timestamp expires_at
+        timestamp last_used_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    api_keys {
+        uuid id PK
+        string name
+        string key_hash UK
+        text_arr allowed_models
+        int rate_limit_per_min
+        numeric monthly_budget_usd
+        boolean enabled
+        timestamp expires_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    api_key_tags {
+        uuid id PK
+        uuid api_key_id FK
+        string key
+        string value
+        timestamp created_at
+    }
+
+    usage_records {
+        uuid id PK
+        uuid api_key_id FK
+        uuid model_id FK
+        uuid provider_id FK
+        uuid request_id
+        string model_name
+        string endpoint
+        int input_tokens
+        int output_tokens
+        int cached_tokens
+        int reasoning_tokens
+        numeric input_cost_usd
+        numeric output_cost_usd
+        numeric cache_cost_usd
+        numeric total_cost_usd
+        int response_time_ms
+        int status_code
+        string error_message
+        jsonb metadata
+        timestamp created_at
+    }
+
+    monthly_usage_summary {
+        uuid id PK
+        uuid api_key_id FK
+        int year
+        int month
+        int total_requests
+        int total_input_tokens
+        int total_output_tokens
+        numeric total_cost_usd
+        timestamp last_request_at
+        timestamp created_at
+        timestamp updated_at
+    }
 ```
 
 ## Table Descriptions
