@@ -46,6 +46,11 @@ type AuthResponse struct {
 
 // Login handles email/password authentication
 func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
@@ -76,6 +81,11 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // TokenAuth handles service token authentication
 func (h *AdminAuthHandler) TokenAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
 	var req TokenAuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
