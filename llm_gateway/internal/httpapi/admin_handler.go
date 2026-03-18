@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"llm_gateway/internal/auth"
@@ -52,7 +51,11 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			utils.RespondWithError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
@@ -87,7 +90,11 @@ func (h *AdminAuthHandler) TokenAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req TokenAuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			utils.RespondWithError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}

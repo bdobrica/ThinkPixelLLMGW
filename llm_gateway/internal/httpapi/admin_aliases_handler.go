@@ -77,7 +77,11 @@ func (h *AdminAliasesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateAliasRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -328,7 +332,11 @@ func (h *AdminAliasesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateAliasRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}

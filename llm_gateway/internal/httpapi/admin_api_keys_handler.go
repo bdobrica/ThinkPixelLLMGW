@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -109,7 +108,11 @@ func hashAPIKey(key string) string {
 // Create handles POST /admin/keys - Create new API key
 func (h *AdminAPIKeysHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateAPIKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			utils.RespondWithError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
@@ -307,7 +310,11 @@ func (h *AdminAPIKeysHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateAPIKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			utils.RespondWithError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}

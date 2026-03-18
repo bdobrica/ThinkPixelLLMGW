@@ -56,7 +56,11 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Decode request body as generic JSON (OpenAI-style payload).
 	var payload map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &payload); err != nil {
+		if isRequestBodyTooLarge(err) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}

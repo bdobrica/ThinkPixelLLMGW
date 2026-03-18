@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -288,7 +287,11 @@ type PricingComponentResponse struct {
 // Create handles POST /admin/models - Create new model
 func (h *AdminModelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateModelRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			utils.RespondWithError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
@@ -803,7 +806,11 @@ func (h *AdminModelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateModelRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBodyLimited(w, r, &req); err != nil {
+		if isRequestBodyTooLarge(err) {
+			utils.RespondWithError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
