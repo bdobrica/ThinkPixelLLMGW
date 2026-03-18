@@ -227,6 +227,9 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	billingWorker.Start(context.Background())
 	usageWorker.Start(context.Background())
 
+	// Initialize Prometheus metrics
+	prometheusMetrics := metrics.NewPrometheusMetrics()
+
 	// Create dependencies
 	deps := &Dependencies{
 		APIKeys:       NewDatabaseAPIKeyStore(apiKeyRepo),
@@ -234,8 +237,8 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		Providers:     registry,
 		RateLimit:     rateLimiter,
 		Billing:       billingService,
-		Logger:        s3Sink,                   // S3 sink with Redis buffer and background worker
-		Metrics:       metrics.NewNoopMetrics(), // TODO: Implement Prometheus metrics
+		Logger:        s3Sink,            // S3 sink with Redis buffer and background worker
+		Metrics:       prometheusMetrics, // Prometheus metrics
 		RequestLogger: requestLogger,
 		BillingWorker: billingWorker,
 		UsageWorker:   usageWorker,

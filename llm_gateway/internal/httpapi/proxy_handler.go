@@ -32,6 +32,7 @@ import (
 //  7. Budget check
 //  8. Call provider
 //  9. Log + update billing
+//
 // 10. Return provider response
 func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -244,6 +245,18 @@ func (d *Dependencies) handleNonStreamingResponse(
 		_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
 	}
 
+	// Record metrics
+	d.Metrics.RecordRequest(
+		apiKeyRecord.ID,
+		apiKeyRecord.Name,
+		apiKeyRecord.Tags,
+		pResp.InputTokens,
+		pResp.CachedTokens,
+		pResp.OutputTokens,
+		actualCost,
+		time.Since(start),
+	)
+
 	// Return provider response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(pResp.StatusCode)
@@ -351,6 +364,18 @@ func (d *Dependencies) handleStreamingResponse(
 	// Note: For streaming responses, we don't have detailed token counts
 	// unless we parse all chunks. This is a limitation of streaming.
 	// Consider adding token counting from parsed chunks if needed.
+
+	// Record metrics (with 0 tokens for streaming as we don't parse chunks)
+	d.Metrics.RecordRequest(
+		apiKeyRecord.ID,
+		apiKeyRecord.Name,
+		apiKeyRecord.Tags,
+		0, // inputTokens - not available for streaming without chunk parsing
+		0, // cachedTokens - not available for streaming
+		0, // outputTokens - not available for streaming without chunk parsing
+		totalCost,
+		time.Since(start),
+	)
 }
 
 // newRequestID returns a UUID request ID for tracing
