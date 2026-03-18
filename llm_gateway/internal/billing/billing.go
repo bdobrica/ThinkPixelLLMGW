@@ -2,7 +2,11 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,15 +41,31 @@ type RedisBillingService struct {
 	redis    *redis.Client
 	db       *storage.DB
 	syncFreq time.Duration // How often to sync Redis → DB
+
+	syncSem    chan struct{}
+	syncRunner func(context.Context) error
+
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	stopOnce sync.Once
 }
+
+var errSyncAlreadyRunning = errors.New("billing sync already in progress")
 
 // NewRedisBillingService creates a new billing service
 func NewRedisBillingService(redis *redis.Client, db *storage.DB, syncFrequency time.Duration) *RedisBillingService {
+	syncSem := make(chan struct{}, 1)
+	syncSem <- struct{}{}
+
 	service := &RedisBillingService{
 		redis:    redis,
 		db:       db,
 		syncFreq: syncFrequency,
+		syncSem:  syncSem,
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
 	}
+	service.syncRunner = service.syncToDatabase
 
 	// Start background sync worker
 	go service.syncWorker()
@@ -158,17 +178,69 @@ func (s *RedisBillingService) monthlyKey(apiKeyID string, year int, month int) s
 
 // syncWorker periodically syncs Redis data to PostgreSQL
 func (s *RedisBillingService) syncWorker() {
+	defer close(s.doneCh)
 	ticker := time.NewTicker(s.syncFreq)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := s.syncToDatabase(ctx); err != nil {
-			// Log error but continue
-			fmt.Printf("Failed to sync billing data: %v\n", err)
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := s.syncWithRetry(ctx)
+			cancel()
+
+			if err != nil {
+				if errors.Is(err, errSyncAlreadyRunning) {
+					log.Printf("billing sync skipped: another sync is already running")
+					continue
+				}
+				log.Printf("ALERT: billing sync failed after retries: %v", err)
+			}
 		}
-		cancel()
 	}
+}
+
+func (s *RedisBillingService) syncWithRetry(ctx context.Context) error {
+	const maxAttempts = 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := s.tryRunSync(ctx)
+		if err == nil {
+			return nil
+		}
+
+		if errors.Is(err, errSyncAlreadyRunning) {
+			return err
+		}
+
+		lastErr = err
+		if attempt < maxAttempts {
+			backoff := time.Duration(attempt) * 500 * time.Millisecond
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return fmt.Errorf("billing sync context cancelled during retry: %w", ctx.Err())
+			}
+		}
+	}
+
+	return fmt.Errorf("billing sync failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+func (s *RedisBillingService) tryRunSync(ctx context.Context) error {
+	select {
+	case <-s.syncSem:
+		defer func() {
+			s.syncSem <- struct{}{}
+		}()
+	default:
+		return errSyncAlreadyRunning
+	}
+
+	return s.syncRunner(ctx)
 }
 
 // syncToDatabase syncs all Redis billing data to PostgreSQL
@@ -176,6 +248,7 @@ func (s *RedisBillingService) syncToDatabase(ctx context.Context) error {
 	// Scan for all cost keys
 	var cursor uint64
 	pattern := "cost:*"
+	failedKeys := make([]string, 0)
 
 	for {
 		keys, nextCursor, err := s.redis.Scan(ctx, cursor, pattern, 100).Result()
@@ -186,7 +259,8 @@ func (s *RedisBillingService) syncToDatabase(ctx context.Context) error {
 		// Process each key
 		for _, key := range keys {
 			if err := s.syncKey(ctx, key); err != nil {
-				fmt.Printf("Failed to sync key %s: %v\n", key, err)
+				log.Printf("Failed to sync billing key %s: %v", key, err)
+				failedKeys = append(failedKeys, key)
 				// Continue with other keys
 			}
 		}
@@ -195,6 +269,10 @@ func (s *RedisBillingService) syncToDatabase(ctx context.Context) error {
 		if cursor == 0 {
 			break
 		}
+	}
+
+	if len(failedKeys) > 0 {
+		return fmt.Errorf("failed to sync %d billing key(s): %s", len(failedKeys), strings.Join(failedKeys, ","))
 	}
 
 	return nil
@@ -243,6 +321,15 @@ func (s *RedisBillingService) syncKey(ctx context.Context, key string) error {
 
 // Shutdown gracefully shuts down the billing service
 func (s *RedisBillingService) Shutdown(ctx context.Context) error {
-	// Final sync before shutdown
-	return s.syncToDatabase(ctx)
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
+
+	select {
+	case <-s.doneCh:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	return s.syncWithRetry(ctx)
 }
