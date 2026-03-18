@@ -2,12 +2,21 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"llm_gateway/internal/auth"
 )
+
+type errorAPIKeyStore struct {
+	err error
+}
+
+func (s *errorAPIKeyStore) Lookup(ctx context.Context, plaintextKey string) (*auth.APIKeyRecord, error) {
+	return nil, s.err
+}
 
 func TestAPIKeyMiddleware_Success(t *testing.T) {
 	store := auth.NewInMemoryAPIKeyStore()
@@ -101,6 +110,36 @@ func TestAPIKeyMiddleware_InvalidKey(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("Expected status 401, got %d", w.Code)
+	}
+}
+
+func TestAPIKeyMiddleware_InternalLookupErrorDoesNotLeak(t *testing.T) {
+	store := &errorAPIKeyStore{err: errors.New("db connection failed: host=prod-db.internal")}
+	middleware := APIKeyMiddleware(store)
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("Next handler should not be called on internal lookup error")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := middleware(nextHandler)
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.Header.Set("X-API-Key", "demo-key")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("Expected status 500, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if contains(body, "db connection failed") || contains(body, "prod-db.internal") {
+		t.Fatalf("response leaked internal error details: %s", body)
+	}
+	if !contains(body, "Internal server error") {
+		t.Fatalf("expected generic internal error message, got: %s", body)
 	}
 }
 

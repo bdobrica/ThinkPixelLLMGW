@@ -375,17 +375,17 @@ func (d *Dependencies) handleStreamingResponse(
 	// Note: For streaming, cost calculation is more complex
 	// We'd need to parse all chunks to get token counts
 	logRec := &logging.LogRecord{
-		Timestamp:       time.Now(),
-		RequestID:       reqID,
-		APIKeyID:        apiKeyRecord.ID,
-		APIKeyName:      apiKeyRecord.Name,
-		Provider:        provider.Type(),
-		Model:           providerModel,
-		Alias:           modelName,
-		ProviderMs:      providerLatency.Milliseconds(),
-		GatewayMs:       time.Since(start).Milliseconds(),
-		CostUSD:         totalCost,
-		RequestPayload:  payload,
+		Timestamp:      time.Now(),
+		RequestID:      reqID,
+		APIKeyID:       apiKeyRecord.ID,
+		APIKeyName:     apiKeyRecord.Name,
+		Provider:       provider.Type(),
+		Model:          providerModel,
+		Alias:          modelName,
+		ProviderMs:     providerLatency.Milliseconds(),
+		GatewayMs:      time.Since(start).Milliseconds(),
+		CostUSD:        totalCost,
+		RequestPayload: payload,
 		ResponsePayload: map[string]any{
 			"stream":           true,
 			"events":           eventCount,

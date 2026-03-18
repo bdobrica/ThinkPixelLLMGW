@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 
@@ -44,7 +45,8 @@ func APIKeyMiddleware(store auth.APIKeyStore) func(http.Handler) http.Handler {
 					utils.RespondWithError(w, http.StatusUnauthorized, "Invalid API key")
 					return
 				}
-				utils.RespondWithError(w, http.StatusInternalServerError, "Error validating API key: "+err.Error())
+				log.Printf("API key validation failed: %v", err)
+				utils.RespondWithError(w, http.StatusInternalServerError, "Internal server error")
 				return
 			}
 
