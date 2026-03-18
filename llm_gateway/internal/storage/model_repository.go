@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"llm_gateway/internal/models"
 )
@@ -167,6 +168,49 @@ func (r *ModelRepository) loadPricingComponents(ctx context.Context, model *mode
 	return nil
 }
 
+// loadPricingComponentsForModels batch-loads pricing components for multiple models.
+func (r *ModelRepository) loadPricingComponentsForModels(ctx context.Context, modelsList []*models.Model) error {
+	if len(modelsList) == 0 {
+		return nil
+	}
+
+	modelIDs := make([]uuid.UUID, 0, len(modelsList))
+	modelsByID := make(map[string]*models.Model, len(modelsList))
+	for _, model := range modelsList {
+		modelIDs = append(modelIDs, model.ID)
+		model.PricingComponents = nil
+		modelsByID[model.ID.String()] = model
+	}
+
+	query := `
+		SELECT id, model_id, code, direction, modality, unit, tier, scope, price,
+		       metadata_schema_version, metadata
+		FROM pricing_components
+		WHERE model_id IN (?)
+		ORDER BY model_id, code
+	`
+
+	inQuery, args, err := sqlx.In(query, modelIDs)
+	if err != nil {
+		return fmt.Errorf("failed to build pricing components query: %w", err)
+	}
+	inQuery = r.db.conn.Rebind(inQuery)
+
+	var components []models.PricingComponent
+	err = r.db.conn.SelectContext(ctx, &components, inQuery, args...)
+	if err != nil {
+		return fmt.Errorf("failed to load pricing components: %w", err)
+	}
+
+	for _, component := range components {
+		if model, ok := modelsByID[component.ModelID]; ok {
+			model.PricingComponents = append(model.PricingComponents, component)
+		}
+	}
+
+	return nil
+}
+
 // GetByID retrieves a model by ID
 func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Model, error) {
 	var model models.Model
@@ -259,11 +303,8 @@ func (r *ModelRepository) GetByProvider(ctx context.Context, providerID string) 
 		return nil, fmt.Errorf("failed to get models by provider: %w", err)
 	}
 
-	// Load pricing components for each model
-	for _, model := range modelsList {
-		if err := r.loadPricingComponents(ctx, model); err != nil {
-			return nil, fmt.Errorf("failed to load pricing components: %w", err)
-		}
+	if err := r.loadPricingComponentsForModels(ctx, modelsList); err != nil {
+		return nil, err
 	}
 
 	return modelsList, nil
@@ -311,11 +352,8 @@ func (r *ModelRepository) List(ctx context.Context, limit, offset int) ([]*model
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 
-	// Load pricing components for each model
-	for _, model := range modelsList {
-		if err := r.loadPricingComponents(ctx, model); err != nil {
-			return nil, fmt.Errorf("failed to load pricing components: %w", err)
-		}
+	if err := r.loadPricingComponentsForModels(ctx, modelsList); err != nil {
+		return nil, err
 	}
 
 	return modelsList, nil
@@ -416,11 +454,8 @@ func (r *ModelRepository) ListWithFilters(ctx context.Context, filters ModelList
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 
-	// Load pricing components for each model
-	for _, model := range modelsList {
-		if err := r.loadPricingComponents(ctx, model); err != nil {
-			return nil, fmt.Errorf("failed to load pricing components: %w", err)
-		}
+	if err := r.loadPricingComponentsForModels(ctx, modelsList); err != nil {
+		return nil, err
 	}
 
 	return &ModelListResult{
