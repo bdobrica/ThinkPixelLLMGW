@@ -152,6 +152,9 @@ func GenerateAdminJWTWithToken(ctx context.Context, serviceName, token string, s
 // ValidateAdminJWT verifies and parses an admin JWT
 func ValidateAdminJWT(tokenString string, cfg *config.Config) (*AdminClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if token.Method == nil || token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return cfg.JWTSecret, nil
 	})
 	if err != nil {

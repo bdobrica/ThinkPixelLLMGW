@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -269,4 +270,31 @@ func TestGenerateAdminJWTWithToken(t *testing.T) {
 			t.Error("GenerateAdminJWTWithToken() error = nil for expired token, want error")
 		}
 	})
+}
+
+func TestValidateAdminJWT_RejectsUnexpectedSigningMethod(t *testing.T) {
+	cfg := getTestConfig()
+
+	claims := &AdminClaims{
+		AdminID:  uuid.New().String(),
+		AuthType: AdminAuthTypeUser,
+		Roles:    []string{"admin"},
+		Email:    "admin@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   "admin@example.com",
+		},
+	}
+
+	// Sign with HS384; validator should only accept HS256.
+	token := jwt.NewWithClaims(jwt.SigningMethodHS384, claims)
+	tokenString, err := token.SignedString(cfg.JWTSecret)
+	if err != nil {
+		t.Fatalf("failed to sign HS384 token: %v", err)
+	}
+
+	if _, err := ValidateAdminJWT(tokenString, cfg); err == nil {
+		t.Fatal("expected token validation to fail for unexpected signing method")
+	}
 }
