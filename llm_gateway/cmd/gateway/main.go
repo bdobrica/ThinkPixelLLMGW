@@ -14,6 +14,12 @@ import (
 )
 
 func main() {
+	const (
+		inFlightGracePeriod = 5 * time.Second
+		serverShutdownTTL   = 30 * time.Second
+		finalFlushTTL       = 30 * time.Second
+	)
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -50,14 +56,23 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
+	log.Printf("Allowing in-flight requests %s to complete before shutdown", inFlightGracePeriod)
+	time.Sleep(inFlightGracePeriod)
 
-	// Graceful shutdown with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Stop keep-alive reuse while shutting down.
+	server.SetKeepAlivesEnabled(false)
 
-	if err := server.Shutdown(ctx); err != nil {
+	// Gracefully stop accepting new requests and wait for active handlers.
+	serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), serverShutdownTTL)
+	defer serverShutdownCancel()
+
+	if err := server.Shutdown(serverShutdownCtx); err != nil {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
+
+	// Use a separate context so flush operations are not canceled by server shutdown timeout.
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), finalFlushTTL)
+	defer flushCancel()
 
 	// Shutdown request logger to flush remaining buffered logs
 	if deps.RequestLogger != nil {
@@ -66,14 +81,16 @@ func main() {
 
 	// Shutdown S3 logging sink to flush remaining logs to S3
 	if deps.Logger != nil {
-		if err := deps.Logger.Shutdown(ctx); err != nil {
+		if err := deps.Logger.Shutdown(flushCtx); err != nil {
 			log.Printf("Failed to shutdown logging sink: %v", err)
 		}
 	}
 
 	// Shutdown billing service to sync final data
 	if billingService, ok := deps.Billing.(interface{ Shutdown(context.Context) error }); ok {
-		_ = billingService.Shutdown(ctx)
+		if err := billingService.Shutdown(flushCtx); err != nil {
+			log.Printf("Failed to shutdown billing service: %v", err)
+		}
 	}
 
 	// Close provider registry (which closes all providers)
