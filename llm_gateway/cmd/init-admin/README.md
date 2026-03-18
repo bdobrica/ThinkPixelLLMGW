@@ -23,9 +23,7 @@ Before you can use the admin API endpoints, you need at least one admin user. Th
 | `ADMIN_BOOTSTRAP_EMAIL` | Email for bootstrap admin | Yes | `admin@example.com` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password (min 8 chars) | Yes | `SecurePass123!` |
 | `DATABASE_URL` | PostgreSQL connection string | Yes | `postgres://user:pass@host:5432/db` |
-| `JWT_SECRET` | JWT signing secret | No* | `secret` |
-
-*JWT_SECRET is loaded by the config package but not used by this tool
+| `JWT_SECRET` | JWT signing secret (required by shared config loader) | Yes | `secret` |
 
 ### Running Locally
 

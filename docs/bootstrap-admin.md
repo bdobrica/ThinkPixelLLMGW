@@ -172,9 +172,7 @@ The init-admin tool requires:
 | `ADMIN_BOOTSTRAP_EMAIL` | Email for bootstrap admin | Yes |
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password for bootstrap admin (min 8 chars) | Yes |
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `JWT_SECRET` | JWT signing secret (loaded by config, not used) | No* |
-
-*JWT_SECRET is loaded by the config package but not actually used by init-admin
+| `JWT_SECRET` | JWT signing secret (required by shared config loader) | Yes |
 
 ### Database Connection String Format
 

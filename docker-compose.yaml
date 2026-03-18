@@ -142,9 +142,9 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       
-      # Security (CHANGE IN PRODUCTION!)
-      ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-      JWT_SECRET: "dev-secret-change-in-production"
+      # Security (required)
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
     ports:
       - "8080:8080"
     volumes:

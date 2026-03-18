@@ -111,10 +111,16 @@ S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
 
 # JWT (for admin API)
-JWT_SECRET=dev-secret-change-in-production
+JWT_SECRET=replace-with-a-long-random-secret
 
 # Encryption (32 bytes hex for AES-256)
-ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+ENCRYPTION_KEY=replace-with-64-hex-characters
+```
+
+Generate a secure encryption key:
+
+```bash
+openssl rand -hex 32
 ```
 
 ### 5. Run the Gateway

@@ -125,7 +125,11 @@ func getEnvString(key string, defaultValue string) string {
 // Load reads configuration from environment variables (and, later, other sources).
 func Load() (*Config, error) {
 	port := getEnvString("HTTP_PORT", "8080")
-	jwtSecret := []byte(getEnvString("JWT_SECRET", "supersecretkey"))
+	jwtSecretRaw := os.Getenv("JWT_SECRET")
+	if jwtSecretRaw == "" {
+		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+	jwtSecret := []byte(jwtSecretRaw)
 
 	// Load database configuration
 	dbURL := os.Getenv("DATABASE_URL")

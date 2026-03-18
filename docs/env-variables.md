@@ -11,6 +11,15 @@ This file documents all environment variables used by the LLM Gateway.
 DATABASE_URL=postgres://postgres:password@localhost:5432/llmgateway?sslmode=disable
 ```
 
+### Security Secrets
+```bash
+# JWT signing secret for admin API authentication (REQUIRED)
+JWT_SECRET=replace-with-a-long-random-secret
+
+# 32-byte AES key encoded as 64 hex characters (REQUIRED)
+ENCRYPTION_KEY=replace-with-64-hex-characters
+```
+
 ## Optional Variables
 
 ### HTTP Server
@@ -187,6 +196,8 @@ This ensures the pod has enough time (30-60 seconds recommended) to flush buffer
 # .env.development
 GATEWAY_HTTP_PORT=8080
 DATABASE_URL=postgres://postgres:devpass@localhost:5432/llmgateway_dev?sslmode=disable
+JWT_SECRET=dev-only-random-secret
+ENCRYPTION_KEY=dev-only-64-hex-character-key
 
 # Smaller pool for development
 DB_MAX_OPEN_CONNS=10
@@ -214,6 +225,8 @@ PROVIDER_REQUEST_TIMEOUT=30s
 # .env.production
 GATEWAY_HTTP_PORT=8080
 DATABASE_URL=postgres://llmgateway:secure_password@db.example.com:5432/llmgateway?sslmode=require
+JWT_SECRET=production-random-secret-from-secret-manager
+ENCRYPTION_KEY=production-64-hex-character-key-from-secret-manager
 
 # Larger pool for production load
 DB_MAX_OPEN_CONNS=50

@@ -114,7 +114,7 @@ Enable background worker to drain logs from Redis to S3:
 ⚠️ **Important Security Considerations:**
 
 - **Never commit `.env` to version control** - It's already in `.gitignore`
-- **Change default encryption key in production** - Set `ENCRYPTION_KEY` to a secure random value
+- **Always use strong random secrets** for `ENCRYPTION_KEY` and `JWT_SECRET`
 - **Use secure key generation:**
   ```bash
   ./llm_gateway/scripts/generate-encryption-key.sh
@@ -224,8 +224,8 @@ When S3 logging is enabled, the gateway:
 DATABASE_URL=postgres://postgres:password@localhost:5432/llmgateway?sslmode=disable
 REDIS_ADDRESS=localhost:6379
 OPENAI_API_KEY=sk-dev-key
-ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-JWT_SECRET=dev-secret
+ENCRYPTION_KEY=dev-random-64-hex-character-key
+JWT_SECRET=dev-random-secret
 
 # Use MinIO for local S3 testing
 LOGGING_SINK_ENABLED=true

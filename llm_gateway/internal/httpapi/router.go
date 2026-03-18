@@ -80,11 +80,9 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	adminTokenRepo := storage.NewAdminTokenRepository(db)
 
 	// Initialize encryption for provider credentials
-	// TODO: Load encryption key from environment variable
-	// For now, use a placeholder (THIS MUST BE CHANGED IN PRODUCTION)
 	encryptionKeyHex := os.Getenv("ENCRYPTION_KEY")
 	if encryptionKeyHex == "" {
-		encryptionKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" // Default for dev
+		return nil, nil, fmt.Errorf("ENCRYPTION_KEY is required")
 	}
 
 	// Validate it's valid hex and 64 chars (32 bytes)
