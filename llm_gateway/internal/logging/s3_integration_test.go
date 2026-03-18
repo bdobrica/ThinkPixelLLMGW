@@ -555,6 +555,24 @@ func (m *mockRedisBuffer) Dequeue(ctx context.Context, count int) ([]*LogRecord,
 	return result, nil
 }
 
+func (m *mockRedisBuffer) Peek(ctx context.Context, count int) ([]*LogRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.records) == 0 {
+		return nil, nil
+	}
+
+	if count > len(m.records) {
+		count = len(m.records)
+	}
+
+	result := make([]*LogRecord, count)
+	copy(result, m.records[:count])
+
+	return result, nil
+}
+
 func (m *mockRedisBuffer) Size(ctx context.Context) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

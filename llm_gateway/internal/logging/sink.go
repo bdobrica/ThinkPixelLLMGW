@@ -14,8 +14,13 @@ import (
 // LogBuffer defines the interface for buffering log records
 type LogBuffer interface {
 	Enqueue(ctx context.Context, record *LogRecord) error
+	Peek(ctx context.Context, count int) ([]*LogRecord, error)
 	Dequeue(ctx context.Context, count int) ([]*LogRecord, error)
 	Size(ctx context.Context) (int64, error)
+}
+
+type batchWriter interface {
+	WriteBatch(ctx context.Context, records []*LogRecord) (string, error)
 }
 
 // LogRecord is the structure that will be logged to S3 via in-memory buffering.
@@ -61,7 +66,7 @@ func (s *NoopSink) Shutdown(ctx context.Context) error {
 // S3Sink drains log records from Redis buffer and flushes to S3 periodically
 type S3Sink struct {
 	buffer        LogBuffer
-	writer        *S3Writer
+	writer        batchWriter
 	flushSize     int
 	flushInterval time.Duration
 	logger        *utils.Logger
@@ -170,10 +175,10 @@ func (s *S3Sink) run(ctx context.Context) {
 
 // flush writes a batch of records from Redis buffer to S3
 func (s *S3Sink) flush(ctx context.Context) {
-	// Dequeue up to flushSize items from Redis
-	records, err := s.buffer.Dequeue(ctx, s.flushSize)
+	// Peek up to flushSize items from Redis. Only dequeue after successful write.
+	records, err := s.buffer.Peek(ctx, s.flushSize)
 	if err != nil {
-		s.logger.Error("Failed to dequeue records from Redis", "error", err)
+		s.logger.Error("Failed to peek records from Redis", "error", err)
 		return
 	}
 
@@ -185,8 +190,17 @@ func (s *S3Sink) flush(ctx context.Context) {
 	key, err := s.writer.WriteBatch(ctx, records)
 	if err != nil {
 		s.logger.Error("Failed to write batch to S3", "error", err, "count", len(records))
-		// Note: Records are lost on failure. Consider adding DLQ if needed.
 		return
+	}
+
+	// Acknowledge the successfully written records by removing from queue.
+	removed, err := s.buffer.Dequeue(ctx, len(records))
+	if err != nil {
+		s.logger.Error("Failed to acknowledge records after S3 write", "error", err, "count", len(records), "key", key)
+		return
+	}
+	if len(removed) != len(records) {
+		s.logger.Warn("Acknowledged record count mismatch after S3 write", "expected", len(records), "actual", len(removed), "key", key)
 	}
 
 	s.logger.Info("Flushed batch to S3", "key", key, "count", len(records))
@@ -196,7 +210,7 @@ func (s *S3Sink) flush(ctx context.Context) {
 func (s *S3Sink) flushAll(ctx context.Context) {
 	totalFlushed := 0
 	for {
-		records, err := s.buffer.Dequeue(ctx, s.flushSize)
+		records, err := s.buffer.Peek(ctx, s.flushSize)
 		if err != nil || len(records) == 0 {
 			break
 		}
@@ -204,8 +218,14 @@ func (s *S3Sink) flushAll(ctx context.Context) {
 		_, err = s.writer.WriteBatch(ctx, records)
 		if err != nil {
 			s.logger.Error("Failed to write final batch to S3", "error", err)
+			break
 		} else {
-			totalFlushed += len(records)
+			removed, ackErr := s.buffer.Dequeue(ctx, len(records))
+			if ackErr != nil {
+				s.logger.Error("Failed to acknowledge final batch after S3 write", "error", ackErr, "count", len(records))
+				break
+			}
+			totalFlushed += len(removed)
 		}
 	}
 
