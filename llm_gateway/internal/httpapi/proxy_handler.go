@@ -120,6 +120,10 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 7. Call provider
+	if isStreaming && provider.Type() == "openai" {
+		ensureStreamUsageInPayload(payload)
+	}
+
 	pReq := providers.ChatRequest{
 		Model:   providerModel,
 		Payload: payload,
@@ -154,7 +158,7 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 10. Handle response based on streaming or non-streaming
 	if isStreaming && pResp.Stream != nil {
 		// Stream response to client
-		d.handleStreamingResponse(w, r, pResp, apiKeyRecord, reqID, modelName, providerModel, provider, payload, start, providerLatency)
+		d.handleStreamingResponse(w, r, pResp, apiKeyRecord, reqID, modelName, providerModel, provider, payload, start, providerLatency, modelDetails)
 	} else {
 		// Non-streaming response
 		d.handleNonStreamingResponse(w, pResp, apiKeyRecord, reqID, modelName, providerModel, provider, payload, start, providerLatency, modelDetails)
@@ -277,6 +281,7 @@ func (d *Dependencies) handleStreamingResponse(
 	payload map[string]any,
 	start time.Time,
 	providerLatency time.Duration,
+	modelDetails interface{},
 ) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -304,6 +309,10 @@ func (d *Dependencies) handleStreamingResponse(
 	defer reader.Close()
 
 	totalCost := 0.0
+	inputTokens := 0
+	outputTokens := 0
+	cachedTokens := 0
+	reasoningTokens := 0
 	eventCount := 0
 
 	for {
@@ -318,6 +327,13 @@ func (d *Dependencies) handleStreamingResponse(
 
 		// Forward event to client
 		if event.Data != nil {
+			if usage, ok := extractStreamUsageFromEvent(event.Data); ok {
+				inputTokens = usage.InputTokens
+				outputTokens = usage.OutputTokens
+				cachedTokens = usage.CachedTokens
+				reasoningTokens = usage.ReasoningTokens
+			}
+
 			_, writeErr := w.Write([]byte("data: "))
 			if writeErr != nil {
 				break
@@ -339,6 +355,22 @@ func (d *Dependencies) handleStreamingResponse(
 	_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	flusher.Flush()
 
+	if modelDetails != nil {
+		if details, ok := modelDetails.(*storage.ModelWithDetails); ok && details.Model != nil {
+			usageRecord := models.UsageRecord{
+				InputTokens:     inputTokens,
+				OutputTokens:    outputTokens,
+				CachedTokens:    cachedTokens,
+				ReasoningTokens: reasoningTokens,
+			}
+			totalCost = details.Model.CalculateCost(usageRecord)
+		}
+	}
+	if totalCost == 0 && (inputTokens > 0 || outputTokens > 0) {
+		// Fallback estimate used only when model pricing is unavailable.
+		totalCost = fallbackCostFromUsage(inputTokens, outputTokens)
+	}
+
 	// Log the streaming request
 	// Note: For streaming, cost calculation is more complex
 	// We'd need to parse all chunks to get token counts
@@ -354,7 +386,14 @@ func (d *Dependencies) handleStreamingResponse(
 		GatewayMs:       time.Since(start).Milliseconds(),
 		CostUSD:         totalCost,
 		RequestPayload:  payload,
-		ResponsePayload: map[string]any{"stream": true, "events": eventCount},
+		ResponsePayload: map[string]any{
+			"stream":           true,
+			"events":           eventCount,
+			"input_tokens":     inputTokens,
+			"output_tokens":    outputTokens,
+			"cached_tokens":    cachedTokens,
+			"reasoning_tokens": reasoningTokens,
+		},
 	}
 
 	_ = d.Logger.Enqueue(logRec)
@@ -369,21 +408,105 @@ func (d *Dependencies) handleStreamingResponse(
 		_ = d.BillingWorker.Enqueue(context.Background(), billingUpdate)
 	}
 
-	// Note: For streaming responses, we don't have detailed token counts
-	// unless we parse all chunks. This is a limitation of streaming.
-	// Consider adding token counting from parsed chunks if needed.
+	if d.UsageWorker != nil {
+		usageRecord := &models.UsageRecord{
+			ID:              uuid.New(),
+			APIKeyID:        uuid.MustParse(apiKeyRecord.ID),
+			RequestID:       uuid.MustParse(reqID),
+			ModelName:       modelName,
+			Endpoint:        "/v1/chat/completions",
+			InputTokens:     inputTokens,
+			OutputTokens:    outputTokens,
+			CachedTokens:    cachedTokens,
+			ReasoningTokens: reasoningTokens,
+			ResponseTimeMS:  int(providerLatency.Milliseconds()),
+			StatusCode:      pResp.StatusCode,
+		}
+		_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
+	}
 
-	// Record metrics (with 0 tokens for streaming as we don't parse chunks)
+	// Record metrics with extracted token usage when available.
 	d.Metrics.RecordRequest(
 		apiKeyRecord.ID,
 		apiKeyRecord.Name,
 		apiKeyRecord.Tags,
-		0, // inputTokens - not available for streaming without chunk parsing
-		0, // cachedTokens - not available for streaming
-		0, // outputTokens - not available for streaming without chunk parsing
+		inputTokens,
+		cachedTokens,
+		outputTokens,
 		totalCost,
 		time.Since(start),
 	)
+}
+
+// ensureStreamUsageInPayload requests usage in final streaming chunk for OpenAI-compatible APIs.
+func ensureStreamUsageInPayload(payload map[string]any) {
+	streamOptions, ok := payload["stream_options"].(map[string]any)
+	if !ok || streamOptions == nil {
+		streamOptions = map[string]any{}
+	}
+	streamOptions["include_usage"] = true
+	payload["stream_options"] = streamOptions
+}
+
+// extractStreamUsageFromEvent extracts usage info from one SSE data chunk.
+func extractStreamUsageFromEvent(data []byte) (providers.UsageInfo, bool) {
+	type usageFields struct {
+		InputTokens      int `json:"input_tokens"`
+		OutputTokens     int `json:"output_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		PromptDetails    struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+		InputDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"input_tokens_details"`
+		CompletionDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		OutputDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	}
+
+	var chunk struct {
+		Usage *usageFields `json:"usage"`
+	}
+	if err := json.Unmarshal(data, &chunk); err != nil || chunk.Usage == nil {
+		return providers.UsageInfo{}, false
+	}
+
+	usage := providers.UsageInfo{
+		InputTokens:     chunk.Usage.InputTokens,
+		OutputTokens:    chunk.Usage.OutputTokens,
+		CachedTokens:    chunk.Usage.InputDetails.CachedTokens,
+		ReasoningTokens: chunk.Usage.OutputDetails.ReasoningTokens,
+	}
+
+	if usage.InputTokens == 0 {
+		usage.InputTokens = chunk.Usage.PromptTokens
+	}
+	if usage.OutputTokens == 0 {
+		usage.OutputTokens = chunk.Usage.CompletionTokens
+	}
+	if usage.CachedTokens == 0 {
+		usage.CachedTokens = chunk.Usage.PromptDetails.CachedTokens
+	}
+	if usage.ReasoningTokens == 0 {
+		usage.ReasoningTokens = chunk.Usage.CompletionDetails.ReasoningTokens
+	}
+
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CachedTokens == 0 && usage.ReasoningTokens == 0 {
+		return providers.UsageInfo{}, false
+	}
+
+	return usage, true
+}
+
+func fallbackCostFromUsage(inputTokens, outputTokens int) float64 {
+	inputCost := float64(inputTokens) * 0.00001
+	outputCost := float64(outputTokens) * 0.00003
+	return inputCost + outputCost
 }
 
 // newRequestID returns a UUID request ID for tracing
