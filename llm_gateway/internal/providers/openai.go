@@ -16,6 +16,43 @@ const (
 	openAITimeout        = 60 * time.Second
 )
 
+func parseProviderTimeout(cfg map[string]any) time.Duration {
+	timeout := openAITimeout
+	if cfg == nil {
+		return timeout
+	}
+
+	raw, ok := cfg["request_timeout"]
+	if !ok {
+		return timeout
+	}
+
+	switch v := raw.(type) {
+	case time.Duration:
+		if v > 0 {
+			timeout = v
+		}
+	case string:
+		if parsed, err := time.ParseDuration(v); err == nil && parsed > 0 {
+			timeout = parsed
+		}
+	case float64:
+		if v > 0 {
+			timeout = time.Duration(v * float64(time.Second))
+		}
+	case int:
+		if v > 0 {
+			timeout = time.Duration(v) * time.Second
+		}
+	case int64:
+		if v > 0 {
+			timeout = time.Duration(v) * time.Second
+		}
+	}
+
+	return timeout
+}
+
 // OpenAIProvider implements the Provider interface for OpenAI
 type OpenAIProvider struct {
 	id      string
@@ -41,10 +78,11 @@ func NewOpenAIProvider(config ProviderConfig) (Provider, error) {
 
 	// Create authenticator
 	auth := NewSimpleAPIKeyAuth(apiKey, "Authorization", "Bearer ")
+	requestTimeout := parseProviderTimeout(config.Config)
 
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: openAITimeout,
+		Timeout: requestTimeout,
 		Transport: &http.Transport{
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: 10,

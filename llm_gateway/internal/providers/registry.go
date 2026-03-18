@@ -24,6 +24,7 @@ type ProviderRegistry struct {
 	aliasToModel    map[string]string   // alias -> actual model name
 
 	reloadInterval time.Duration
+	requestTimeout time.Duration
 	stopCh         chan struct{}
 	wg             sync.WaitGroup
 }
@@ -34,6 +35,7 @@ type RegistryConfig struct {
 	DB             *storage.DB
 	Encryption     *storage.Encryption
 	ReloadInterval time.Duration // how often to reload providers from DB (0 = no auto-reload)
+	RequestTimeout time.Duration // default timeout injected into providers when not explicitly configured
 }
 
 // NewProviderRegistry creates a new provider registry
@@ -55,6 +57,7 @@ func NewProviderRegistry(config RegistryConfig) (*ProviderRegistry, error) {
 		aliasToProvider: make(map[string]string),
 		aliasToModel:    make(map[string]string),
 		reloadInterval:  config.ReloadInterval,
+		requestTimeout:  config.RequestTimeout,
 		stopCh:          make(chan struct{}),
 	}
 
@@ -229,6 +232,11 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 		config := make(map[string]any)
 		if dbProvider.Config != nil {
 			config = dbProvider.Config
+		}
+		if r.requestTimeout > 0 {
+			if _, exists := config["request_timeout"]; !exists {
+				config["request_timeout"] = r.requestTimeout.String()
+			}
 		}
 
 		// Create provider instance

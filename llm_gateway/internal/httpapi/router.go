@@ -109,6 +109,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		DB:             db,
 		Encryption:     encryption,
 		ReloadInterval: cfg.Provider.ReloadInterval,
+		RequestTimeout: cfg.Provider.RequestTimeout,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize provider registry: %w", err)
