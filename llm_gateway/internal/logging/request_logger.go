@@ -170,10 +170,11 @@ func (logger *RequestLogger) run() {
 		case entry := <-logger.logCh:
 			logger.writeEntry(entry)
 		case <-ticker.C:
-			// Flush periodically.
+			// Flush and perform maintenance periodically.
 			logger.mu.Lock()
 			_ = logger.writer.Flush()
 			logger.mu.Unlock()
+			_ = logger.cleanupOldFiles()
 		case <-logger.doneCh:
 			// Drain remaining log entries.
 			for {
@@ -210,9 +211,6 @@ func (logger *RequestLogger) writeEntry(entry RequestLog) {
 	logger.currentSize += int64(n)
 	logger.mu.Unlock()
 
-	// Optionally, clean up rotated files.
-	// This could be done periodically instead of on every write.
-	_ = logger.cleanupOldFiles()
 }
 
 // LogRequest queues a request for logging. If the queue is full, the log entry is dropped.
