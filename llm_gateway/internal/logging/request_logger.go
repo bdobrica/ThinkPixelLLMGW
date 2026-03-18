@@ -3,6 +3,8 @@ package logging
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -41,6 +44,29 @@ type RequestLogger struct {
 	doneCh chan struct{}
 	wg     sync.WaitGroup
 	closed bool
+}
+
+var sensitiveHeaderNames = map[string]struct{}{
+	"authorization":       {},
+	"x-api-key":           {},
+	"x-auth-token":        {},
+	"cookie":              {},
+	"set-cookie":          {},
+	"proxy-authorization": {},
+}
+
+func isSensitiveHeader(headerName string) bool {
+	_, ok := sensitiveHeaderNames[strings.ToLower(headerName)]
+	return ok
+}
+
+func sanitizeBodyForLogging(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	sum := sha256.Sum256(body)
+	return fmt.Sprintf("sha256:%s;bytes:%d", hex.EncodeToString(sum[:]), len(body))
 }
 
 // newFileName generates a new log filename by applying the current timestamp
@@ -191,8 +217,7 @@ func (logger *RequestLogger) writeEntry(entry RequestLog) {
 func (logger *RequestLogger) LogRequest(r *http.Request) {
 	headers := make(map[string][]string, len(r.Header))
 	for k, v := range r.Header {
-		// Skip Authorization header
-		if k == "Authorization" {
+		if isSensitiveHeader(k) {
 			continue
 		}
 		headers[k] = v
@@ -204,7 +229,7 @@ func (logger *RequestLogger) LogRequest(r *http.Request) {
 		// Read the request body.
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil {
-			bodyStr = string(bodyBytes)
+			bodyStr = sanitizeBodyForLogging(bodyBytes)
 		}
 		// Reset the request body so the handler can read it.
 		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))

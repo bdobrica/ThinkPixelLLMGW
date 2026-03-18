@@ -51,6 +51,9 @@ func TestLogRequest(t *testing.T) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer secret-key")
+	req.Header.Set("X-API-Key", "my-api-key")
+	req.Header.Set("X-Auth-Token", "my-auth-token")
+	req.Header.Set("Cookie", "session=secret")
 	req.RemoteAddr = "127.0.0.1:12345"
 
 	// Log the request
@@ -78,9 +81,12 @@ func TestLogRequest(t *testing.T) {
 	if !strings.Contains(logContent, "/v1/chat/completions") {
 		t.Errorf("Log should contain URL path, got: %s", logContent)
 	}
-	// Body is JSON-encoded in the log, so it will be escaped
-	if !strings.Contains(logContent, "test") || !strings.Contains(logContent, "data") {
-		t.Errorf("Log should contain request body content, got: %s", logContent)
+	// Body should be represented as a non-reversible fingerprint, not raw content.
+	if !strings.Contains(logContent, "sha256:") {
+		t.Errorf("Log should contain body hash fingerprint, got: %s", logContent)
+	}
+	if strings.Contains(logContent, "{\"test\": \"data\"}") {
+		t.Errorf("Log should NOT contain raw request body content, got: %s", logContent)
 	}
 	if !strings.Contains(logContent, "127.0.0.1:12345") {
 		t.Error("Log should contain remote address")
@@ -94,6 +100,15 @@ func TestLogRequest(t *testing.T) {
 	}
 	if strings.Contains(logContent, "Authorization") {
 		t.Error("Log should NOT contain Authorization header name")
+	}
+	if strings.Contains(logContent, "my-api-key") || strings.Contains(logContent, "X-API-Key") {
+		t.Error("Log should NOT contain X-API-Key header")
+	}
+	if strings.Contains(logContent, "my-auth-token") || strings.Contains(logContent, "X-Auth-Token") {
+		t.Error("Log should NOT contain X-Auth-Token header")
+	}
+	if strings.Contains(logContent, "session=secret") || strings.Contains(logContent, "Cookie") {
+		t.Error("Log should NOT contain Cookie header")
 	}
 }
 
@@ -437,7 +452,11 @@ func TestPeriodicFlush(t *testing.T) {
 		t.Error("Expected log to be flushed to disk after flush interval")
 	}
 
-	if !bytes.Contains(content, []byte("periodic flush")) {
-		t.Error("Log content should contain the logged data")
+	if !bytes.Contains(content, []byte("sha256:")) {
+		t.Error("Log content should contain body hash fingerprint")
+	}
+
+	if bytes.Contains(content, []byte("periodic flush")) {
+		t.Error("Log content should not contain raw body data")
 	}
 }
