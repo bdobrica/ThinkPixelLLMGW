@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -238,20 +239,25 @@ func (d *Dependencies) handleNonStreamingResponse(
 
 	// Queue usage record asynchronously
 	if d.UsageWorker != nil {
-		usageRecord := &models.UsageRecord{
-			ID:              uuid.New(),
-			APIKeyID:        uuid.MustParse(apiKeyRecord.ID),
-			RequestID:       uuid.MustParse(reqID),
-			ModelName:       modelName,
-			Endpoint:        "/v1/chat/completions",
-			InputTokens:     pResp.InputTokens,
-			OutputTokens:    pResp.OutputTokens,
-			CachedTokens:    pResp.CachedTokens,
-			ReasoningTokens: pResp.ReasoningTokens,
-			ResponseTimeMS:  int(providerLatency.Milliseconds()),
-			StatusCode:      pResp.StatusCode,
+		apiKeyUUID, requestUUID, err := parseUsageRecordIDs(apiKeyRecord.ID, reqID)
+		if err != nil {
+			log.Printf("Skipping usage record enqueue due to invalid IDs: %v", err)
+		} else {
+			usageRecord := &models.UsageRecord{
+				ID:              uuid.New(),
+				APIKeyID:        apiKeyUUID,
+				RequestID:       requestUUID,
+				ModelName:       modelName,
+				Endpoint:        "/v1/chat/completions",
+				InputTokens:     pResp.InputTokens,
+				OutputTokens:    pResp.OutputTokens,
+				CachedTokens:    pResp.CachedTokens,
+				ReasoningTokens: pResp.ReasoningTokens,
+				ResponseTimeMS:  int(providerLatency.Milliseconds()),
+				StatusCode:      pResp.StatusCode,
+			}
+			_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
 		}
-		_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
 	}
 
 	// Record metrics
@@ -413,20 +419,25 @@ func (d *Dependencies) handleStreamingResponse(
 	}
 
 	if d.UsageWorker != nil {
-		usageRecord := &models.UsageRecord{
-			ID:              uuid.New(),
-			APIKeyID:        uuid.MustParse(apiKeyRecord.ID),
-			RequestID:       uuid.MustParse(reqID),
-			ModelName:       modelName,
-			Endpoint:        "/v1/chat/completions",
-			InputTokens:     inputTokens,
-			OutputTokens:    outputTokens,
-			CachedTokens:    cachedTokens,
-			ReasoningTokens: reasoningTokens,
-			ResponseTimeMS:  int(providerLatency.Milliseconds()),
-			StatusCode:      pResp.StatusCode,
+		apiKeyUUID, requestUUID, err := parseUsageRecordIDs(apiKeyRecord.ID, reqID)
+		if err != nil {
+			log.Printf("Skipping streaming usage record enqueue due to invalid IDs: %v", err)
+		} else {
+			usageRecord := &models.UsageRecord{
+				ID:              uuid.New(),
+				APIKeyID:        apiKeyUUID,
+				RequestID:       requestUUID,
+				ModelName:       modelName,
+				Endpoint:        "/v1/chat/completions",
+				InputTokens:     inputTokens,
+				OutputTokens:    outputTokens,
+				CachedTokens:    cachedTokens,
+				ReasoningTokens: reasoningTokens,
+				ResponseTimeMS:  int(providerLatency.Milliseconds()),
+				StatusCode:      pResp.StatusCode,
+			}
+			_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
 		}
-		_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
 	}
 
 	// Record metrics with extracted token usage when available.
@@ -511,6 +522,20 @@ func fallbackCostFromUsage(inputTokens, outputTokens int) float64 {
 	inputCost := float64(inputTokens) * 0.00001
 	outputCost := float64(outputTokens) * 0.00003
 	return inputCost + outputCost
+}
+
+func parseUsageRecordIDs(apiKeyID, requestID string) (uuid.UUID, uuid.UUID, error) {
+	apiKeyUUID, err := uuid.Parse(apiKeyID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("invalid API key UUID %q: %w", apiKeyID, err)
+	}
+
+	requestUUID, err := uuid.Parse(requestID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("invalid request UUID %q: %w", requestID, err)
+	}
+
+	return apiKeyUUID, requestUUID, nil
 }
 
 // newRequestID returns a UUID request ID for tracing
