@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -19,7 +18,10 @@ import (
 	"llm_gateway/internal/models"
 	"llm_gateway/internal/providers"
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
+
+var proxyLogger = utils.NewLogger("proxy-handler", utils.Info)
 
 // handleChat is the entry point for OpenAI-compatible chat completions.
 // This handler is protected by APIKeyMiddleware, so the API key has already been validated.
@@ -241,7 +243,7 @@ func (d *Dependencies) handleNonStreamingResponse(
 	if d.UsageWorker != nil {
 		apiKeyUUID, requestUUID, err := parseUsageRecordIDs(apiKeyRecord.ID, reqID)
 		if err != nil {
-			log.Printf("Skipping usage record enqueue due to invalid IDs: %v", err)
+			proxyLogger.Warn("skipping usage record enqueue due to invalid IDs", "error", err, "api_key_id", apiKeyRecord.ID, "request_id", reqID)
 		} else {
 			usageRecord := &models.UsageRecord{
 				ID:              uuid.New(),
@@ -421,7 +423,7 @@ func (d *Dependencies) handleStreamingResponse(
 	if d.UsageWorker != nil {
 		apiKeyUUID, requestUUID, err := parseUsageRecordIDs(apiKeyRecord.ID, reqID)
 		if err != nil {
-			log.Printf("Skipping streaming usage record enqueue due to invalid IDs: %v", err)
+			proxyLogger.Warn("skipping streaming usage record enqueue due to invalid IDs", "error", err, "api_key_id", apiKeyRecord.ID, "request_id", reqID)
 		} else {
 			usageRecord := &models.UsageRecord{
 				ID:              uuid.New(),

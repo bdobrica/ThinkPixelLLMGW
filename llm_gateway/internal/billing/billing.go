@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +12,10 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
+
+var billingLogger = utils.NewLogger("billing-service", utils.Info)
 
 // Service tracks costs and enforces budgets.
 type Service interface {
@@ -193,10 +195,10 @@ func (s *RedisBillingService) syncWorker() {
 
 			if err != nil {
 				if errors.Is(err, errSyncAlreadyRunning) {
-					log.Printf("billing sync skipped: another sync is already running")
+					billingLogger.Warn("billing sync skipped", "reason", "already running")
 					continue
 				}
-				log.Printf("ALERT: billing sync failed after retries: %v", err)
+				billingLogger.Error("billing sync failed after retries", "error", err)
 			}
 		}
 	}
@@ -259,7 +261,7 @@ func (s *RedisBillingService) syncToDatabase(ctx context.Context) error {
 		// Process each key
 		for _, key := range keys {
 			if err := s.syncKey(ctx, key); err != nil {
-				log.Printf("Failed to sync billing key %s: %v", key, err)
+				billingLogger.Warn("failed to sync billing key", "key", key, "error", err)
 				failedKeys = append(failedKeys, key)
 				// Continue with other keys
 			}

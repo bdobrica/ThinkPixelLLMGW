@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,7 +10,10 @@ import (
 
 	"llm_gateway/internal/config"
 	"llm_gateway/internal/httpapi"
+	"llm_gateway/internal/utils"
 )
+
+var gatewayLogger = utils.NewLogger("gateway-main", utils.Info)
 
 func main() {
 	const (
@@ -23,13 +25,15 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		gatewayLogger.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	// Create router with all dependencies
 	mux, deps, err := httpapi.NewRouter(cfg)
 	if err != nil {
-		log.Fatalf("Failed to build router: %v", err)
+		gatewayLogger.Error("failed to build router", "error", err)
+		os.Exit(1)
 	}
 
 	// Create HTTP server
@@ -44,9 +48,10 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("LLM Gateway listening on %s", addr)
+		gatewayLogger.Info("LLM Gateway listening", "addr", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			gatewayLogger.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -55,8 +60,8 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
-	log.Printf("Allowing in-flight requests %s to complete before shutdown", inFlightGracePeriod)
+	gatewayLogger.Info("shutting down server")
+	gatewayLogger.Info("allowing in-flight requests to complete", "grace_period", inFlightGracePeriod)
 	time.Sleep(inFlightGracePeriod)
 
 	// Stop keep-alive reuse while shutting down.
@@ -67,7 +72,7 @@ func main() {
 	defer serverShutdownCancel()
 
 	if err := server.Shutdown(serverShutdownCtx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+		gatewayLogger.Error("server forced to shutdown", "error", err)
 	}
 
 	// Use a separate context so flush operations are not canceled by server shutdown timeout.
@@ -82,14 +87,14 @@ func main() {
 	// Shutdown S3 logging sink to flush remaining logs to S3
 	if deps.Logger != nil {
 		if err := deps.Logger.Shutdown(flushCtx); err != nil {
-			log.Printf("Failed to shutdown logging sink: %v", err)
+			gatewayLogger.Error("failed to shutdown logging sink", "error", err)
 		}
 	}
 
 	// Shutdown billing service to sync final data
 	if billingService, ok := deps.Billing.(interface{ Shutdown(context.Context) error }); ok {
 		if err := billingService.Shutdown(flushCtx); err != nil {
-			log.Printf("Failed to shutdown billing service: %v", err)
+			gatewayLogger.Error("failed to shutdown billing service", "error", err)
 		}
 	}
 
@@ -98,5 +103,5 @@ func main() {
 		_ = registry.Close()
 	}
 
-	log.Println("Server exited")
+	gatewayLogger.Info("server exited")
 }

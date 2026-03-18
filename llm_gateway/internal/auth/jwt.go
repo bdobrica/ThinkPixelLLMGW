@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var authLogger = utils.NewLogger("auth-jwt", utils.Info)
+
 // AdminAuthType represents the type of admin authentication
 type AdminAuthType string
 
@@ -69,7 +71,7 @@ func GenerateAdminJWTWithPassword(ctx context.Context, email, password string, s
 	// Update last login
 	if err := store.UpdateAdminUserLastLogin(ctx, user.ID); err != nil {
 		// Log but don't fail
-		fmt.Printf("Warning: failed to update last login for user %s: %v\n", user.Email, err)
+		authLogger.Warn("failed to update last login", "email", user.Email, "error", err)
 	}
 
 	// Generate JWT
@@ -123,7 +125,7 @@ func GenerateAdminJWTWithToken(ctx context.Context, serviceName, token string, s
 	// Update last used
 	if err := store.UpdateAdminTokenLastUsed(ctx, adminToken.ID); err != nil {
 		// Log but don't fail
-		fmt.Printf("Warning: failed to update last used for token %s: %v\n", adminToken.ServiceName, err)
+		authLogger.Warn("failed to update admin token last used", "service_name", adminToken.ServiceName, "error", err)
 	}
 
 	// Generate JWT

@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 )
@@ -23,9 +23,22 @@ const (
 // Logger provides structured logging with context
 type Logger struct {
 	prefix        string
-	logger        *log.Logger
+	logger        *slog.Logger
 	logLevel      LogLevel
 	logLevelMutex sync.Mutex
+}
+
+func toSlogLevel(level LogLevel) slog.Level {
+	switch {
+	case level <= Debug:
+		return slog.LevelDebug
+	case level <= Info:
+		return slog.LevelInfo
+	case level <= Warning:
+		return slog.LevelWarn
+	default:
+		return slog.LevelError
+	}
 }
 
 // NewLogger creates a new logger with a given prefix
@@ -36,7 +49,7 @@ func NewLogger(prefix string, logLevel ...LogLevel) *Logger {
 	}
 	return &Logger{
 		prefix:   prefix,
-		logger:   log.New(os.Stdout, fmt.Sprintf("[%s] ", prefix), log.LstdFlags),
+		logger:   slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: toSlogLevel(logLevelValue)})).With("component", prefix),
 		logLevel: logLevelValue,
 	}
 }
@@ -46,6 +59,7 @@ func (l *Logger) SetLogLevel(logLevel LogLevel) {
 	l.logLevelMutex.Lock()
 	defer l.logLevelMutex.Unlock()
 	l.logLevel = logLevel
+	l.logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: toSlogLevel(logLevel)})).With("component", l.prefix)
 }
 
 // Info logs an informational message
@@ -55,7 +69,7 @@ func (l *Logger) Info(msg string, keyvals ...interface{}) {
 	if l.logLevel > Info {
 		return
 	}
-	l.logger.Println(l.formatMessage("INFO", msg, keyvals...))
+	l.logger.Info(msg, keyvals...)
 }
 
 // Error logs an error message
@@ -65,7 +79,7 @@ func (l *Logger) Error(msg string, keyvals ...interface{}) {
 	if l.logLevel > Error {
 		return
 	}
-	l.logger.Println(l.formatMessage("ERROR", msg, keyvals...))
+	l.logger.Error(msg, keyvals...)
 }
 
 // Warn logs a warning message
@@ -75,7 +89,7 @@ func (l *Logger) Warn(msg string, keyvals ...interface{}) {
 	if l.logLevel > Warning {
 		return
 	}
-	l.logger.Println(l.formatMessage("WARN", msg, keyvals...))
+	l.logger.Warn(msg, keyvals...)
 }
 
 // Debug logs a debug message
@@ -85,7 +99,7 @@ func (l *Logger) Debug(msg string, keyvals ...interface{}) {
 	if l.logLevel > Debug {
 		return
 	}
-	l.logger.Println(l.formatMessage("DEBUG", msg, keyvals...))
+	l.logger.Debug(msg, keyvals...)
 }
 
 // formatMessage formats a message with key-value pairs
@@ -102,6 +116,6 @@ func (l *Logger) formatMessage(level, msg string, keyvals ...interface{}) string
 // LogError logs an error message
 func LogError(err error) {
 	if err != nil {
-		log.Println("Error:", err)
+		slog.Error("operation failed", "error", err)
 	}
 }

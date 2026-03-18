@@ -2,13 +2,14 @@ package middleware
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"strings"
 
 	"llm_gateway/internal/auth"
 	"llm_gateway/internal/utils"
 )
+
+var middlewareLogger = utils.NewLogger("api-key-middleware", utils.Info)
 
 // ContextKey defines the type for context keys to avoid conflicts
 type ContextKey string
@@ -45,7 +46,7 @@ func APIKeyMiddleware(store auth.APIKeyStore) func(http.Handler) http.Handler {
 					utils.RespondWithError(w, http.StatusUnauthorized, "Invalid API key")
 					return
 				}
-				log.Printf("API key validation failed: %v", err)
+				middlewareLogger.Error("API key validation failed", "error", err)
 				utils.RespondWithError(w, http.StatusInternalServerError, "Internal server error")
 				return
 			}

@@ -1,5 +1,4 @@
 package providers
-package providers
 
 import (
 	"testing"

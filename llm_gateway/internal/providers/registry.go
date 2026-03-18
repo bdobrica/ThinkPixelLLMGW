@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 
 	"github.com/google/uuid"
 )
+
+var registryLogger = utils.NewLogger("provider-registry", utils.Info)
 
 // ProviderRegistry manages all provider instances and resolves models to providers
 type ProviderRegistry struct {
@@ -324,7 +327,7 @@ func (r *ProviderRegistry) Close() error {
 	for _, provider := range r.providers {
 		if err := provider.Close(); err != nil {
 			// Log error but continue closing others
-			fmt.Printf("error closing provider %s: %v\n", provider.ID(), err)
+			registryLogger.Error("error closing provider", "provider_id", provider.ID(), "error", err)
 		}
 	}
 
@@ -348,7 +351,7 @@ func (r *ProviderRegistry) reloadLoop() {
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := r.Reload(ctx); err != nil {
-				fmt.Printf("error reloading providers: %v\n", err)
+				registryLogger.Error("error reloading providers", "error", err)
 			}
 			cancel()
 
