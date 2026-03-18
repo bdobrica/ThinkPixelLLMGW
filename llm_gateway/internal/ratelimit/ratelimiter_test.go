@@ -2,6 +2,8 @@ package ratelimit
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -198,4 +200,44 @@ func TestNoopLimiter(t *testing.T) {
 		allowed := limiter.Allow(ctx, "any-key")
 		assert.True(t, allowed)
 	}
+}
+
+func TestRateLimiter_AllowWithDetails_ConcurrentDoesNotExceedLimit(t *testing.T) {
+	client, mr := setupTestRedis(t)
+	defer mr.Close()
+	defer client.Close()
+
+	limiter := NewRateLimiter(client)
+	ctx := context.Background()
+
+	apiKeyID := "test-concurrent"
+	limit := 10
+	workers := 100
+
+	var allowedCount int32
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			allowed, _, _, err := limiter.AllowWithDetails(ctx, apiKeyID, limit)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if allowed {
+				atomic.AddInt32(&allowedCount, 1)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, int32(limit), atomic.LoadInt32(&allowedCount))
 }

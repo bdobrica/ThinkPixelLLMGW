@@ -8,6 +8,49 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var slidingWindowAllowNScript = redis.NewScript(`
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local now = tonumber(ARGV[2])
+local window_start = tonumber(ARGV[3])
+local count = tonumber(ARGV[4])
+local nonce = ARGV[5]
+
+redis.call('ZREMRANGEBYSCORE', key, 0, window_start)
+local current = redis.call('ZCARD', key)
+
+if current + count <= limit then
+	for i = 1, count do
+		local score = now + i - 1
+		local member = nonce .. ':' .. i
+		redis.call('ZADD', key, score, member)
+	end
+	redis.call('PEXPIRE', key, 120000)
+	return {1, limit - current - count}
+end
+
+return {0, 0}
+`)
+
+var slidingWindowAllowOneScript = redis.NewScript(`
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local now = tonumber(ARGV[2])
+local window_start = tonumber(ARGV[3])
+local member = ARGV[4]
+
+redis.call('ZREMRANGEBYSCORE', key, 0, window_start)
+local current = redis.call('ZCARD', key)
+
+if current < limit then
+	redis.call('ZADD', key, now, member)
+	redis.call('PEXPIRE', key, 120000)
+	return {1, limit - current - 1}
+end
+
+return {0, 0}
+`)
+
 // Limiter is used to enforce per-key rate limits.
 type Limiter interface {
 	Allow(ctx context.Context, key string) bool
@@ -61,40 +104,40 @@ func (rl *RateLimiter) AllowN(ctx context.Context, apiKeyID string, limit int, c
 		// No limit configured
 		return true, nil
 	}
+	if count <= 0 {
+		return true, nil
+	}
 
 	key := fmt.Sprintf("ratelimit:%s", apiKeyID)
 	now := time.Now()
-	windowStart := now.Add(-1 * time.Minute)
+	windowStart := now.Add(-1 * time.Minute).UnixMilli()
+	nowMs := now.UnixMilli()
+	nonce := fmt.Sprintf("%d:%s", now.UnixNano(), apiKeyID)
 
-	pipe := rl.client.Pipeline()
-
-	// Remove old entries outside the window
-	pipe.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart.UnixMilli()))
-
-	// Count current requests in window
-	countCmd := pipe.ZCard(ctx, key)
-
-	// Add current request(s) with timestamp as score
-	for i := 0; i < count; i++ {
-		timestamp := now.Add(time.Duration(i) * time.Microsecond).UnixMilli()
-		pipe.ZAdd(ctx, key, redis.Z{
-			Score:  float64(timestamp),
-			Member: fmt.Sprintf("%d:%d", timestamp, i),
-		})
-	}
-
-	// Set expiry on the key (cleanup old keys)
-	pipe.Expire(ctx, key, 2*time.Minute)
-
-	_, err := pipe.Exec(ctx)
+	result, err := slidingWindowAllowNScript.Run(
+		ctx,
+		rl.client,
+		[]string{key},
+		limit,
+		nowMs,
+		windowStart,
+		count,
+		nonce,
+	).Slice()
 	if err != nil {
 		return false, fmt.Errorf("rate limit check failed: %w", err)
 	}
 
-	currentCount := countCmd.Val()
+	if len(result) != 2 {
+		return false, fmt.Errorf("unexpected rate limiter script response length: %d", len(result))
+	}
 
-	// Check if adding these requests would exceed the limit
-	return int(currentCount) <= limit, nil
+	allowed, ok := result[0].(int64)
+	if !ok {
+		return false, fmt.Errorf("unexpected rate limiter script response type: %T", result[0])
+	}
+
+	return allowed == 1, nil
 }
 
 // GetCurrentUsage returns the current request count in the window
@@ -126,51 +169,42 @@ func (rl *RateLimiter) AllowWithDetails(ctx context.Context, apiKeyID string, li
 
 	key := fmt.Sprintf("ratelimit:%s", apiKeyID)
 	now := time.Now()
-	windowStart := now.Add(-1 * time.Minute)
+	windowStart := now.Add(-1 * time.Minute).UnixMilli()
+	member := fmt.Sprintf("%d:%s", now.UnixNano(), apiKeyID)
 
-	// Remove old entries outside the window
-	if err := rl.client.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart.UnixMilli())).Err(); err != nil {
-		return false, 0, time.Time{}, fmt.Errorf("failed to clean old entries: %w", err)
-	}
-
-	// Count current requests in window (BEFORE adding the new one)
-	currentCount, err := rl.client.ZCard(ctx, key).Result()
+	result, err := slidingWindowAllowOneScript.Run(
+		ctx,
+		rl.client,
+		[]string{key},
+		limit,
+		now.UnixMilli(),
+		windowStart,
+		member,
+	).Slice()
 	if err != nil {
-		return false, 0, time.Time{}, fmt.Errorf("failed to get count: %w", err)
+		return false, 0, time.Time{}, fmt.Errorf("rate limit check failed: %w", err)
+	}
+	if len(result) != 2 {
+		return false, 0, time.Time{}, fmt.Errorf("unexpected rate limiter script response length: %d", len(result))
 	}
 
-	// Check if we're within the limit
-	allowed = int(currentCount) < limit
-
-	if allowed {
-		// Only add the request if we're allowing it
-		// Use nanoseconds for member to ensure uniqueness even in tight loops
-		timestamp := now.UnixMilli()
-		member := fmt.Sprintf("%d:%d", timestamp, now.UnixNano())
-		err = rl.client.ZAdd(ctx, key, redis.Z{
-			Score:  float64(timestamp),
-			Member: member,
-		}).Err()
-		if err != nil {
-			return false, 0, time.Time{}, fmt.Errorf("failed to record request: %w", err)
-		}
-
-		// Set expiry on the key (cleanup old keys)
-		rl.client.Expire(ctx, key, 2*time.Minute)
-
-		// Calculate remaining AFTER adding this request
-		remaining = limit - int(currentCount) - 1
-	} else {
-		// Not allowed - remaining is 0
-		remaining = 0
+	allowedInt, ok := result[0].(int64)
+	if !ok {
+		return false, 0, time.Time{}, fmt.Errorf("unexpected rate limiter script response type: %T", result[0])
 	}
+	remainingInt, ok := result[1].(int64)
+	if !ok {
+		return false, 0, time.Time{}, fmt.Errorf("unexpected rate limiter script response type: %T", result[1])
+	}
+
+	allowed = allowedInt == 1
+	remaining = int(remainingInt)
 
 	if remaining < 0 {
 		remaining = 0
 	}
 
-	// Reset time is 1 minute from the window start
-	resetAt = windowStart.Add(1 * time.Minute)
+	resetAt = now.Add(1 * time.Minute)
 
 	return allowed, remaining, resetAt, nil
 }
