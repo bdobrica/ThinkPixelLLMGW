@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const requestLogFilePerm os.FileMode = 0640
+
 // RequestLog defines the JSON structure for a log entry.
 type RequestLog struct {
 	Timestamp  time.Time           `json:"timestamp"`
@@ -88,7 +90,7 @@ func (logger *RequestLogger) openFile() error {
 		}
 	}
 
-	file, err := os.OpenFile(logger.currentFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(logger.currentFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, requestLogFilePerm)
 	if err != nil {
 		return err
 	}

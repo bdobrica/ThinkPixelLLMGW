@@ -31,6 +31,16 @@ func TestNewLogger(t *testing.T) {
 	if logger.maxFiles != 5 {
 		t.Errorf("Expected maxFiles 5, got %d", logger.maxFiles)
 	}
+
+	info, err := os.Stat(logger.currentFile)
+	if err != nil {
+		t.Fatalf("Failed to stat log file: %v", err)
+	}
+
+	// Ensure log files are never world-readable.
+	if info.Mode().Perm()&0004 != 0 {
+		t.Errorf("Log file must not be world-readable, got mode %o", info.Mode().Perm())
+	}
 }
 
 func TestLogRequest(t *testing.T) {
