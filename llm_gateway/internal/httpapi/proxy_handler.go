@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -277,17 +278,24 @@ func (d *Dependencies) handleStreamingResponse(
 	start time.Time,
 	providerLatency time.Duration,
 ) {
-	// Set headers for SSE streaming
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(pResp.StatusCode)
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSONError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
+
+	// Keep long-lived SSE responses open beyond the server's global write timeout.
+	responseController := http.NewResponseController(w)
+	if err := responseController.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		writeJSONError(w, http.StatusInternalServerError, "failed to initialize streaming response")
+		return
+	}
+
+	// Set headers for SSE streaming
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(pResp.StatusCode)
 
 	defer pResp.Stream.Close()
 
