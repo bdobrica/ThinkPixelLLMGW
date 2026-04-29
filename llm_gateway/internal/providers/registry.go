@@ -20,16 +20,34 @@ type ProviderRegistry struct {
 	db         *storage.DB
 	encryption *storage.Encryption
 
-	mu              sync.RWMutex
-	providers       map[string]Provider // provider ID -> Provider instance
-	modelToProvider map[string]string   // model name -> provider ID
-	aliasToProvider map[string]string   // alias -> provider ID
-	aliasToModel    map[string]string   // alias -> actual model name
+	mu                 sync.RWMutex
+	providers          map[string]*managedProvider // provider ID -> Provider instance
+	modelToProvider    map[string]string           // model name -> provider ID
+	aliasToProvider    map[string]string           // alias -> provider ID
+	aliasToModel       map[string]string           // alias -> actual model name
+	closeGracePeriod   time.Duration
 
 	reloadInterval time.Duration
 	requestTimeout time.Duration
 	stopCh         chan struct{}
 	wg             sync.WaitGroup
+}
+
+type managedProvider struct {
+	Provider
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func newManagedProvider(provider Provider) *managedProvider {
+	return &managedProvider{Provider: provider}
+}
+
+func (p *managedProvider) Close() error {
+	p.closeOnce.Do(func() {
+		p.closeErr = p.Provider.Close()
+	})
+	return p.closeErr
 }
 
 // RegistryConfig holds configuration for the provider registry
@@ -55,10 +73,11 @@ func NewProviderRegistry(config RegistryConfig) (*ProviderRegistry, error) {
 		factory:         config.Factory,
 		db:              config.DB,
 		encryption:      config.Encryption,
-		providers:       make(map[string]Provider),
+		providers:       make(map[string]*managedProvider),
 		modelToProvider: make(map[string]string),
 		aliasToProvider: make(map[string]string),
 		aliasToModel:    make(map[string]string),
+		closeGracePeriod: providerCloseGracePeriod(config.RequestTimeout),
 		reloadInterval:  config.ReloadInterval,
 		requestTimeout:  config.RequestTimeout,
 		stopCh:          make(chan struct{}),
@@ -200,7 +219,7 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 	}
 
 	// Build new provider instances
-	newProviders := make(map[string]Provider)
+	newProviders := make(map[string]*managedProvider)
 	newModelToProvider := make(map[string]string)
 	newAliasToProvider := make(map[string]string)
 	newAliasToModel := make(map[string]string)
@@ -256,7 +275,7 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 			return fmt.Errorf("failed to create provider %s: %w", dbProvider.Name, err)
 		}
 
-		newProviders[dbProvider.ID.String()] = provider
+		newProviders[dbProvider.ID.String()] = newManagedProvider(provider)
 	}
 
 	// Map models to providers
@@ -298,10 +317,10 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 		newAliasToModel[alias.Alias] = model.ModelName
 	}
 
-	// Close old providers
+	var oldProviders []*managedProvider
 	r.mu.Lock()
 	for _, oldProvider := range r.providers {
-		oldProvider.Close()
+		oldProviders = append(oldProviders, oldProvider)
 	}
 
 	// Swap in new mappings
@@ -310,6 +329,8 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 	r.aliasToProvider = newAliasToProvider
 	r.aliasToModel = newAliasToModel
 	r.mu.Unlock()
+
+	r.retireProviders(oldProviders)
 
 	return nil
 }
@@ -331,7 +352,7 @@ func (r *ProviderRegistry) Close() error {
 		}
 	}
 
-	r.providers = make(map[string]Provider)
+	r.providers = make(map[string]*managedProvider)
 	r.modelToProvider = make(map[string]string)
 	r.aliasToProvider = make(map[string]string)
 	r.aliasToModel = make(map[string]string)
@@ -374,4 +395,44 @@ func matchesLiteLLMProvider(providerType, liteLLMProvider string) bool {
 	default:
 		return providerType == liteLLMProvider
 	}
+}
+
+func (r *ProviderRegistry) retireProviders(providers []*managedProvider) {
+	if len(providers) == 0 {
+		return
+	}
+
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+
+		if r.closeGracePeriod > 0 {
+			timer := time.NewTimer(r.closeGracePeriod)
+			defer timer.Stop()
+
+			select {
+			case <-timer.C:
+			case <-r.stopCh:
+			}
+		}
+
+		for _, provider := range providers {
+			if err := provider.Close(); err != nil {
+				registryLogger.Error("error closing retired provider", "provider_id", provider.ID(), "error", err)
+			}
+		}
+	}()
+}
+
+func providerCloseGracePeriod(requestTimeout time.Duration) time.Duration {
+	const (
+		defaultRequestTimeout = 60 * time.Second
+		closeJitter           = 5 * time.Second
+	)
+
+	if requestTimeout <= 0 {
+		requestTimeout = defaultRequestTimeout
+	}
+
+	return requestTimeout + closeJitter
 }
