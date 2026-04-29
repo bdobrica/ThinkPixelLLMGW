@@ -340,14 +340,17 @@ func (d *Dependencies) handleStreamingResponse(
 	cachedTokens := 0
 	reasoningTokens := 0
 	eventCount := 0
+	providerStreamCompleted := false
+	streamErrText := ""
 
 	for {
 		event, err := reader.Read()
 		if err == io.EOF || (event != nil && event.Done) {
+			providerStreamCompleted = true
 			break
 		}
 		if err != nil {
-			// Error reading stream - log and break
+			streamErrText = fmt.Sprintf("stream read failed: %v", err)
 			break
 		}
 
@@ -362,14 +365,17 @@ func (d *Dependencies) handleStreamingResponse(
 
 			_, writeErr := w.Write([]byte("data: "))
 			if writeErr != nil {
+				streamErrText = fmt.Sprintf("stream write failed: %v", writeErr)
 				break
 			}
 			_, writeErr = w.Write(event.Data)
 			if writeErr != nil {
+				streamErrText = fmt.Sprintf("stream write failed: %v", writeErr)
 				break
 			}
 			_, writeErr = w.Write([]byte("\n\n"))
 			if writeErr != nil {
+				streamErrText = fmt.Sprintf("stream write failed: %v", writeErr)
 				break
 			}
 			flusher.Flush()
@@ -377,9 +383,19 @@ func (d *Dependencies) handleStreamingResponse(
 		}
 	}
 
-	// Send [DONE] marker
-	_, _ = w.Write([]byte("data: [DONE]\n\n"))
-	flusher.Flush()
+	streamCompleted := false
+	if streamErrText == "" && providerStreamCompleted {
+		if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
+			streamErrText = fmt.Sprintf("stream finalization failed: %v", err)
+		} else {
+			flusher.Flush()
+			streamCompleted = true
+		}
+	}
+
+	if streamErrText != "" {
+		proxyLogger.Warn("stream interrupted", "request_id", reqID, "api_key_id", apiKeyRecord.ID, "model", providerModel, "error", streamErrText)
+	}
 
 	if modelDetails != nil {
 		if details, ok := modelDetails.(*storage.ModelWithDetails); ok && details.Model != nil {
@@ -411,14 +427,17 @@ func (d *Dependencies) handleStreamingResponse(
 		ProviderMs:     providerLatency.Milliseconds(),
 		GatewayMs:      time.Since(start).Milliseconds(),
 		CostUSD:        totalCost,
+		Error:          streamErrText,
 		RequestPayload: payload,
 		ResponsePayload: map[string]any{
-			"stream":           true,
-			"events":           eventCount,
-			"input_tokens":     inputTokens,
-			"output_tokens":    outputTokens,
-			"cached_tokens":    cachedTokens,
-			"reasoning_tokens": reasoningTokens,
+			"stream":            true,
+			"completed":         streamCompleted,
+			"provider_complete": providerStreamCompleted,
+			"events":            eventCount,
+			"input_tokens":      inputTokens,
+			"output_tokens":     outputTokens,
+			"cached_tokens":     cachedTokens,
+			"reasoning_tokens":  reasoningTokens,
 		},
 	}
 
@@ -451,6 +470,7 @@ func (d *Dependencies) handleStreamingResponse(
 				ReasoningTokens: reasoningTokens,
 				ResponseTimeMS:  int(providerLatency.Milliseconds()),
 				StatusCode:      pResp.StatusCode,
+				ErrorMessage:    streamErrText,
 			}
 			d.enqueueUsageRecord(reqID, usageRecord)
 		}
