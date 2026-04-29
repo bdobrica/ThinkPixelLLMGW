@@ -220,9 +220,7 @@ func (db *DB) NewUsageRepository() *UsageRepository {
 	return NewUsageRepository(db)
 }
 
-// NewMonthlyUsageSummaryRepository is disabled - MonthlyUsageSummary model not implemented
-/*
+// NewMonthlyUsageSummaryRepository creates a new monthly usage summary repository.
 func (db *DB) NewMonthlyUsageSummaryRepository() *MonthlyUsageSummaryRepository {
 	return NewMonthlyUsageSummaryRepository(db)
 }
-*/

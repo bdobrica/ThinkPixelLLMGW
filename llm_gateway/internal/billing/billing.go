@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"llm_gateway/internal/models"
 	"llm_gateway/internal/storage"
 	"llm_gateway/internal/utils"
 )
@@ -43,6 +45,7 @@ type RedisBillingService struct {
 	redis    *redis.Client
 	db       *storage.DB
 	syncFreq time.Duration // How often to sync Redis → DB
+	summary  monthlySummaryStore
 
 	syncSem    chan struct{}
 	syncRunner func(context.Context) error
@@ -50,6 +53,12 @@ type RedisBillingService struct {
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 	stopOnce sync.Once
+}
+
+type monthlySummaryStore interface {
+	GetByAPIKeyAndMonth(ctx context.Context, apiKeyID uuid.UUID, year, month int) (*models.MonthlyUsageSummary, error)
+	UpsertCost(ctx context.Context, apiKeyID uuid.UUID, year, month int, totalCostUSD float64) error
+	DeleteByAPIKeyAndMonth(ctx context.Context, apiKeyID uuid.UUID, year, month int) error
 }
 
 var errSyncAlreadyRunning = errors.New("billing sync already in progress")
@@ -66,6 +75,9 @@ func NewRedisBillingService(redis *redis.Client, db *storage.DB, syncFrequency t
 		syncSem:  syncSem,
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
+	}
+	if db != nil {
+		service.summary = storage.NewMonthlyUsageSummaryRepository(db)
 	}
 	service.syncRunner = service.syncToDatabase
 
@@ -138,11 +150,13 @@ func (s *RedisBillingService) AddUsage(ctx context.Context, apiKeyID string, cos
 // GetMonthlySpending returns the current month's spending for an API key
 func (s *RedisBillingService) GetMonthlySpending(ctx context.Context, apiKeyID string) (float64, error) {
 	now := time.Now()
-	key := s.monthlyKey(apiKeyID, now.Year(), int(now.Month()))
+	year := now.Year()
+	month := int(now.Month())
+	key := s.monthlyKey(apiKeyID, year, month)
 
 	val, err := s.redis.Get(ctx, key).Float64()
 	if err == redis.Nil {
-		return 0, nil
+		return s.getPersistedMonthlySpending(ctx, apiKeyID, year, month)
 	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to get monthly spending: %w", err)
@@ -169,8 +183,27 @@ func (s *RedisBillingService) GetSpending(ctx context.Context, apiKeyID string, 
 // ResetMonthlySpending resets spending for current month (admin use)
 func (s *RedisBillingService) ResetMonthlySpending(ctx context.Context, apiKeyID string) error {
 	now := time.Now()
-	key := s.monthlyKey(apiKeyID, now.Year(), int(now.Month()))
-	return s.redis.Del(ctx, key).Err()
+	year := now.Year()
+	month := int(now.Month())
+	key := s.monthlyKey(apiKeyID, year, month)
+	if err := s.redis.Del(ctx, key).Err(); err != nil {
+		return err
+	}
+
+	if s.summary == nil {
+		return nil
+	}
+
+	apiKeyUUID, err := uuid.Parse(apiKeyID)
+	if err != nil {
+		return fmt.Errorf("invalid API key UUID: %w", err)
+	}
+
+	if err := s.summary.DeleteByAPIKeyAndMonth(ctx, apiKeyUUID, year, month); err != nil {
+		return fmt.Errorf("failed to reset persisted monthly spending: %w", err)
+	}
+
+	return nil
 }
 
 // monthlyKey generates the Redis key for monthly spending
@@ -282,43 +315,83 @@ func (s *RedisBillingService) syncToDatabase(ctx context.Context) error {
 
 // syncKey syncs a single Redis key to database
 func (s *RedisBillingService) syncKey(ctx context.Context, key string) error {
-	// Parse key: cost:<api_key_id>:<year>:<month>
-	var apiKeyID string
-	var year, month int
-
-	_, err := fmt.Sscanf(key, "cost:%s:%d:%d", &apiKeyID, &year, &month)
+	apiKeyID, year, month, err := parseMonthlyCostKey(key)
 	if err != nil {
-		return fmt.Errorf("invalid key format: %w", err)
+		return err
 	}
 
 	// Get value from Redis
-	_, err = s.redis.Get(ctx, key).Float64()
+	totalCostUSD, err := s.redis.Get(ctx, key).Float64()
 	if err != nil {
 		return fmt.Errorf("failed to get value: %w", err)
 	}
 
-	// Parse UUID
-	keyUUID, err := uuid.Parse(apiKeyID)
-	if err != nil {
-		return fmt.Errorf("invalid API key UUID: %w", err)
+	if s.summary == nil {
+		return nil
 	}
 
-	// Note: We don't have direct access to monthly summary repository here
-	// This would need to be refactored to accept it as a dependency
-	// For now, this is a placeholder showing the pattern
+	return s.summary.UpsertCost(ctx, apiKeyID, year, month, totalCostUSD)
+}
 
-	// TODO: Update monthly_usage_summary in database
-	// summaryRepo := s.db.NewMonthlyUsageSummaryRepository()
-	// summary, err := summaryRepo.GetByAPIKeyAndMonth(ctx, keyUUID, year, month)
-	// if err != nil {
-	// 	 // Create new summary
-	// } else {
-	//   // Update existing
-	// }
+func (s *RedisBillingService) getPersistedMonthlySpending(ctx context.Context, apiKeyID string, year, month int) (float64, error) {
+	if s.summary == nil {
+		return 0, nil
+	}
 
-	_ = keyUUID // Suppress unused warning
+	apiKeyUUID, err := uuid.Parse(apiKeyID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid API key UUID: %w", err)
+	}
 
+	summary, err := s.summary.GetByAPIKeyAndMonth(ctx, apiKeyUUID, year, month)
+	if err != nil {
+		if errors.Is(err, storage.ErrMonthlyUsageSummaryNotFound) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to get persisted monthly spending: %w", err)
+	}
+
+	totalCostUSD := summary.TotalCostUSD
+	if err := s.setMonthlySpending(ctx, apiKeyID, year, month, totalCostUSD); err != nil {
+		billingLogger.Warn("failed to repopulate monthly spending cache", "api_key_id", apiKeyID, "year", year, "month", month, "error", err)
+	}
+
+	return totalCostUSD, nil
+}
+
+func (s *RedisBillingService) setMonthlySpending(ctx context.Context, apiKeyID string, year, month int, totalCostUSD float64) error {
+	key := s.monthlyKey(apiKeyID, year, month)
+	if err := s.redis.Set(ctx, key, totalCostUSD, 60*24*time.Hour).Err(); err != nil {
+		return fmt.Errorf("failed to set monthly spending: %w", err)
+	}
 	return nil
+}
+
+func parseMonthlyCostKey(key string) (uuid.UUID, int, int, error) {
+	parts := strings.Split(key, ":")
+	if len(parts) != 4 || parts[0] != "cost" {
+		return uuid.Nil, 0, 0, fmt.Errorf("invalid key format: %s", key)
+	}
+
+	apiKeyID, err := uuid.Parse(parts[1])
+	if err != nil {
+		return uuid.Nil, 0, 0, fmt.Errorf("invalid API key UUID: %w", err)
+	}
+
+	year, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return uuid.Nil, 0, 0, fmt.Errorf("invalid billing year: %w", err)
+	}
+
+	month, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return uuid.Nil, 0, 0, fmt.Errorf("invalid billing month: %w", err)
+	}
+	if month < 1 || month > 12 {
+		return uuid.Nil, 0, 0, fmt.Errorf("invalid billing month: %d", month)
+	}
+
+	return apiKeyID, year, month, nil
 }
 
 // Shutdown gracefully shuts down the billing service

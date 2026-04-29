@@ -18,6 +18,9 @@ var (
 	// ErrUsageRecordNotFound is returned when a usage record is not found
 	ErrUsageRecordNotFound = errors.New("usage record not found")
 
+	// ErrMonthlyUsageSummaryNotFound is returned when a monthly usage summary is not found
+	ErrMonthlyUsageSummaryNotFound = errors.New("monthly usage summary not found")
+
 	// ErrAdminUserNotFound is returned when an admin user is not found
 	ErrAdminUserNotFound = errors.New("admin user not found")
 

@@ -11,7 +11,49 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+
+	"llm_gateway/internal/models"
+	"llm_gateway/internal/storage"
 )
+
+type mockMonthlySummaryStore struct {
+	summaries map[string]float64
+	deleted   map[string]bool
+	upserts   int
+}
+
+func newMockMonthlySummaryStore() *mockMonthlySummaryStore {
+	return &mockMonthlySummaryStore{
+		summaries: make(map[string]float64),
+		deleted:   make(map[string]bool),
+	}
+}
+
+func (m *mockMonthlySummaryStore) GetByAPIKeyAndMonth(ctx context.Context, apiKeyID uuid.UUID, year, month int) (*models.MonthlyUsageSummary, error) {
+	key := summaryKey(apiKeyID, year, month)
+	totalCostUSD, ok := m.summaries[key]
+	if !ok {
+		return nil, storage.ErrMonthlyUsageSummaryNotFound
+	}
+	return &models.MonthlyUsageSummary{TotalCostUSD: totalCostUSD}, nil
+}
+
+func (m *mockMonthlySummaryStore) UpsertCost(ctx context.Context, apiKeyID uuid.UUID, year, month int, totalCostUSD float64) error {
+	m.summaries[summaryKey(apiKeyID, year, month)] = totalCostUSD
+	m.upserts++
+	return nil
+}
+
+func (m *mockMonthlySummaryStore) DeleteByAPIKeyAndMonth(ctx context.Context, apiKeyID uuid.UUID, year, month int) error {
+	key := summaryKey(apiKeyID, year, month)
+	delete(m.summaries, key)
+	m.deleted[key] = true
+	return nil
+}
+
+func summaryKey(apiKeyID uuid.UUID, year, month int) string {
+	return fmt.Sprintf("%s:%d:%02d", apiKeyID.String(), year, month)
+}
 
 func TestNoopService_WithinBudget(t *testing.T) {
 	service := NewNoopService()
@@ -190,11 +232,116 @@ func TestRedisBillingService_SyncToDatabase_ReturnsErrorWhenAnyKeyFails(t *testi
 	}
 
 	service := &RedisBillingService{
-		redis: client,
+		redis:   client,
+		summary: newMockMonthlySummaryStore(),
 	}
 
 	err = service.syncToDatabase(ctx)
 	if err == nil {
 		t.Fatal("expected syncToDatabase to return error when a key fails")
+	}
+}
+
+func TestParseMonthlyCostKey(t *testing.T) {
+	apiKeyID := uuid.New()
+
+	testCases := []struct {
+		name    string
+		key     string
+		wantErr bool
+	}{
+		{name: "valid key", key: fmt.Sprintf("cost:%s:2026:03", apiKeyID)},
+		{name: "invalid prefix", key: fmt.Sprintf("billing:%s:2026:03", apiKeyID), wantErr: true},
+		{name: "invalid uuid", key: "cost:not-a-uuid:2026:03", wantErr: true},
+		{name: "invalid month", key: fmt.Sprintf("cost:%s:2026:13", apiKeyID), wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, _, err := parseMonthlyCostKey(tc.key)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestRedisBillingService_GetMonthlySpending_FallsBackToPersistedSummary(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer client.Close()
+
+	apiKeyID := uuid.New()
+	now := time.Now()
+	summaryStore := newMockMonthlySummaryStore()
+	summaryStore.summaries[summaryKey(apiKeyID, now.Year(), int(now.Month()))] = 12.34
+
+	service := &RedisBillingService{
+		redis:   client,
+		summary: summaryStore,
+	}
+
+	spending, err := service.GetMonthlySpending(context.Background(), apiKeyID.String())
+	if err != nil {
+		t.Fatalf("GetMonthlySpending returned error: %v", err)
+	}
+	if spending != 12.34 {
+		t.Fatalf("GetMonthlySpending = %v, want 12.34", spending)
+	}
+
+	redisValue, err := client.Get(context.Background(), service.monthlyKey(apiKeyID.String(), now.Year(), int(now.Month()))).Float64()
+	if err != nil {
+		t.Fatalf("expected Redis cache to be repopulated: %v", err)
+	}
+	if redisValue != 12.34 {
+		t.Fatalf("redis cached value = %v, want 12.34", redisValue)
+	}
+}
+
+func TestRedisBillingService_ResetMonthlySpending_ClearsPersistedSummary(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer client.Close()
+
+	apiKeyID := uuid.New()
+	now := time.Now()
+	summaryStore := newMockMonthlySummaryStore()
+	key := summaryKey(apiKeyID, now.Year(), int(now.Month()))
+	summaryStore.summaries[key] = 9.99
+
+	service := &RedisBillingService{
+		redis:   client,
+		summary: summaryStore,
+	}
+
+	if err := client.Set(context.Background(), service.monthlyKey(apiKeyID.String(), now.Year(), int(now.Month())), 9.99, 0).Err(); err != nil {
+		t.Fatalf("failed to seed redis spending: %v", err)
+	}
+
+	if err := service.ResetMonthlySpending(context.Background(), apiKeyID.String()); err != nil {
+		t.Fatalf("ResetMonthlySpending returned error: %v", err)
+	}
+
+	if _, err := client.Get(context.Background(), service.monthlyKey(apiKeyID.String(), now.Year(), int(now.Month()))).Result(); !errors.Is(err, redis.Nil) {
+		t.Fatalf("expected Redis spending to be cleared, got err=%v", err)
+	}
+	if _, exists := summaryStore.summaries[key]; exists {
+		t.Fatal("expected persisted summary to be removed")
+	}
+	if !summaryStore.deleted[key] {
+		t.Fatal("expected persisted summary delete to be recorded")
 	}
 }

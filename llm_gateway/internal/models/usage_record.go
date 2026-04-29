@@ -24,3 +24,19 @@ type UsageRecord struct {
 	ErrorMessage    string    `db:"error_message"`
 	CreatedAt       time.Time `db:"created_at"`
 }
+
+// MonthlyUsageSummary stores persisted monthly usage and billing totals per API key.
+type MonthlyUsageSummary struct {
+	ID                   uuid.UUID `db:"id"`
+	APIKeyID             uuid.UUID `db:"api_key_id"`
+	Year                 int       `db:"year"`
+	Month                int       `db:"month"`
+	TotalRequests        int       `db:"total_requests"`
+	TotalInputTokens     int       `db:"total_input_tokens"`
+	TotalOutputTokens    int       `db:"total_output_tokens"`
+	TotalCachedTokens    int       `db:"total_cached_tokens"`
+	TotalReasoningTokens int       `db:"total_reasoning_tokens"`
+	TotalCostUSD         float64   `db:"total_cost_usd"`
+	CreatedAt            time.Time `db:"created_at"`
+	UpdatedAt            time.Time `db:"updated_at"`
+}
