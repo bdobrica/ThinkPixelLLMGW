@@ -130,7 +130,7 @@ func (w *UsageQueueWorker) insertBatch(ctx context.Context, records []*models.Us
 
 	// Insert each record in the transaction
 	for _, record := range records {
-		if err := repo.Create(ctx, record); err != nil {
+		if err := repo.CreateWithTx(ctx, tx, record); err != nil {
 			return fmt.Errorf("failed to insert record: %w", err)
 		}
 	}

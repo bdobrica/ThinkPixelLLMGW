@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"llm_gateway/internal/models"
 )
@@ -14,6 +15,10 @@ import (
 // UsageRepository handles usage record database operations
 type UsageRepository struct {
 	db *DB
+}
+
+type usageRecordQueryer interface {
+	QueryRowxContext(ctx context.Context, query string, args ...interface{}) *sqlx.Row
 }
 
 // APIKeyUsageStats aggregates usage-record statistics for one API key in a time range.
@@ -32,6 +37,15 @@ func NewUsageRepository(db *DB) *UsageRepository {
 
 // Create creates a new usage record
 func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord) error {
+	return r.createWithQueryer(ctx, r.db.conn, record)
+}
+
+// CreateWithTx creates a new usage record using the supplied transaction.
+func (r *UsageRepository) CreateWithTx(ctx context.Context, tx *sqlx.Tx, record *models.UsageRecord) error {
+	return r.createWithQueryer(ctx, tx, record)
+}
+
+func (r *UsageRepository) createWithQueryer(ctx context.Context, queryer usageRecordQueryer, record *models.UsageRecord) error {
 	query := `
 		INSERT INTO usage_records (
 			id, api_key_id, model_id, provider_id, request_id,
@@ -46,7 +60,7 @@ func (r *UsageRepository) Create(ctx context.Context, record *models.UsageRecord
 		record.ID = uuid.New()
 	}
 
-	err := r.db.conn.QueryRowxContext(
+	err := queryer.QueryRowxContext(
 		ctx, query,
 		record.ID, record.APIKeyID, record.ModelID, record.ProviderID,
 		record.RequestID, record.ModelName, record.Endpoint,
