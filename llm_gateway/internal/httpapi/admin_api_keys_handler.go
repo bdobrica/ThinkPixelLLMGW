@@ -498,7 +498,7 @@ func (h *AdminAPIKeysHandler) toAPIKeyResponse(key *models.APIKey) APIKeyRespons
 		response.ExpiresAt = &expiresAt
 	}
 
-	if key.Tags != nil && len(key.Tags) > 0 {
+	if len(key.Tags) > 0 {
 		response.Tags = key.Tags
 	}
 
@@ -520,30 +520,21 @@ func (h *AdminAPIKeysHandler) getUsageStats(ctx context.Context, keyID uuid.UUID
 		totalCost = 0
 	}
 
-	// Get token usage for current month
-	inputTokens, outputTokens, totalTokens, err := usageRepo.GetTotalTokensByAPIKey(ctx, keyID, startOfMonth, endOfMonth)
-	if err != nil {
-		inputTokens, outputTokens, totalTokens = 0, 0, 0
-	}
-
-	// Get usage records to calculate total requests and last used
-	records, err := usageRepo.GetByAPIKey(ctx, keyID, startOfMonth, endOfMonth, 1, 0)
+	aggregateStats, err := usageRepo.GetUsageStatsByAPIKey(ctx, keyID, startOfMonth, endOfMonth)
 	var lastUsedAt *string
-	totalRequests := 0
 
 	if err == nil {
-		totalRequests = len(records)
-		if len(records) > 0 {
-			lastUsed := records[0].CreatedAt.Format("2006-01-02T15:04:05Z07:00")
+		if aggregateStats.LastUsedAt != nil {
+			lastUsed := aggregateStats.LastUsedAt.Format("2006-01-02T15:04:05Z07:00")
 			lastUsedAt = &lastUsed
 		}
 	}
 
 	return UsageStats{
-		TotalRequests:   totalRequests,
-		InputTokens:     inputTokens,
-		OutputTokens:    outputTokens,
-		TotalTokens:     totalTokens,
+		TotalRequests:   aggregateStats.TotalRequests,
+		InputTokens:     aggregateStats.InputTokens,
+		OutputTokens:    aggregateStats.OutputTokens,
+		TotalTokens:     aggregateStats.TotalTokens,
 		CurrentMonthUSD: totalCost,
 		LastUsedAt:      lastUsedAt,
 	}

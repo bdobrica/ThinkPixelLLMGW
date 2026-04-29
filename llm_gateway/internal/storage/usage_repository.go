@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -13,6 +14,15 @@ import (
 // UsageRepository handles usage record database operations
 type UsageRepository struct {
 	db *DB
+}
+
+// APIKeyUsageStats aggregates usage-record statistics for one API key in a time range.
+type APIKeyUsageStats struct {
+	TotalRequests int
+	InputTokens   int
+	OutputTokens  int
+	TotalTokens   int
+	LastUsedAt    *time.Time
 }
 
 // NewUsageRepository creates a new usage repository
@@ -100,18 +110,65 @@ func (r *UsageRepository) GetByModel(ctx context.Context, modelID uuid.UUID, sta
 	return records, nil
 }
 
+// GetUsageStatsByAPIKey aggregates request count, token usage, and last usage time for an API key in a time range.
+func (r *UsageRepository) GetUsageStatsByAPIKey(ctx context.Context, apiKeyID uuid.UUID, startTime, endTime time.Time) (APIKeyUsageStats, error) {
+	query := `
+		SELECT
+			COUNT(*) AS total_requests,
+			COALESCE(SUM(input_tokens), 0) AS input_tokens,
+			COALESCE(SUM(output_tokens), 0) AS output_tokens,
+			COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+			MAX(created_at) AS last_used_at
+		FROM usage_records
+		WHERE api_key_id = $1
+		  AND created_at >= $2
+		  AND created_at < $3
+	`
+
+	var row struct {
+		TotalRequests int          `db:"total_requests"`
+		InputTokens   int          `db:"input_tokens"`
+		OutputTokens  int          `db:"output_tokens"`
+		TotalTokens   int          `db:"total_tokens"`
+		LastUsedAt    sql.NullTime `db:"last_used_at"`
+	}
+
+	err := r.db.conn.GetContext(ctx, &row, query, apiKeyID, startTime, endTime)
+	if err != nil {
+		return APIKeyUsageStats{}, fmt.Errorf("failed to get usage stats: %w", err)
+	}
+
+	stats := APIKeyUsageStats{
+		TotalRequests: row.TotalRequests,
+		InputTokens:   row.InputTokens,
+		OutputTokens:  row.OutputTokens,
+		TotalTokens:   row.TotalTokens,
+	}
+	if row.LastUsedAt.Valid {
+		lastUsedAt := row.LastUsedAt.Time
+		stats.LastUsedAt = &lastUsedAt
+	}
+
+	return stats, nil
+}
+
 // GetTotalCostByAPIKey calculates total cost for an API key in a time range
 func (r *UsageRepository) GetTotalCostByAPIKey(ctx context.Context, apiKeyID uuid.UUID, startTime, endTime time.Time) (float64, error) {
+	startMonthIndex, endMonthIndex, err := normalizeMonthAlignedRange(startTime, endTime)
+	if err != nil {
+		return 0, err
+	}
+
 	query := `
-		SELECT COALESCE(SUM(cost_usd), 0)
-		FROM usage_records
+		SELECT COALESCE(SUM(total_cost_usd), 0)
+		FROM monthly_usage_summary
 		WHERE api_key_id = $1 
-		  AND request_timestamp >= $2 
-		  AND request_timestamp < $3
+		  AND (year * 100 + month) >= $2
+		  AND (year * 100 + month) < $3
 	`
 
 	var totalCost float64
-	err := r.db.conn.GetContext(ctx, &totalCost, query, apiKeyID, startTime, endTime)
+	err = r.db.conn.GetContext(ctx, &totalCost, query, apiKeyID, startMonthIndex, endMonthIndex)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get total cost: %w", err)
 	}
@@ -123,23 +180,43 @@ func (r *UsageRepository) GetTotalCostByAPIKey(ctx context.Context, apiKeyID uui
 func (r *UsageRepository) GetTotalTokensByAPIKey(ctx context.Context, apiKeyID uuid.UUID, startTime, endTime time.Time) (int, int, int, error) {
 	query := `
 		SELECT 
-			COALESCE(SUM(prompt_tokens), 0),
-			COALESCE(SUM(completion_tokens), 0),
-			COALESCE(SUM(total_tokens), 0)
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(input_tokens + output_tokens), 0)
 		FROM usage_records
 		WHERE api_key_id = $1 
-		  AND request_timestamp >= $2 
-		  AND request_timestamp < $3
+		  AND created_at >= $2 
+		  AND created_at < $3
 	`
 
-	var promptTokens, completionTokens, totalTokens int
+	var inputTokens, outputTokens, totalTokens int
 	err := r.db.conn.QueryRowxContext(ctx, query, apiKeyID, startTime, endTime).
-		Scan(&promptTokens, &completionTokens, &totalTokens)
+		Scan(&inputTokens, &outputTokens, &totalTokens)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to get total tokens: %w", err)
 	}
 
-	return promptTokens, completionTokens, totalTokens, nil
+	return inputTokens, outputTokens, totalTokens, nil
+}
+
+func normalizeMonthAlignedRange(startTime, endTime time.Time) (int, int, error) {
+	startUTC := startTime.UTC()
+	endUTC := endTime.UTC()
+
+	if !isMonthBoundary(startUTC) || !isMonthBoundary(endUTC) {
+		return 0, 0, fmt.Errorf("cost totals require month-aligned range")
+	}
+	if !endUTC.After(startUTC) {
+		return 0, 0, fmt.Errorf("cost totals require end time after start time")
+	}
+
+	startMonthIndex := startUTC.Year()*100 + int(startUTC.Month())
+	endMonthIndex := endUTC.Year()*100 + int(endUTC.Month())
+	return startMonthIndex, endMonthIndex, nil
+}
+
+func isMonthBoundary(ts time.Time) bool {
+	return ts.Day() == 1 && ts.Hour() == 0 && ts.Minute() == 0 && ts.Second() == 0 && ts.Nanosecond() == 0
 }
 
 // MonthlyUsageSummaryRepository is disabled - MonthlyUsageSummary model not implemented

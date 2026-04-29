@@ -251,6 +251,55 @@ func TestAdminAPIKeysHandlerGetByID(t *testing.T) {
 		t.Fatalf("Failed to create test API key: %v", err)
 	}
 
+	usageRepo := storage.NewUsageRepository(db)
+	summaryRepo := storage.NewMonthlyUsageSummaryRepository(db)
+	now := time.Now().UTC()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	firstRequestTime := startOfMonth.Add(2 * time.Hour)
+	secondRequestTime := startOfMonth.Add(48 * time.Hour)
+
+	usageRecords := []*models.UsageRecord{
+		{
+			ID:             uuid.New(),
+			APIKeyID:       testKey.ID,
+			RequestID:      uuid.New(),
+			ModelName:      "gpt-4",
+			Endpoint:       "/v1/chat/completions",
+			InputTokens:    100,
+			OutputTokens:   40,
+			ResponseTimeMS: 120,
+			StatusCode:     200,
+		},
+		{
+			ID:             uuid.New(),
+			APIKeyID:       testKey.ID,
+			RequestID:      uuid.New(),
+			ModelName:      "gpt-4",
+			Endpoint:       "/v1/chat/completions",
+			InputTokens:    60,
+			OutputTokens:   15,
+			ResponseTimeMS: 90,
+			StatusCode:     200,
+		},
+	}
+
+	for _, record := range usageRecords {
+		if err := usageRepo.Create(context.Background(), record); err != nil {
+			t.Fatalf("Failed to create usage record: %v", err)
+		}
+	}
+
+	if _, err := db.Conn().ExecContext(context.Background(), "UPDATE usage_records SET created_at = $1 WHERE id = $2", firstRequestTime, usageRecords[0].ID); err != nil {
+		t.Fatalf("Failed to update first usage record timestamp: %v", err)
+	}
+	if _, err := db.Conn().ExecContext(context.Background(), "UPDATE usage_records SET created_at = $1 WHERE id = $2", secondRequestTime, usageRecords[1].ID); err != nil {
+		t.Fatalf("Failed to update second usage record timestamp: %v", err)
+	}
+
+	if err := summaryRepo.UpsertCost(context.Background(), testKey.ID, now.Year(), int(now.Month()), 12.5); err != nil {
+		t.Fatalf("Failed to create monthly usage summary: %v", err)
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/admin/keys/"+testKey.ID.String(), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 
@@ -271,8 +320,24 @@ func TestAdminAPIKeysHandlerGetByID(t *testing.T) {
 		t.Errorf("Expected name 'Test Detail Key', got '%s'", response.Name)
 	}
 
-	if response.UsageStats.CurrentMonthUSD < 0 {
-		t.Error("Expected usage stats to be initialized")
+	if response.UsageStats.TotalRequests != 2 {
+		t.Errorf("Expected total requests 2, got %d", response.UsageStats.TotalRequests)
+	}
+	if response.UsageStats.InputTokens != 160 {
+		t.Errorf("Expected input tokens 160, got %d", response.UsageStats.InputTokens)
+	}
+	if response.UsageStats.OutputTokens != 55 {
+		t.Errorf("Expected output tokens 55, got %d", response.UsageStats.OutputTokens)
+	}
+	if response.UsageStats.TotalTokens != 215 {
+		t.Errorf("Expected total tokens 215, got %d", response.UsageStats.TotalTokens)
+	}
+	if response.UsageStats.CurrentMonthUSD != 12.5 {
+		t.Errorf("Expected current month cost 12.5, got %v", response.UsageStats.CurrentMonthUSD)
+	}
+	expectedLastUsed := secondRequestTime.Format("2006-01-02T15:04:05Z07:00")
+	if response.UsageStats.LastUsedAt == nil || *response.UsageStats.LastUsedAt != expectedLastUsed {
+		t.Errorf("Expected last used at %q, got %v", expectedLastUsed, response.UsageStats.LastUsedAt)
 	}
 }
 
