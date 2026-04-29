@@ -23,6 +23,20 @@ import (
 
 var proxyLogger = utils.NewLogger("proxy-handler", utils.Info)
 
+type billingUpdateEnqueuer interface {
+	Enqueue(ctx context.Context, update *billing.BillingUpdate) error
+}
+
+type usageRecordEnqueuer interface {
+	Enqueue(ctx context.Context, record *models.UsageRecord) error
+}
+
+var reportAsyncEnqueueFailure = func(target, requestID, apiKeyID string, err error, keyvals ...any) {
+	args := []any{"error", err, "request_id", requestID, "api_key_id", apiKeyID}
+	args = append(args, keyvals...)
+	proxyLogger.Warn(fmt.Sprintf("failed to enqueue %s", target), args...)
+}
+
 // handleChat is the entry point for OpenAI-compatible chat completions.
 // This handler is protected by APIKeyMiddleware, so the API key has already been validated.
 //
@@ -156,7 +170,7 @@ func (d *Dependencies) handleChat(w http.ResponseWriter, r *http.Request) {
 			Error:          err.Error(),
 			RequestPayload: payload,
 		}
-		_ = d.Logger.Enqueue(logRec)
+		d.enqueueLogRecord(logRec)
 
 		writeJSONError(w, http.StatusBadGateway, "provider error")
 		return
@@ -227,7 +241,7 @@ func (d *Dependencies) handleNonStreamingResponse(
 	}
 
 	// Enqueue log (best-effort)
-	_ = d.Logger.Enqueue(logRec)
+	d.enqueueLogRecord(logRec)
 
 	// Queue billing update asynchronously
 	if actualCost > 0 && d.BillingWorker != nil {
@@ -236,7 +250,7 @@ func (d *Dependencies) handleNonStreamingResponse(
 			CostUSD:   actualCost,
 			Timestamp: time.Now(),
 		}
-		_ = d.BillingWorker.Enqueue(context.Background(), billingUpdate)
+		d.enqueueBillingUpdate(reqID, billingUpdate)
 	}
 
 	// Queue usage record asynchronously
@@ -258,7 +272,7 @@ func (d *Dependencies) handleNonStreamingResponse(
 				ResponseTimeMS:  int(providerLatency.Milliseconds()),
 				StatusCode:      pResp.StatusCode,
 			}
-			_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
+			d.enqueueUsageRecord(reqID, usageRecord)
 		}
 	}
 
@@ -408,7 +422,7 @@ func (d *Dependencies) handleStreamingResponse(
 		},
 	}
 
-	_ = d.Logger.Enqueue(logRec)
+	d.enqueueLogRecord(logRec)
 
 	// Queue billing update asynchronously
 	if totalCost > 0 && d.BillingWorker != nil {
@@ -417,7 +431,7 @@ func (d *Dependencies) handleStreamingResponse(
 			CostUSD:   totalCost,
 			Timestamp: time.Now(),
 		}
-		_ = d.BillingWorker.Enqueue(context.Background(), billingUpdate)
+		d.enqueueBillingUpdate(reqID, billingUpdate)
 	}
 
 	if d.UsageWorker != nil {
@@ -438,7 +452,7 @@ func (d *Dependencies) handleStreamingResponse(
 				ResponseTimeMS:  int(providerLatency.Milliseconds()),
 				StatusCode:      pResp.StatusCode,
 			}
-			_ = d.UsageWorker.Enqueue(context.Background(), usageRecord)
+			d.enqueueUsageRecord(reqID, usageRecord)
 		}
 	}
 
@@ -538,6 +552,33 @@ func parseUsageRecordIDs(apiKeyID, requestID string) (uuid.UUID, uuid.UUID, erro
 	}
 
 	return apiKeyUUID, requestUUID, nil
+}
+
+func (d *Dependencies) enqueueLogRecord(logRec *logging.LogRecord) {
+	if d.Logger == nil || logRec == nil {
+		return
+	}
+	if err := d.Logger.Enqueue(logRec); err != nil {
+		reportAsyncEnqueueFailure("request log", logRec.RequestID, logRec.APIKeyID, err)
+	}
+}
+
+func (d *Dependencies) enqueueBillingUpdate(requestID string, update *billing.BillingUpdate) {
+	if d.BillingWorker == nil || update == nil {
+		return
+	}
+	if err := d.BillingWorker.Enqueue(context.Background(), update); err != nil {
+		reportAsyncEnqueueFailure("billing update", requestID, update.APIKeyID, err, "cost_usd", update.CostUSD)
+	}
+}
+
+func (d *Dependencies) enqueueUsageRecord(requestID string, record *models.UsageRecord) {
+	if d.UsageWorker == nil || record == nil {
+		return
+	}
+	if err := d.UsageWorker.Enqueue(context.Background(), record); err != nil {
+		reportAsyncEnqueueFailure("usage record", requestID, record.APIKeyID.String(), err, "usage_record_id", record.ID.String())
+	}
 }
 
 // newRequestID returns a UUID request ID for tracing

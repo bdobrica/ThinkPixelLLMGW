@@ -32,8 +32,8 @@ type Dependencies struct {
 	Metrics       metrics.Metrics
 	RequestLogger *logging.RequestLogger
 	// Queue workers for async processing
-	BillingWorker *billing.BillingQueueWorker
-	UsageWorker   *storage.UsageQueueWorker
+	BillingWorker billingUpdateEnqueuer
+	UsageWorker   usageRecordEnqueuer
 	// Database and encryption for admin handlers
 	DB         *storage.DB
 	Encryption *storage.Encryption
