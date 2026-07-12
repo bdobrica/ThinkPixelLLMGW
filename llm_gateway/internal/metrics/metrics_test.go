@@ -1,5 +1,4 @@
 package metrics
-package metrics
 
 import (
 	"testing"
@@ -21,10 +20,10 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 		"test-key-id",
 		"test-key-name",
 		tags,
-		1000,  // input tokens
-		100,   // cached tokens
-		500,   // output tokens
-		0.05,  // cost USD
+		1000,                 // input tokens
+		100,                  // cached tokens
+		500,                  // output tokens
+		0.05,                 // cost USD
 		500*time.Millisecond, // latency
 	)
 
@@ -33,10 +32,10 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 		"test-key-id",
 		"test-key-name",
 		tags,
-		2000,  // input tokens
-		200,   // cached tokens
-		1000,  // output tokens
-		0.10,  // cost USD
+		2000,          // input tokens
+		200,           // cached tokens
+		1000,          // output tokens
+		0.10,          // cost USD
 		1*time.Second, // latency
 	)
 
@@ -45,10 +44,10 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 		"other-key-id",
 		"other-key-name",
 		map[string]string{},
-		500,   // input tokens
-		0,     // cached tokens
-		250,   // output tokens
-		0.025, // cost USD
+		500,                  // input tokens
+		0,                    // cached tokens
+		250,                  // output tokens
+		0.025,                // cost USD
 		250*time.Millisecond, // latency
 	)
 

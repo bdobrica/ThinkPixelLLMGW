@@ -26,13 +26,14 @@ export LOGGING_SINK_FLUSH_SIZE=100
 export LOGGING_SINK_FLUSH_INTERVAL=5m
 export POD_NAME=demo-pod
 
-# Also required (can use minimal values for testing)
+# Also required by the gateway configuration loader
 export DATABASE_URL=postgres://user:pass@localhost/dbname
+export JWT_SECRET=replace-with-a-long-random-value
 ```
 
 **Run:**
 ```bash
-go run examples/s3_logging_example.go
+go run ./examples/s3-logging
 ```
 
 **What it does:**
@@ -47,11 +48,10 @@ Demonstrates field-level encryption for sensitive data.
 
 **Run:**
 ```bash
-go run examples/encryption_example.go
+go run ./examples/encryption
 ```
 
 ## Notes
 
-- Each example can be run independently
-- The compile errors you might see in the IDE are expected (multiple `main()` functions)
+- Each example is in its own command directory and can be built or run independently
 - In production, you would typically use only one of these patterns in your main application

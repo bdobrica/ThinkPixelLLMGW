@@ -8,10 +8,9 @@ import (
 	"llm_gateway/internal/storage"
 )
 
-// Example demonstrating how to use encryption for provider credentials
+// This example demonstrates provider credential encryption.
 func main() {
-	// 1. Generate an encryption key (do this once and store securely)
-	keyBase64, err := storage.GenerateKey(32) // AES-256
+	keyBase64, err := storage.GenerateKey(32)
 	if err != nil {
 		log.Fatalf("Failed to generate key: %v", err)
 	}
@@ -19,16 +18,11 @@ func main() {
 	fmt.Println("Store this in your ENCRYPTION_KEY environment variable")
 	fmt.Println()
 
-	// 2. In production, load from environment
-	// keyBase64 = os.Getenv("ENCRYPTION_KEY")
-
-	// 3. Create encryption service
 	encryption, err := storage.NewEncryptionFromBase64(keyBase64)
 	if err != nil {
 		log.Fatalf("Failed to create encryption: %v", err)
 	}
 
-	// 4. Example: Encrypt OpenAI credentials
 	fmt.Println("=== Encrypting Provider Credentials ===")
 	credentials := map[string]string{
 		"api_key":      "sk-1234567890abcdef",
@@ -45,7 +39,6 @@ func main() {
 		fmt.Printf("Encrypted %s: %s...\n", key, encrypted[:40])
 	}
 
-	// 5. This would be stored in the database
 	provider := &models.Provider{
 		Name:                 "openai",
 		DisplayName:          "OpenAI",
@@ -54,28 +47,27 @@ func main() {
 		Config:               models.JSONB{"base_url": "https://api.openai.com/v1"},
 		Enabled:              true,
 	}
-	fmt.Printf("\nProvider ready to store: %s\n", provider.DisplayName)
-	fmt.Println()
+	fmt.Printf("\nProvider ready to store: %s\n\n", provider.DisplayName)
 
-	// 6. Example: Decrypt credentials (as done by ProviderRegistry)
 	fmt.Println("=== Decrypting Provider Credentials ===")
 	decryptedCreds := make(map[string]string)
-	for key, val := range encryptedCreds {
-		if strVal, ok := val.(string); ok {
-			decrypted, err := encryption.Decrypt(strVal)
-			if err != nil {
-				log.Fatalf("Failed to decrypt %s: %v", key, err)
-			}
-			decryptedCreds[key] = string(decrypted)
-			fmt.Printf("Decrypted %s: %s\n", key, string(decrypted))
+	for key, value := range encryptedCreds {
+		stringValue, ok := value.(string)
+		if !ok {
+			continue
 		}
+		decrypted, err := encryption.Decrypt(stringValue)
+		if err != nil {
+			log.Fatalf("Failed to decrypt %s: %v", key, err)
+		}
+		decryptedCreds[key] = string(decrypted)
+		fmt.Printf("Decrypted %s: %s\n", key, decrypted)
 	}
 
-	// 7. Verify decryption worked
 	fmt.Println()
 	if decryptedCreds["api_key"] == credentials["api_key"] {
-		fmt.Println("✓ Encryption/Decryption verified successfully!")
-	} else {
-		fmt.Println("✗ Decryption failed - values don't match")
+		fmt.Println("Encryption/decryption verified successfully")
+		return
 	}
+	log.Fatal("Decryption failed: values do not match")
 }

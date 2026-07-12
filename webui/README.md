@@ -1,262 +1,90 @@
 # LLM Gateway Web UI
 
-A minimal web-based admin interface for the LLM Gateway, consisting of a React frontend and a Python BFF (Backend-for-Frontend).
+The Web UI is a React 19/Vite single-page application backed by a small FastAPI BFF. The browser receives a signed HttpOnly cookie; the BFF extracts the gateway JWT and forwards it in an Authorization header to the Go admin API.
 
-## Components
+## Current status
 
-### 1. Frontend (`./frontend`)
+| Area | Status |
+|---|---|
+| Email/password login, logout, protected routes | Implemented |
+| API-key list/create/update/revoke UI | Implemented |
+| Models BFF list endpoint | Implemented |
+| Models page | Placeholder |
+| Billing endpoint and page | Not implemented / placeholder |
+| Dashboard statistics | Placeholder |
+| Service-token login | Gateway supports it; Web UI does not expose it |
 
-A minimal React + TypeScript SPA with:
-- Cookie-based authentication (no JWT handling in browser)
-- Clean UI using PicoCSS
-- Protected routes for admin operations
-- Pages for API keys, models, and billing
+This UI is suitable for development but needs the production hardening listed in [the repository code review](../CODE_REVIEW.md), especially cookie configuration and the production launcher's port conflict.
 
-**Quick start:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Development
 
-See [frontend/README.md](./frontend/README.md) for details.
+Prerequisites: a gateway at `http://localhost:8080`, Python 3.10+, Node.js 18+, and pnpm.
 
-### 2. BFF (`./bff`)
+Automated (Linux/macOS):
 
-A FastAPI service that:
-- Manages authentication via signed HttpOnly cookies
-- Proxies admin API requests to the Go gateway
-- Provides a clean REST API for the frontend
-- No database - stateless service
-
-**Quick start:**
-```bash
-cd bff
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-See [bff/README.md](./bff/README.md) for details.
-
-## Architecture
-
-```
-┌─────────────┐
-│   Browser   │
-│  (React UI) │
-└──────┬──────┘
-       │ HTTP (cookies)
-       ▼
-┌─────────────┐
-│     BFF     │
-│  (FastAPI)  │
-└──────┬──────┘
-       │ HTTP + JWT
-       ▼
-┌─────────────┐
-│ Go Gateway  │
-│ (Admin API) │
-└─────────────┘
-```
-
-**Authentication Flow:**
-1. User logs in with email/password on the React UI
-2. BFF calls Go gateway `/admin/login` and receives JWT
-3. BFF signs the JWT and stores it in an HttpOnly cookie
-4. All subsequent requests from the UI include the cookie
-5. BFF verifies the cookie and forwards requests to the gateway with the JWT
-
-**Security:**
-- JWT is never exposed to browser JavaScript (HttpOnly cookies)
-- Cookies are signed to prevent tampering
-- CORS is configured to only allow the frontend origin
-- In production, use HTTPS and set `secure=True` on cookies
-
-## Development Setup
-
-### Prerequisites
-
-- Node.js 18+ (for frontend)
-- Python 3.9+ (for BFF)
-- The Go LLM Gateway running on `http://localhost:8080`
-
-### Running Locally
-
-#### Option 1: Development Mode (Vite Dev Server)
-
-1. **Start the Go gateway** (from repo root):
-   ```bash
-   cd llm_gateway
-   make run
-   ```
-
-2. **Start the BFF** (terminal 1):
-   ```bash
-   cd webui/bff
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   uvicorn app.main:app --reload --port 8000
-   ```
-
-3. **Start the frontend** (terminal 2):
-   ```bash
-   cd webui/frontend
-   pnpm install
-   pnpm run dev
-   ```
-
-4. **Access the UI**:
-   - Open `http://localhost:5173` in your browser
-   - Hot module reloading enabled
-   - Login with your admin credentials
-
-#### Option 2: Production Mode (nginx + Static Files)
-
-1. **Start the Go gateway** (from repo root):
-   ```bash
-   cd llm_gateway
-   make run
-   ```
-
-2. **Run the production startup script**:
-   ```bash
-   cd webui
-   ./start-prod.sh
-   ```
-
-   This will:
-   - Build the frontend to static files (`pnpm run build`)
-   - Start the BFF on port 8000
-   - Start nginx on port 8080 serving static files and proxying API requests
-   - If nginx is not installed, falls back to Python's http.server
-
-3. **Access the UI**:
-   - Open `http://localhost:8080` in your browser
-   - Production-optimized build
-   - Login with your admin credentials
-
-#### Automated Start (Development)
-
-For development mode:
 ```bash
 cd webui
 ./start-dev.sh
 ```
 
-This automatically starts both BFF and Vite dev server.
-
-## Production Deployment
-
-### Build the Frontend
+Manual:
 
 ```bash
-cd frontend
-pnpm run build
+# terminal 1
+cd webui/bff
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# terminal 2
+cd webui/frontend
+pnpm install
+pnpm run dev
 ```
 
-The production build will be in `./frontend/dist`.
+Open `http://localhost:5173`. Vite proxies `/auth` and `/admin` to the BFF.
 
-### Deploy
+## Configuration
 
-For production, you'll need:
+Create `webui/bff/.env` as needed:
 
-1. **Serve the frontend** with a web server (nginx, caddy, etc.)
-2. **Run the BFF** with a production WSGI server:
-   ```bash
-   pip install uvicorn[standard]
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-   ```
-3. **Configure the web server** to:
-   - Serve static files from `./frontend/dist`
-   - Proxy `/auth/*` and `/admin/*` to the BFF
-   - Use HTTPS for secure cookies
-
-Example nginx config:
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name admin.example.com;
-    
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-    
-    root /path/to/webui/frontend/dist;
-    index index.html;
-    
-    # Proxy API requests to BFF
-    location ~ ^/(auth|admin) {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    
-    # SPA fallback
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-### Environment Variables
-
-For production, update these environment variables in the BFF:
-
-```env
-GATEWAY_BASE_URL=http://your-gateway-url:8080
-SECRET_KEY=your-very-secure-random-secret-key-here
+```dotenv
+GATEWAY_BASE_URL=http://localhost:8080
+SECRET_KEY=replace-with-a-long-random-value
 COOKIE_NAME=admin_token
 COOKIE_MAX_AGE=3600
-CORS_ORIGINS=["https://admin.example.com"]
+CORS_ORIGINS=["http://localhost:5173"]
 ```
 
-See `./bff/.env.example` for a complete list.
+Important current limitations:
 
-## Development Notes
+- `SECRET_KEY` has a development default in code; always override it.
+- Cookies are currently emitted with `Secure=false`.
+- Changing `COOKIE_NAME` currently breaks protected endpoints because the cookie reader is hardcoded to `admin_token`.
+- `start-prod.sh` currently tries to bind nginx to the gateway's port 8080 and therefore cannot run beside the expected local gateway. Do not use it unchanged.
 
-- The frontend dev server (Vite) proxies `/auth` and `/admin` requests to the BFF
-- CORS is enabled on the BFF for local development
-- API key signing uses `itsdangerous` library (production-ready)
-- All authentication state is server-side (no localStorage/sessionStorage)
+## BFF endpoints
 
-## Adding New Features
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | BFF liveness only |
+| `POST /auth/login` | Gateway login and cookie creation |
+| `POST /auth/logout` | Delete the cookie |
+| `GET /auth/me` | Return current JWT claims via gateway `/admin/test` |
+| `GET, POST /admin/api-keys` | List/create keys |
+| `PUT, DELETE /admin/api-keys/{id}` | Update/revoke a key |
+| `GET /admin/models` | List models |
 
-### Add a New Admin Page
+There is no BFF `/admin/billing` route today.
 
-1. Create component in `./frontend/src/pages/YourPage.tsx`
-2. Add route in `./frontend/src/router.tsx`
-3. Add navigation link in `./frontend/src/components/NavBar.tsx`
-4. If needed, add BFF endpoint in `./bff/app/admin.py`
+## Production deployment direction
 
-### Add a New BFF Endpoint
+Build static assets with `pnpm run build`, serve `frontend/dist` on a port/domain distinct from the gateway, and reverse-proxy `/auth` and `/admin` to a multi-worker BFF. Before deployment, fix/configure secure cookies, require a strong signing key, enable HTTPS, normalize upstream failures, and restrict CORS to the actual UI origin.
 
-1. Add route handler in `./bff/app/admin.py` (or create new module)
-2. Use `get_current_admin_token` dependency for auth
-3. Call gateway using `gateway_request` helper
-4. Update frontend API client in `./frontend/src/api/client.ts`
+## More detail
 
-## Troubleshooting
-
-### Frontend can't connect to BFF
-- Check that BFF is running on `http://localhost:8000`
-- Check Vite proxy config in `./frontend/vite.config.ts`
-- Check browser console for CORS errors
-
-### BFF can't connect to Gateway
-- Check `GATEWAY_BASE_URL` in BFF config
-- Verify the Go gateway is running
-- Check BFF logs for connection errors
-
-### Authentication not working
-- Clear browser cookies and try again
-- Check that `SECRET_KEY` is set in BFF
-- Verify admin credentials are correct in the gateway database
-
-## License
-
-Same as the main LLM Gateway project.
+- [Quick reference](QUICK_REFERENCE.md)
+- [Implementation summary](IMPLEMENTATION_SUMMARY.md)
+- [BFF documentation](bff/README.md)
+- [Frontend documentation](frontend/README.md)
