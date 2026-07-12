@@ -5,19 +5,19 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 ## P0 — release blockers
 
 - [x] Stop and close queue workers, queues, Redis, PostgreSQL, providers, billing, and log sinks during normal shutdown and on partial router-initialization failures.
-- [ ] Fix the Web UI production launcher so nginx does not attempt to bind the gateway's port 8080.
-- [ ] Require a non-default BFF signing secret in production and make secure-cookie behavior configurable and HTTPS-safe.
+- [x] Fix the Web UI production launcher so nginx does not attempt to bind the gateway's port 8080.
+- [x] Require a non-default BFF signing secret in production and make secure-cookie behavior configurable and HTTPS-safe.
 
 ## P1 — correctness and security
 
 - [x] Add separate process liveness and dependency/worker readiness endpoints with transition metrics.
-- [ ] Make the configured BFF `COOKIE_NAME` work; the dependency currently always reads a cookie named `admin_token`.
+- [x] Honor the configured BFF `COOKIE_NAME` consistently for writing, reading, and deleting the authentication cookie.
 - [x] Protect `/metrics` with a dedicated strong bearer token and document Prometheus authentication.
 - [ ] Define fail-open versus fail-closed policy for Redis failures in rate limiting and billing, and add operational metrics/alerts.
 - [ ] Use exact decimal or integer minor units for persisted and accumulated currency values instead of `float64`.
-- [ ] Add request timeouts/body limits to all BFF calls and translate gateway/network failures into stable `502/504` responses.
+- [x] Add request timeouts/body limits to all BFF calls and translate gateway/network failures into stable `502/504` responses.
 - [ ] Avoid persisting provider API keys from environment variables back into PostgreSQL on every startup, or document and audit that behavior.
-- [ ] Complete production configuration validation for Web UI cookie security and public bind choices; gateway secret strength and enabled S3 settings are validated.
+- [x] Complete production configuration validation for Web UI cookie security and public bind choices; gateway secret strength and enabled S3 settings are validated.
 
 ## P2 — product completeness
 
@@ -31,7 +31,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 ## Testing and delivery
 
-- [ ] Add BFF tests for login, cookie expiry/name/security, proxy errors, and authorization.
+- [x] Add BFF tests for login, cookie expiry/name/security, proxy errors, and authorization.
 - [ ] Add frontend component/end-to-end tests for API-key lifecycle and authentication expiry.
 - [ ] Add a streaming test covering a response longer than 30 seconds and verifying usage/cost persistence.
 - [ ] Add provider-billing reconciliation for streams whose terminal usage is unavailable.

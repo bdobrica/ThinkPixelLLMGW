@@ -116,35 +116,13 @@ To add a new admin page:
 
 ## Production Deployment
 
-For production:
+For production, artifacts must be built before the launcher starts:
 
-1. Build the frontend: `npm run build`
+1. Build the frontend: `pnpm install --frozen-lockfile && pnpm run build`
 2. Serve the `dist/` folder with a web server (nginx, caddy, etc.)
 3. Configure the web server to:
    - Serve static files from `dist/`
    - Proxy `/auth/*` and `/admin/*` to the BFF
    - Serve `index.html` for all other routes (SPA mode)
 
-Example nginx config:
-
-```nginx
-server {
-    listen 80;
-    server_name admin.example.com;
-    
-    root /path/to/dist;
-    index index.html;
-    
-    # Proxy API requests to BFF
-    location ~ ^/(auth|admin) {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-    
-    # SPA fallback
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
+The repository maintains one canonical configuration at `../nginx.conf.template`. `../start-prod.sh` renders it with configurable frontend root, BFF upstream, and UI listen address (default port 8081), validates it, and supervises nginx and the BFF. It requires the existing `dist` and BFF virtualenv artifacts and never installs or builds at production startup.

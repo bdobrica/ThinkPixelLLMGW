@@ -134,7 +134,7 @@ Read operations require the `viewer` role; mutations require `admin`. There is n
 
 ## Continuous integration
 
-GitHub Actions validates Go formatting/vet, race-enabled unit tests, Docker-backed integration tests, migration down/up round trips, frontend lint/build, BFF compilation, and the production container build. Pull-request checks require no provider secrets.
+GitHub Actions validates Go formatting/vet, race-enabled unit tests, Docker-backed integration tests, migration down/up round trips, frontend lint/build, BFF compilation/tests, and the production container build. Pull-request checks require no provider secrets.
 
 ## License
 

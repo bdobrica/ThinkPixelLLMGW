@@ -102,3 +102,5 @@ Cross-site cookies (`SameSite=None`) are not accepted because the BFF does not y
 Gateway connection failures are exposed as a client-safe `502`, upstream timeouts as `504`, and malformed responses as `502`. Expected gateway error status codes and safe JSON error details are retained. API-key mutations use strict typed payloads and all BFF request bodies are capped by `MAX_REQUEST_BODY_BYTES`.
 
 Run the BFF suite with `pip install -r requirements-dev.txt && python -m pytest -q`.
+
+For the bundled deployment, preinstall this environment and build the frontend, then use `../start-prod.sh`. It starts this BFF on configurable `BFF_HOST`/`BFF_PORT` values (default `127.0.0.1:8000`) and supervises it with nginx; it never installs dependencies during production startup.

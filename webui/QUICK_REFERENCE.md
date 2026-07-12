@@ -44,6 +44,19 @@ python3 -m pytest -q
 - BFF OpenAPI: `http://localhost:8000/docs`
 - Gateway health: `http://localhost:8080/health`
 
+## Launch production artifacts
+
+Build/install once, then launch:
+
+```bash
+cd webui/frontend && pnpm install --frozen-lockfile && pnpm run build
+cd ../bff && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+cd ..
+SECRET_KEY="$(openssl rand -base64 32)" PUBLIC_ORIGIN=https://admin.example.com ./start-prod.sh
+```
+
+Defaults: gateway `:8080`, BFF `:8000`, UI `:8081`. Override with `GATEWAY_BASE_URL`, `BFF_HOST`/`BFF_PORT`, `WEBUI_LISTEN_ADDRESS`/`WEBUI_PORT`, `PUBLIC_ORIGIN`, `FRONTEND_ROOT`, and `BFF_VENV`. nginx is required and its configuration is validated before launch.
+
 ## Configuration
 
 `webui/bff/.env`:
@@ -89,7 +102,9 @@ Billing is not implemented. The Models and Billing pages are placeholders.
 
 **CORS error:** ensure `CORS_ORIGINS` is a JSON list containing the exact frontend origin. Development normally uses the Vite proxy and same-origin requests.
 
-**`start-prod.sh` cannot bind port 8080:** this is a known bug because the gateway already owns that port. Use a separately configured reverse proxy/UI port; do not stop the gateway to make the script appear healthy.
+**Production launcher says artifacts are missing:** run the build/install commands above. Production startup intentionally never installs packages or builds the SPA.
+
+**nginx preflight fails:** inspect the printed `nginx -t` error and verify `FRONTEND_ROOT`, `NGINX_MIME_TYPES`, listen address, and BFF address. There is intentionally no degraded static-server fallback.
 
 **Models or billing show TODO text:** expected in the current implementation.
 

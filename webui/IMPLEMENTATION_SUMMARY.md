@@ -35,6 +35,9 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 - Models and billing placeholder pages
 - Same-origin fetch client with `credentials: include`
 - Vite development proxy for `/auth` and `/admin`
+- Production launcher with distinct `8080` gateway, `8000` BFF, and `8081` UI defaults
+- One configurable nginx template with SPA fallback, BFF proxying, and immutable static caching
+- Pre-built artifact enforcement, nginx preflight validation, readiness gating, child-failure propagation, and signal cleanup
 
 ## Actual route mapping
 
@@ -53,13 +56,13 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 - The frontend client still contains an unused `getBilling()` call that would receive 404.
 - BFF cookie/configuration tests are present; frontend tests are not yet present.
 - Cross-site cookies are deliberately disallowed until a CSRF token mechanism exists; strict/lax same-site cookies are supported.
-- `start-prod.sh` conflicts with the gateway on port 8080; the fallback server also lacks API proxying and SPA routing.
 
 ## Verification
 
 - `pnpm run build`: passed
 - `python3 -m compileall -q app`: passed
-- `python3 -m pytest -q`: 14 passed (cookie/configuration, client lifecycle, failures, readiness, validation, and body limits)
+- `python3 -m pytest -q`: 16 passed (including launcher rendering, failure propagation, and cleanup)
+- `bash -n webui/start-prod.sh`: passed
 - Runtime login/proxy flow: not exercised because the review environment did not run the dependency stack
 
 For prioritized remediation, see [../CODE_REVIEW.md](../CODE_REVIEW.md) and [../TODO.md](../TODO.md).

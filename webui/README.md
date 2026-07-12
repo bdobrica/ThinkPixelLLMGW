@@ -14,7 +14,7 @@ The Web UI is a React 19/Vite single-page application backed by a small FastAPI 
 | Dashboard statistics | Placeholder |
 | Service-token login | Gateway supports it; Web UI does not expose it |
 
-Authentication cookies and signing-key validation are production-aware. The production launcher still needs the port and process-management work described below.
+Authentication cookies, gateway proxying, and the artifact-only production launcher are production-aware. Product pages listed as placeholders remain unfinished.
 
 ## Development
 
@@ -84,9 +84,20 @@ The BFF reuses one bounded HTTP connection pool for its lifetime. Connect, read,
 
 There is no BFF `/admin/billing` route today.
 
-## Production deployment direction
+## Production deployment
 
-Build static assets with `pnpm run build`, serve `frontend/dist` on a port/domain distinct from the gateway, and reverse-proxy `/auth` and `/admin` to the BFF. Enable HTTPS, set the production cookie/signing configuration, restrict CORS to the actual UI origin, and use `/ready` for traffic readiness while retaining `/health` for process liveness.
+Build and install dependencies before startup:
+
+```bash
+cd webui/frontend && pnpm install --frozen-lockfile && pnpm run build
+cd ../bff && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+cd ..
+SECRET_KEY="$(openssl rand -base64 32)" PUBLIC_ORIGIN=https://admin.example.com ./start-prod.sh
+```
+
+The launcher defaults to gateway `127.0.0.1:8080`, BFF `127.0.0.1:8000`, and UI `127.0.0.1:8081`, so there is no port collision. Configure `GATEWAY_BASE_URL`, `BFF_HOST`, `BFF_PORT`, `WEBUI_LISTEN_ADDRESS`, `WEBUI_PORT`, `PUBLIC_ORIGIN`, `FRONTEND_ROOT`, or `BFF_VENV` when needed. It renders only [nginx.conf.template](nginx.conf.template), validates it with `nginx -t`, waits for readiness, propagates child failures, and cleans up both processes on termination. There is no non-proxying static-server fallback.
+
+Terminate TLS at nginx or an upstream proxy, retain `COOKIE_SECURE=true`, and use `/ready` for traffic readiness while retaining `/health` for BFF process liveness. The launcher does not build assets or install packages, making deployed artifacts immutable.
 
 ## More detail
 
