@@ -297,12 +297,36 @@ func TestRedisBillingService_GetMonthlySpending_FallsBackToPersistedSummary(t *t
 		t.Fatalf("GetMonthlySpending = %v, want 12.34", spending)
 	}
 
-	redisValue, err := client.Get(context.Background(), service.monthlyKey(apiKeyID.String(), now.Year(), int(now.Month()))).Float64()
+	redisValue, err := client.Get(context.Background(), service.monthlyKey(apiKeyID.String(), now.Year(), int(now.Month()))).Int64()
 	if err != nil {
 		t.Fatalf("expected Redis cache to be repopulated: %v", err)
 	}
-	if redisValue != 12.34 {
-		t.Fatalf("redis cached value = %v, want 12.34", redisValue)
+	if redisValue != 12_340_000_000 {
+		t.Fatalf("redis cached value = %v, want 12340000000 nano-USD", redisValue)
+	}
+}
+
+func TestRedisBillingService_AccumulatesNanoUSDWithoutDrift(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer client.Close()
+	service := &RedisBillingService{redis: client}
+	apiKeyID := uuid.New().String()
+	for i := 0; i < 10_000; i++ {
+		if err := service.AddUsage(context.Background(), apiKeyID, 0.000000001); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := service.GetMonthlySpending(context.Background(), apiKeyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 0.00001 {
+		t.Fatalf("got %.12f, want %.12f", got, 0.00001)
 	}
 }
 

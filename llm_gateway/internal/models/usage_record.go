@@ -36,7 +36,20 @@ type MonthlyUsageSummary struct {
 	TotalOutputTokens    int       `db:"total_output_tokens"`
 	TotalCachedTokens    int       `db:"total_cached_tokens"`
 	TotalReasoningTokens int       `db:"total_reasoning_tokens"`
-	TotalCostUSD         float64   `db:"total_cost_usd"`
+	TotalCostNanoUSD     NanoUSD   `db:"total_cost_nano_usd"`
+	TotalCostUSD         float64   `db:"-"`
 	CreatedAt            time.Time `db:"created_at"`
 	UpdatedAt            time.Time `db:"updated_at"`
+}
+
+func (s *MonthlyUsageSummary) NormalizeCurrency() error {
+	if s.TotalCostNanoUSD == 0 && s.TotalCostUSD != 0 {
+		value, err := NanoUSDFromFloat64(s.TotalCostUSD)
+		if err != nil {
+			return err
+		}
+		s.TotalCostNanoUSD = value
+	}
+	s.TotalCostUSD = s.TotalCostNanoUSD.Float64()
+	return nil
 }

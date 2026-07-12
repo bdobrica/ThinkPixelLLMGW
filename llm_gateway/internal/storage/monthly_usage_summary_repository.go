@@ -25,7 +25,7 @@ func (r *MonthlyUsageSummaryRepository) GetByAPIKeyAndMonth(ctx context.Context,
 	query := `
 		SELECT id, api_key_id, year, month, total_requests, total_input_tokens,
 		       total_output_tokens, total_cached_tokens, total_reasoning_tokens,
-		       total_cost_usd, created_at, updated_at
+		       total_cost_nano_usd, created_at, updated_at
 		FROM monthly_usage_summary
 		WHERE api_key_id = $1 AND year = $2 AND month = $3
 	`
@@ -39,23 +39,30 @@ func (r *MonthlyUsageSummaryRepository) GetByAPIKeyAndMonth(ctx context.Context,
 		return nil, fmt.Errorf("failed to get monthly usage summary: %w", err)
 	}
 
+	if err := summary.NormalizeCurrency(); err != nil {
+		return nil, fmt.Errorf("invalid monthly cost: %w", err)
+	}
 	return &summary, nil
 }
 
 // UpsertCost creates or updates the persisted monthly total cost without disturbing token counters.
 func (r *MonthlyUsageSummaryRepository) UpsertCost(ctx context.Context, apiKeyID uuid.UUID, year, month int, totalCostUSD float64) error {
+	totalCostNanoUSD, err := models.NanoUSDFromFloat64(totalCostUSD)
+	if err != nil {
+		return fmt.Errorf("invalid monthly cost: %w", err)
+	}
 	query := `
 		INSERT INTO monthly_usage_summary (
 			id, api_key_id, year, month, total_requests, total_input_tokens,
-			total_output_tokens, total_cached_tokens, total_reasoning_tokens, total_cost_usd
+			total_output_tokens, total_cached_tokens, total_reasoning_tokens, total_cost_nano_usd
 		) VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, $5)
 		ON CONFLICT (api_key_id, year, month)
 		DO UPDATE SET
-			total_cost_usd = EXCLUDED.total_cost_usd,
+			total_cost_nano_usd = EXCLUDED.total_cost_nano_usd,
 			updated_at = NOW()
 	`
 
-	_, err := r.db.conn.ExecContext(ctx, query, uuid.New(), apiKeyID, year, month, totalCostUSD)
+	_, err = r.db.conn.ExecContext(ctx, query, uuid.New(), apiKeyID, year, month, totalCostNanoUSD)
 	if err != nil {
 		return fmt.Errorf("failed to upsert monthly usage summary: %w", err)
 	}

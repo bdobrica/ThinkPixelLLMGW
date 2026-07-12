@@ -96,7 +96,7 @@ erDiagram
         string key_hash UK
         text_arr allowed_models
         int rate_limit_per_min
-        numeric monthly_budget_usd
+        bigint monthly_budget_nano_usd
         boolean enabled
         timestamp expires_at
         timestamp created_at
@@ -126,7 +126,7 @@ erDiagram
         numeric input_cost_usd
         numeric output_cost_usd
         numeric cache_cost_usd
-        numeric total_cost_usd
+        bigint total_cost_nano_usd
         int response_time_ms
         int status_code
         string error_message

@@ -152,6 +152,7 @@ func (r *ModelRepository) getByAlias(ctx context.Context, alias string) (*models
 func (r *ModelRepository) loadPricingComponents(ctx context.Context, model *models.Model) error {
 	query := `
 		SELECT id, model_id, code, direction, modality, unit, tier, scope, price,
+		       ROUND(price * 1000000000)::BIGINT AS price_nano_usd,
 		       metadata_schema_version, metadata
 		FROM pricing_components
 		WHERE model_id = $1
@@ -184,6 +185,7 @@ func (r *ModelRepository) loadPricingComponentsForModels(ctx context.Context, mo
 
 	query := `
 		SELECT id, model_id, code, direction, modality, unit, tier, scope, price,
+		       ROUND(price * 1000000000)::BIGINT AS price_nano_usd,
 		       metadata_schema_version, metadata
 		FROM pricing_components
 		WHERE model_id IN (?)

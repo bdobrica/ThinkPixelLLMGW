@@ -35,7 +35,7 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, keyHash string) (*mode
 	var key models.APIKey
 	query := `
 		SELECT id, name, key_hash, allowed_models, rate_limit_per_minute, 
-		       monthly_budget_usd, enabled, expires_at, created_at, updated_at
+		       monthly_budget_nano_usd, enabled, expires_at, created_at, updated_at
 		FROM api_keys
 		WHERE key_hash = $1 AND enabled = true
 	`
@@ -48,6 +48,9 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, keyHash string) (*mode
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
 
+	if err := key.NormalizeCurrency(); err != nil {
+		return nil, fmt.Errorf("invalid API key budget: %w", err)
+	}
 	// Load metadata
 	if err := r.loadTags(ctx, &key); err != nil {
 		return nil, fmt.Errorf("failed to load tags: %w", err)
@@ -64,7 +67,7 @@ func (r *APIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.A
 	var key models.APIKey
 	query := `
 		SELECT id, name, key_hash, allowed_models, rate_limit_per_minute,
-		       monthly_budget_usd, enabled, expires_at, created_at, updated_at
+		       monthly_budget_nano_usd, enabled, expires_at, created_at, updated_at
 		FROM api_keys
 		WHERE id = $1
 	`
@@ -77,6 +80,9 @@ func (r *APIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.A
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
 
+	if err := key.NormalizeCurrency(); err != nil {
+		return nil, fmt.Errorf("invalid API key budget: %w", err)
+	}
 	// Load metadata
 	if err := r.loadTags(ctx, &key); err != nil {
 		return nil, fmt.Errorf("failed to load tags: %w", err)
@@ -116,7 +122,7 @@ func (r *APIKeyRepository) loadTags(ctx context.Context, key *models.APIKey) err
 func (r *APIKeyRepository) Create(ctx context.Context, key *models.APIKey) error {
 	query := `
 		INSERT INTO api_keys (id, name, key_hash, allowed_models, rate_limit_per_minute,
-		                      monthly_budget_usd, enabled, expires_at)
+		                      monthly_budget_nano_usd, enabled, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING created_at, updated_at
 	`
@@ -124,11 +130,14 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *models.APIKey) error
 	if key.ID == uuid.Nil {
 		key.ID = uuid.New()
 	}
+	if err := key.NormalizeCurrency(); err != nil {
+		return fmt.Errorf("invalid API key budget: %w", err)
+	}
 
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		key.ID, key.Name, key.KeyHash, key.AllowedModels, key.RateLimitPerMinute,
-		key.MonthlyBudgetUSD, key.Enabled, key.ExpiresAt,
+		key.MonthlyBudgetNanoUSD, key.Enabled, key.ExpiresAt,
 	).Scan(&key.CreatedAt, &key.UpdatedAt)
 
 	if err != nil {
@@ -154,7 +163,7 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 	query := `
 		UPDATE api_keys
 		SET name = $2, key_hash = $3, allowed_models = $4, rate_limit_per_minute = $5,
-		    monthly_budget_usd = $6, enabled = $7, expires_at = $8
+		    monthly_budget_nano_usd = $6, enabled = $7, expires_at = $8
 		WHERE id = $1
 		RETURNING updated_at
 	`
@@ -162,7 +171,7 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
 		key.ID, key.Name, key.KeyHash, key.AllowedModels, key.RateLimitPerMinute,
-		key.MonthlyBudgetUSD, key.Enabled, key.ExpiresAt,
+		key.MonthlyBudgetNanoUSD, key.Enabled, key.ExpiresAt,
 	).Scan(&key.UpdatedAt)
 
 	if err != nil {
@@ -215,7 +224,7 @@ func (r *APIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
 func (r *APIKeyRepository) List(ctx context.Context, limit, offset int) ([]*models.APIKey, error) {
 	query := `
 		SELECT id, name, key_hash, allowed_models, rate_limit_per_minute,
-		       monthly_budget_usd, enabled, expires_at, created_at, updated_at
+		       monthly_budget_nano_usd, enabled, expires_at, created_at, updated_at
 		FROM api_keys
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
@@ -229,6 +238,9 @@ func (r *APIKeyRepository) List(ctx context.Context, limit, offset int) ([]*mode
 
 	// Load metadata for each key
 	for _, key := range keys {
+		if err := key.NormalizeCurrency(); err != nil {
+			return nil, fmt.Errorf("invalid API key budget: %w", err)
+		}
 		if err := r.loadTags(ctx, key); err != nil {
 			return nil, fmt.Errorf("failed to load tags: %w", err)
 		}

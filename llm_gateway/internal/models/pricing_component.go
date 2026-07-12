@@ -67,7 +67,8 @@ type PricingComponent struct {
 	Scope     *string          `db:"scope" json:"scope,omitempty"`
 
 	// Price in Model.Currency
-	Price float64 `db:"price" json:"price"`
+	Price        float64 `db:"price" json:"price"`
+	PriceNanoUSD NanoUSD `db:"price_nano_usd" json:"-"`
 
 	// Provider-specific extras
 	MetadataSchemaVersion *string `db:"metadata_schema_version" json:"metadata_schema_version,omitempty"`

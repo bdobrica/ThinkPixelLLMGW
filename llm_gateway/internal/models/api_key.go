@@ -10,19 +10,35 @@ import (
 
 // APIKey represents a client API key managed by the admin API.
 type APIKey struct {
-	ID                 uuid.UUID      `db:"id"`
-	Name               string         `db:"name"`
-	KeyHash            string         `db:"key_hash"` // SHA-256 hash
-	AllowedModels      pq.StringArray `db:"allowed_models"`
-	RateLimitPerMinute int            `db:"rate_limit_per_minute"`
-	MonthlyBudgetUSD   *float64       `db:"monthly_budget_usd"` // NULL = unlimited
-	Enabled            bool           `db:"enabled"`
-	ExpiresAt          *time.Time     `db:"expires_at"`
-	CreatedAt          time.Time      `db:"created_at"`
-	UpdatedAt          time.Time      `db:"updated_at"`
+	ID                   uuid.UUID      `db:"id"`
+	Name                 string         `db:"name"`
+	KeyHash              string         `db:"key_hash"` // SHA-256 hash
+	AllowedModels        pq.StringArray `db:"allowed_models"`
+	RateLimitPerMinute   int            `db:"rate_limit_per_minute"`
+	MonthlyBudgetNanoUSD *NanoUSD       `db:"monthly_budget_nano_usd"` // exact persisted value; NULL = unlimited
+	MonthlyBudgetUSD     *float64       `db:"-"`                       // JSON/API compatibility boundary
+	Enabled              bool           `db:"enabled"`
+	ExpiresAt            *time.Time     `db:"expires_at"`
+	CreatedAt            time.Time      `db:"created_at"`
+	UpdatedAt            time.Time      `db:"updated_at"`
 
 	// Not stored in DB, populated from api_key_tags table
 	Tags map[string]string `db:"-"` // -> key -> value
+}
+
+func (k *APIKey) NormalizeCurrency() error {
+	if k.MonthlyBudgetNanoUSD == nil && k.MonthlyBudgetUSD != nil {
+		value, err := NanoUSDFromFloat64(*k.MonthlyBudgetUSD)
+		if err != nil {
+			return err
+		}
+		k.MonthlyBudgetNanoUSD = &value
+	}
+	if k.MonthlyBudgetUSD == nil && k.MonthlyBudgetNanoUSD != nil {
+		value := k.MonthlyBudgetNanoUSD.Float64()
+		k.MonthlyBudgetUSD = &value
+	}
+	return nil
 }
 
 // AllowsModel checks if the key is allowed to call the given model (or alias).

@@ -1,5 +1,11 @@
 # Database Migrations
 
+## Currency migration (20260712000004)
+
+Billing totals and budgets are stored as integer nano-USD (`1 USD = 1,000,000,000 nano-USD`). The forward migration rounds legacy floating-point values to the nearest nano-USD, converts pricing to `NUMERIC(30,12)`, and removes the old floating columns. The rollback recreates floating columns and divides integer values by the same scale; it is structurally reversible but may reproduce only the already-rounded nano-USD value.
+
+During a rolling deployment, new gateway instances accept legacy decimal-dollar Redis values, convert them once, and rewrite the key as integer nano-USD. Deploy the migration before starting new application instances; do not roll application binaries back without first applying the down migration.
+
 This directory contains SQL migrations for the ThinkPixelLLMGW database schema.
 
 ## Tools

@@ -102,14 +102,14 @@ func (s *RedisBillingService) WithinBudget(ctx context.Context, apiKeyIDStr stri
 	}
 
 	// No budget configured = unlimited
-	if apiKey.MonthlyBudgetUSD == nil {
+	if apiKey.MonthlyBudgetNanoUSD == nil {
 		return true
 	}
 
-	budget := *apiKey.MonthlyBudgetUSD
+	budget := *apiKey.MonthlyBudgetNanoUSD
 
 	// Get current month's spending from Redis
-	currentSpending, err := s.GetMonthlySpending(ctx, apiKeyIDStr)
+	currentSpending, err := s.getMonthlySpendingNanoUSD(ctx, apiKeyIDStr)
 	if err != nil {
 		// On error, allow request but log
 		return true
@@ -120,6 +120,10 @@ func (s *RedisBillingService) WithinBudget(ctx context.Context, apiKeyIDStr stri
 
 // AddUsage adds cost to the running total in Redis
 func (s *RedisBillingService) AddUsage(ctx context.Context, apiKeyID string, costUSD float64) error {
+	costNanoUSD, err := models.NanoUSDFromFloat64(costUSD)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	key := s.monthlyKey(apiKeyID, now.Year(), int(now.Month()))
 
@@ -139,7 +143,7 @@ func (s *RedisBillingService) AddUsage(ctx context.Context, apiKeyID string, cos
 	// Keep data for 2 months
 	ttl := int((60 * 24 * 60 * 60)) // 60 days in seconds
 
-	_, err := script.Run(ctx, s.redis, []string{key}, costUSD, ttl).Result()
+	_, err = script.Run(ctx, s.redis, []string{key}, int64(costNanoUSD), ttl).Result()
 	if err != nil {
 		return fmt.Errorf("failed to add usage: %w", err)
 	}
@@ -149,12 +153,17 @@ func (s *RedisBillingService) AddUsage(ctx context.Context, apiKeyID string, cos
 
 // GetMonthlySpending returns the current month's spending for an API key
 func (s *RedisBillingService) GetMonthlySpending(ctx context.Context, apiKeyID string) (float64, error) {
+	value, err := s.getMonthlySpendingNanoUSD(ctx, apiKeyID)
+	return value.Float64(), err
+}
+
+func (s *RedisBillingService) getMonthlySpendingNanoUSD(ctx context.Context, apiKeyID string) (models.NanoUSD, error) {
 	now := time.Now()
 	year := now.Year()
 	month := int(now.Month())
 	key := s.monthlyKey(apiKeyID, year, month)
 
-	val, err := s.redis.Get(ctx, key).Float64()
+	val, err := s.getRedisNanoUSD(ctx, key)
 	if err == redis.Nil {
 		return s.getPersistedMonthlySpending(ctx, apiKeyID, year, month)
 	}
@@ -169,7 +178,7 @@ func (s *RedisBillingService) GetMonthlySpending(ctx context.Context, apiKeyID s
 func (s *RedisBillingService) GetSpending(ctx context.Context, apiKeyID string, year int, month int) (float64, error) {
 	key := s.monthlyKey(apiKeyID, year, month)
 
-	val, err := s.redis.Get(ctx, key).Float64()
+	val, err := s.getRedisNanoUSD(ctx, key)
 	if err == redis.Nil {
 		return 0, nil
 	}
@@ -177,7 +186,7 @@ func (s *RedisBillingService) GetSpending(ctx context.Context, apiKeyID string, 
 		return 0, fmt.Errorf("failed to get spending: %w", err)
 	}
 
-	return val, nil
+	return val.Float64(), nil
 }
 
 // ResetMonthlySpending resets spending for current month (admin use)
@@ -321,7 +330,7 @@ func (s *RedisBillingService) syncKey(ctx context.Context, key string) error {
 	}
 
 	// Get value from Redis
-	totalCostUSD, err := s.redis.Get(ctx, key).Float64()
+	totalCostNanoUSD, err := s.getRedisNanoUSD(ctx, key)
 	if err != nil {
 		return fmt.Errorf("failed to get value: %w", err)
 	}
@@ -330,10 +339,10 @@ func (s *RedisBillingService) syncKey(ctx context.Context, key string) error {
 		return nil
 	}
 
-	return s.summary.UpsertCost(ctx, apiKeyID, year, month, totalCostUSD)
+	return s.summary.UpsertCost(ctx, apiKeyID, year, month, totalCostNanoUSD.Float64())
 }
 
-func (s *RedisBillingService) getPersistedMonthlySpending(ctx context.Context, apiKeyID string, year, month int) (float64, error) {
+func (s *RedisBillingService) getPersistedMonthlySpending(ctx context.Context, apiKeyID string, year, month int) (models.NanoUSD, error) {
 	if s.summary == nil {
 		return 0, nil
 	}
@@ -350,18 +359,45 @@ func (s *RedisBillingService) getPersistedMonthlySpending(ctx context.Context, a
 		}
 		return 0, fmt.Errorf("failed to get persisted monthly spending: %w", err)
 	}
+	if err := summary.NormalizeCurrency(); err != nil {
+		return 0, err
+	}
 
-	totalCostUSD := summary.TotalCostUSD
-	if err := s.setMonthlySpending(ctx, apiKeyID, year, month, totalCostUSD); err != nil {
+	totalCostNanoUSD := summary.TotalCostNanoUSD
+	if err := s.setMonthlySpending(ctx, apiKeyID, year, month, totalCostNanoUSD); err != nil {
 		billingLogger.Warn("failed to repopulate monthly spending cache", "api_key_id", apiKeyID, "year", year, "month", month, "error", err)
 	}
 
-	return totalCostUSD, nil
+	return totalCostNanoUSD, nil
 }
 
-func (s *RedisBillingService) setMonthlySpending(ctx context.Context, apiKeyID string, year, month int, totalCostUSD float64) error {
+// getRedisNanoUSD dual-reads legacy decimal-dollar values and rewrites them as
+// integer nano-USD so rolling deployments do not lose existing budget totals.
+func (s *RedisBillingService) getRedisNanoUSD(ctx context.Context, key string) (models.NanoUSD, error) {
+	raw, err := s.redis.Get(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if value, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil {
+		return models.NanoUSD(value), nil
+	}
+	legacy, parseErr := strconv.ParseFloat(raw, 64)
+	if parseErr != nil {
+		return 0, parseErr
+	}
+	value, parseErr := models.NanoUSDFromFloat64(legacy)
+	if parseErr != nil {
+		return 0, parseErr
+	}
+	if err := s.redis.Set(ctx, key, int64(value), 60*24*time.Hour).Err(); err != nil {
+		return 0, err
+	}
+	return value, nil
+}
+
+func (s *RedisBillingService) setMonthlySpending(ctx context.Context, apiKeyID string, year, month int, totalCostNanoUSD models.NanoUSD) error {
 	key := s.monthlyKey(apiKeyID, year, month)
-	if err := s.redis.Set(ctx, key, totalCostUSD, 60*24*time.Hour).Err(); err != nil {
+	if err := s.redis.Set(ctx, key, int64(totalCostNanoUSD), 60*24*time.Hour).Err(); err != nil {
 		return fmt.Errorf("failed to set monthly spending: %w", err)
 	}
 	return nil

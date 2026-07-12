@@ -8,15 +8,33 @@ import (
 	"sync/atomic"
 	"time"
 
+	"llm_gateway/internal/models"
 	"llm_gateway/internal/queue"
 	"llm_gateway/internal/utils"
 )
 
 // BillingUpdate represents a billing update to be processed
 type BillingUpdate struct {
-	APIKeyID  string    `json:"api_key_id"`
-	CostUSD   float64   `json:"cost_usd"`
-	Timestamp time.Time `json:"timestamp"`
+	SchemaVersion int            `json:"schema_version"`
+	APIKeyID      string         `json:"api_key_id"`
+	CostNanoUSD   models.NanoUSD `json:"cost_nano_usd"`
+	CostUSD       float64        `json:"cost_usd,omitempty"` // v1 dual-read compatibility
+	Timestamp     time.Time      `json:"timestamp"`
+}
+
+func (u *BillingUpdate) normalizeCurrency() error {
+	if u.CostNanoUSD == 0 && u.CostUSD != 0 {
+		value, err := models.NanoUSDFromFloat64(u.CostUSD)
+		if err != nil {
+			return err
+		}
+		u.CostNanoUSD = value
+	}
+	u.CostUSD = u.CostNanoUSD.Float64()
+	if u.SchemaVersion == 0 {
+		u.SchemaVersion = 2
+	}
+	return nil
 }
 
 // BillingQueueWorker processes billing updates asynchronously
@@ -74,6 +92,9 @@ func (w *BillingQueueWorker) StopContext(ctx context.Context) error {
 
 // Enqueue adds a billing update to the queue
 func (w *BillingQueueWorker) Enqueue(ctx context.Context, update *BillingUpdate) error {
+	if err := update.normalizeCurrency(); err != nil {
+		return err
+	}
 	return w.queue.Enqueue(ctx, update)
 }
 
@@ -128,6 +149,9 @@ func (w *BillingQueueWorker) processItem(ctx context.Context, item interface{}, 
 	var update BillingUpdate
 	if err := w.unmarshalItem(item, &update); err != nil {
 		logger.Error("Failed to unmarshal billing update", "error", err)
+		return err
+	}
+	if err := update.normalizeCurrency(); err != nil {
 		return err
 	}
 

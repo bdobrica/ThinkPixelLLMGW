@@ -9,6 +9,7 @@ ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralize
 - `POST /v1/chat/completions`, including SSE-framed OpenAI streaming with terminal token and cost accounting
 - PostgreSQL repositories for keys, providers, models, aliases, admins, usage, and monthly summaries
 - Redis-backed atomic sliding-window rate limiting and budget tracking
+- Exact nano-USD billing arithmetic with rolling Redis migration support
 - Database-driven pricing and asynchronous billing/usage queues
 - Admin authentication with Argon2id credentials and HS256 JWTs
 - Admin CRUD for API keys, providers, models, and model aliases
@@ -91,6 +92,8 @@ python3 -m compileall -q app
 `go test -short ./...` is the hermetic Go unit suite. PostgreSQL, Redis-server, and MinIO tests are explicitly tagged and run with `make test-integration-all`; see the [testing guide](docs/testing-guide.md).
 
 For OpenAI streaming requests, the gateway requests terminal usage, parses complete SSE events independently of network read boundaries, and records input, output, cached, and reasoning tokens. If a stream is interrupted or completes without provider usage, its accounting status is recorded as unknown and no zero-cost success is silently claimed; operators should alert and reconcile those requests from provider billing data.
+
+Currency is accumulated and persisted as signed integer nano-USD (`10^-9 USD`). Existing dollar-valued JSON fields remain numeric compatibility boundaries and are rounded half away from zero to nano-USD before billing. Apply migration `20260712000004_exact_currency` before deploying this version; rolling instances dual-read and rewrite legacy Redis decimal-dollar totals.
 
 The HTTP server keeps header reads, request reads, ordinary response writes, and idle connections bounded. Streaming handlers clear only their response write deadline; provider calls remain bounded by `PROVIDER_REQUEST_TIMEOUT`. During shutdown, streams may drain until `HTTP_SHUTDOWN_TIMEOUT`, after which active connections are closed. The gateway then uses a fresh shutdown deadline to stop queue workers, flush billing and logs, and close queues, providers, Redis, and PostgreSQL. Startup is transactional: a router-construction failure rolls back resources already created.
 

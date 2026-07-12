@@ -14,7 +14,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [x] Honor the configured BFF `COOKIE_NAME` consistently for writing, reading, and deleting the authentication cookie.
 - [x] Protect `/metrics` with a dedicated strong bearer token and document Prometheus authentication.
 - [ ] Define fail-open versus fail-closed policy for Redis failures in rate limiting and billing, and add operational metrics/alerts.
-- [ ] Use exact decimal or integer minor units for persisted and accumulated currency values instead of `float64`.
+- [x] Use exact integer nano-USD for persisted and accumulated currency values, with half-away-from-zero rounding and legacy Redis dual reads.
 - [x] Add request timeouts/body limits to all BFF calls and translate gateway/network failures into stable `502/504` responses.
 - [ ] Avoid persisting provider API keys from environment variables back into PostgreSQL on every startup, or document and audit that behavior.
 - [x] Complete production configuration validation for Web UI cookie security and public bind choices; gateway secret strength and enabled S3 settings are validated.

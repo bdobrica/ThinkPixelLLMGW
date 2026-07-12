@@ -1,22 +1,11 @@
 package models
 
 import (
-	"math"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
-
-const currencyMicroScale = 1_000_000_000
-
-func toCurrencyMicros(amount float64) int64 {
-	return int64(math.Round(amount * currencyMicroScale))
-}
-
-func fromCurrencyMicros(micros int64) float64 {
-	return float64(micros) / currencyMicroScale
-}
 
 //
 // Model (models table)
@@ -130,19 +119,24 @@ type Model struct {
 // CalculateCost calculates the cost for a given token usage
 // It matches token types from the usage record to pricing components
 func (m *Model) CalculateCost(usageRecord UsageRecord) float64 {
-	totalMicros := int64(0)
+	return m.CalculateCostNanoUSD(usageRecord).Float64()
+}
+
+// CalculateCostNanoUSD calculates an exact, half-up-rounded request cost.
+func (m *Model) CalculateCostNanoUSD(usageRecord UsageRecord) NanoUSD {
+	total := NanoUSD(0)
 
 	// Calculate input tokens cost (excluding cached tokens)
 	if usageRecord.InputTokens > 0 {
 		if component := m.findPricingComponent(PricingDirectionInput, PricingModalityText); component != nil {
-			totalMicros += m.calculateComponentCostMicros(component, usageRecord.InputTokens)
+			total += m.calculateComponentCostNanoUSD(component, usageRecord.InputTokens)
 		}
 	}
 
 	// Calculate output tokens cost (excluding reasoning tokens to avoid double counting)
 	if usageRecord.OutputTokens > 0 {
 		if component := m.findPricingComponent(PricingDirectionOutput, PricingModalityText); component != nil {
-			totalMicros += m.calculateComponentCostMicros(component, usageRecord.OutputTokens)
+			total += m.calculateComponentCostNanoUSD(component, usageRecord.OutputTokens)
 		}
 	}
 
@@ -151,7 +145,7 @@ func (m *Model) CalculateCost(usageRecord UsageRecord) float64 {
 	if usageRecord.CachedTokens > 0 {
 		// Try to find cache-specific pricing first
 		if component := m.findPricingComponent(PricingDirectionCache, PricingModalityText); component != nil {
-			totalMicros += m.calculateComponentCostMicros(component, usageRecord.CachedTokens)
+			total += m.calculateComponentCostNanoUSD(component, usageRecord.CachedTokens)
 		}
 	}
 
@@ -161,11 +155,11 @@ func (m *Model) CalculateCost(usageRecord UsageRecord) float64 {
 		// Use output pricing for reasoning tokens (they're a type of output)
 		// Note: Some providers may have separate reasoning token pricing in the future
 		if component := m.findPricingComponent(PricingDirectionOutput, PricingModalityText); component != nil {
-			totalMicros += m.calculateComponentCostMicros(component, usageRecord.ReasoningTokens)
+			total += m.calculateComponentCostNanoUSD(component, usageRecord.ReasoningTokens)
 		}
 	}
 
-	return fromCurrencyMicros(totalMicros)
+	return total
 }
 
 // findPricingComponent finds a pricing component by direction and modality
@@ -204,32 +198,35 @@ func (m *Model) findPricingComponent(direction PricingDirection, modality Pricin
 
 // calculateComponentCost calculates cost for a specific pricing component and token count
 func (m *Model) calculateComponentCost(component *PricingComponent, tokens int) float64 {
-	return fromCurrencyMicros(m.calculateComponentCostMicros(component, tokens))
+	return m.calculateComponentCostNanoUSD(component, tokens).Float64()
 }
 
-func (m *Model) calculateComponentCostMicros(component *PricingComponent, tokens int) int64 {
+func (m *Model) calculateComponentCostNanoUSD(component *PricingComponent, tokens int) NanoUSD {
 	if component == nil || tokens == 0 {
 		return 0
 	}
 
-	priceMicros := toCurrencyMicros(component.Price)
+	priceNanoUSD := component.PriceNanoUSD
+	if priceNanoUSD == 0 && component.Price != 0 {
+		priceNanoUSD = MustNanoUSD(component.Price)
+	}
 	tokenCount := int64(tokens)
 
 	// Calculate based on pricing unit
 	switch component.Unit {
 	case PricingUnit1KTokens:
 		// Price is per 1K tokens; use integer arithmetic with half-up rounding.
-		return (tokenCount*priceMicros + 500) / 1000
+		return NanoUSD((tokenCount*int64(priceNanoUSD) + 500) / 1000)
 
 	case PricingUnitToken:
 		// Price is per token
-		return tokenCount * priceMicros
+		return NanoUSD(tokenCount * int64(priceNanoUSD))
 
 	case PricingUnitCharacter:
 		// Assuming tokens ≈ 4 characters (rough estimate)
 		// This should be refined based on actual provider behavior
 		characters := tokenCount * 4
-		return characters * priceMicros
+		return NanoUSD(characters * int64(priceNanoUSD))
 
 	default:
 		// For other units (image, pixel, second, etc.), return 0

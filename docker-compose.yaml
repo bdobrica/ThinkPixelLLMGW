@@ -15,6 +15,7 @@ services:
       - ./llm_gateway/migrations/20251125000001_initial_schema.up.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./llm_gateway/migrations/20251125000002_seed_data.up.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
       - ./llm_gateway/migrations/20260429000003_add_monthly_usage_summary.up.sql:/docker-entrypoint-initdb.d/03_monthly_usage_summary.sql:ro
+      - ./llm_gateway/migrations/20260712000004_exact_currency.up.sql:/docker-entrypoint-initdb.d/04_exact_currency.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway"]
       interval: 10s

@@ -183,20 +183,20 @@ func (r *UsageRepository) GetTotalCostByAPIKey(ctx context.Context, apiKeyID uui
 	}
 
 	query := `
-		SELECT COALESCE(SUM(total_cost_usd), 0)
+		SELECT COALESCE(SUM(total_cost_nano_usd), 0)
 		FROM monthly_usage_summary
 		WHERE api_key_id = $1 
 		  AND (year * 100 + month) >= $2
 		  AND (year * 100 + month) < $3
 	`
 
-	var totalCost float64
+	var totalCost models.NanoUSD
 	err = r.db.conn.GetContext(ctx, &totalCost, query, apiKeyID, startMonthIndex, endMonthIndex)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get total cost: %w", err)
 	}
 
-	return totalCost, nil
+	return totalCost.Float64(), nil
 }
 
 // GetTotalTokensByAPIKey calculates total tokens for an API key in a time range
