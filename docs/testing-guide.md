@@ -14,6 +14,12 @@ go test -short ./...
 
 `make test-unit` is an alias for the same suite. Redis-server, PostgreSQL, and MinIO tests carry the `integration` build tag and are not compiled into this tier. Tests using in-process fakes such as miniredis remain unit tests.
 
+The HTTP/provider unit suites include streaming coverage for SSE events split across reads, multiple events in one read, terminal cached/reasoning usage, interruption and cancellation, unknown accounting, and exact-once billing/usage enqueue behavior. Run that focused set with:
+
+```bash
+go test -short ./internal/httpapi ./internal/providers ./internal/metrics ./internal/models
+```
+
 For a stricter local/CI run:
 
 ```bash

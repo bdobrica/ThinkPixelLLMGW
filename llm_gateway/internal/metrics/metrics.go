@@ -13,17 +13,19 @@ import (
 type Metrics interface {
 	HTTPHandler() http.Handler
 	RecordRequest(apiKeyID, apiKeyName string, tags map[string]string, inputTokens, cachedTokens, outputTokens int, costUSD float64, latency time.Duration)
+	RecordStreamUsageMissing(provider, model, reason string)
 }
 
 // PrometheusMetrics implements Metrics using Prometheus
 type PrometheusMetrics struct {
-	requestsTotal     *prometheus.CounterVec
-	inputTokensTotal  *prometheus.CounterVec
-	cachedTokensTotal *prometheus.CounterVec
-	outputTokensTotal *prometheus.CounterVec
-	costTotal         *prometheus.CounterVec
-	requestLatency    *prometheus.HistogramVec
-	registry          *prometheus.Registry
+	requestsTotal      *prometheus.CounterVec
+	inputTokensTotal   *prometheus.CounterVec
+	cachedTokensTotal  *prometheus.CounterVec
+	outputTokensTotal  *prometheus.CounterVec
+	costTotal          *prometheus.CounterVec
+	requestLatency     *prometheus.HistogramVec
+	streamUsageMissing *prometheus.CounterVec
+	registry           *prometheus.Registry
 }
 
 // NewPrometheusMetrics creates a new Prometheus metrics collector
@@ -79,9 +81,20 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			labelNames,
 		),
+		streamUsageMissing: promauto.With(registry).NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "llm_gateway_stream_usage_missing_total",
+				Help: "Streaming responses without provider-reported terminal usage",
+			},
+			[]string{"provider", "model", "reason"},
+		),
 	}
 
 	return m
+}
+
+func (m *PrometheusMetrics) RecordStreamUsageMissing(provider, model, reason string) {
+	m.streamUsageMissing.WithLabelValues(provider, model, reason).Inc()
 }
 
 // RecordRequest records metrics for a completed request
@@ -129,3 +142,5 @@ func (m *NoopMetrics) HTTPHandler() http.Handler {
 func (m *NoopMetrics) RecordRequest(apiKeyID, apiKeyName string, tags map[string]string, inputTokens, cachedTokens, outputTokens int, costUSD float64, latency time.Duration) {
 	// No-op
 }
+
+func (m *NoopMetrics) RecordStreamUsageMissing(provider, model, reason string) {}

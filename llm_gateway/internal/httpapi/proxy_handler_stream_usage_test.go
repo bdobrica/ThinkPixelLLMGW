@@ -7,7 +7,12 @@ import (
 )
 
 func TestEnsureStreamUsageInPayload(t *testing.T) {
-	payload := map[string]any{"stream": true}
+	payload := map[string]any{
+		"stream": true,
+		"stream_options": map[string]any{
+			"include_obfuscation": false,
+		},
+	}
 
 	ensureStreamUsageInPayload(payload)
 
@@ -17,6 +22,9 @@ func TestEnsureStreamUsageInPayload(t *testing.T) {
 	}
 	if includeUsage, ok := streamOptions["include_usage"].(bool); !ok || !includeUsage {
 		t.Fatalf("expected include_usage=true, got %v", streamOptions["include_usage"])
+	}
+	if includeObfuscation, ok := streamOptions["include_obfuscation"].(bool); !ok || includeObfuscation {
+		t.Fatalf("compatible stream option was overwritten: %v", streamOptions)
 	}
 }
 
@@ -70,13 +78,6 @@ func TestExtractStreamUsageFromEvent_NoUsage(t *testing.T) {
 	_, ok := extractStreamUsageFromEvent(event)
 	if ok {
 		t.Fatalf("expected no usage extraction")
-	}
-}
-
-func TestFallbackCostFromUsage(t *testing.T) {
-	cost := fallbackCostFromUsage(1000, 500)
-	if cost <= 0 {
-		t.Fatalf("expected positive cost, got %f", cost)
 	}
 }
 

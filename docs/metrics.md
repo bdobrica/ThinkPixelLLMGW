@@ -4,7 +4,7 @@ The LLM Gateway now exposes Prometheus metrics at the `/metrics` endpoint.
 
 ## Available Metrics
 
-All metrics include the following labels:
+Request, token, cost, and latency metrics include the following labels:
 - `api_key_id`: The UUID of the API key making the request
 - `api_key_name`: The human-readable name of the API key
 
@@ -30,9 +30,14 @@ All metrics include the following labels:
    - Total cost tracked in USD
    - Increments by the calculated cost for each request
 
+6. **`llm_gateway_stream_usage_missing_total`**
+   - Counts streams for which terminal provider usage was unavailable
+   - Labels: `provider`, `model`, and `reason` (`provider_missing` or `interrupted`)
+   - Alert on any sustained increase and reconcile affected requests against provider billing exports
+
 ### Histogram Metrics
 
-6. **`llm_gateway_request_duration_seconds`**
+7. **`llm_gateway_request_duration_seconds`**
    - Request latency distribution in seconds
    - Buckets: 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0 seconds
    - Provides `_sum`, `_count`, and `_bucket` metrics for percentile calculations
@@ -81,7 +86,8 @@ To correlate metrics with API key tags:
 ## Implementation Notes
 
 - Metrics are recorded for both streaming and non-streaming requests
-- For streaming requests, token counts are not available (recorded as 0) unless chunk parsing is implemented
+- OpenAI streaming requests ask for a terminal usage chunk. Complete SSE events are parsed without buffering the generated response, and reported input, output, cached, and reasoning usage drives the same database-configured pricing calculation as non-streaming requests.
+- An interrupted stream or a completed stream without terminal usage produces an unknown-accounting usage record and increments `llm_gateway_stream_usage_missing_total`; it is not treated as a successful zero-cost request. Automatic estimation/reconciliation is not yet implemented.
 - Cost calculations use the accurate pricing components from the model configuration
 - Latency includes the full gateway processing time, not just provider response time
 - The `/metrics` endpoint is publicly accessible (no authentication required)
@@ -116,4 +122,4 @@ Potential improvements for the metrics system:
 - Add endpoint path as a label (e.g., `/v1/chat/completions`, `/v1/embeddings`)
 - Add error rate metrics with error type labels
 - Add streaming vs non-streaming request distinction
-- Parse streaming responses to provide accurate token counts
+- Add automatic provider-billing reconciliation for unknown streaming usage

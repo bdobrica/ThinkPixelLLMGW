@@ -6,7 +6,7 @@ ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralize
 
 ## Implemented
 
-- `POST /v1/chat/completions`, including OpenAI streaming
+- `POST /v1/chat/completions`, including SSE-framed OpenAI streaming with terminal token and cost accounting
 - PostgreSQL repositories for keys, providers, models, aliases, admins, usage, and monthly summaries
 - Redis-backed atomic sliding-window rate limiting and budget tracking
 - Database-driven pricing and asynchronous billing/usage queues
@@ -88,6 +88,8 @@ python3 -m compileall -q app
 ```
 
 `go test -short ./...` is the hermetic Go unit suite. PostgreSQL, Redis-server, and MinIO tests are explicitly tagged and run with `make test-integration-all`; see the [testing guide](docs/testing-guide.md).
+
+For OpenAI streaming requests, the gateway requests terminal usage, parses complete SSE events independently of network read boundaries, and records input, output, cached, and reasoning tokens. If a stream is interrupted or completes without provider usage, its accounting status is recorded as unknown and no zero-cost success is silently claimed; operators should alert and reconcile those requests from provider billing data.
 
 Runnable Go examples are isolated as independent commands:
 

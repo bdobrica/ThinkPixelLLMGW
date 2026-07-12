@@ -339,6 +339,7 @@ func (d *Dependencies) handleStreamingResponse(
 	outputTokens := 0
 	cachedTokens := 0
 	reasoningTokens := 0
+	usageReported := false
 	eventCount := 0
 	providerStreamCompleted := false
 	streamErrText := ""
@@ -357,6 +358,7 @@ func (d *Dependencies) handleStreamingResponse(
 		// Forward event to client
 		if event.Data != nil {
 			if usage, ok := extractStreamUsageFromEvent(event.Data); ok {
+				usageReported = true
 				inputTokens = usage.InputTokens
 				outputTokens = usage.OutputTokens
 				cachedTokens = usage.CachedTokens
@@ -397,6 +399,19 @@ func (d *Dependencies) handleStreamingResponse(
 		proxyLogger.Warn("stream interrupted", "request_id", reqID, "api_key_id", apiKeyRecord.ID, "model", providerModel, "error", streamErrText)
 	}
 
+	accountingStatus := "reported"
+	if !usageReported {
+		reason := "provider_missing"
+		if streamErrText != "" {
+			reason = "interrupted"
+		} else {
+			streamErrText = "provider completed stream without terminal usage; cost is unknown"
+		}
+		accountingStatus = "unknown"
+		d.Metrics.RecordStreamUsageMissing(provider.Type(), providerModel, reason)
+		proxyLogger.Warn("stream usage unavailable", "request_id", reqID, "api_key_id", apiKeyRecord.ID, "provider", provider.Type(), "model", providerModel, "reason", reason)
+	}
+
 	if modelDetails != nil {
 		if details, ok := modelDetails.(*storage.ModelWithDetails); ok && details.Model != nil {
 			usageRecord := models.UsageRecord{
@@ -407,10 +422,6 @@ func (d *Dependencies) handleStreamingResponse(
 			}
 			totalCost = details.Model.CalculateCost(usageRecord)
 		}
-	}
-	if totalCost == 0 && (inputTokens > 0 || outputTokens > 0) {
-		// Fallback estimate used only when model pricing is unavailable.
-		totalCost = fallbackCostFromUsage(inputTokens, outputTokens)
 	}
 
 	// Log the streaming request
@@ -438,6 +449,8 @@ func (d *Dependencies) handleStreamingResponse(
 			"output_tokens":     outputTokens,
 			"cached_tokens":     cachedTokens,
 			"reasoning_tokens":  reasoningTokens,
+			"usage_reported":    usageReported,
+			"accounting_status": accountingStatus,
 		},
 	}
 
@@ -552,12 +565,6 @@ func extractStreamUsageFromEvent(data []byte) (providers.UsageInfo, bool) {
 	}
 
 	return usage, true
-}
-
-func fallbackCostFromUsage(inputTokens, outputTokens int) float64 {
-	inputCost := float64(inputTokens) * 0.00001
-	outputCost := float64(outputTokens) * 0.00003
-	return inputCost + outputCost
 }
 
 func parseUsageRecordIDs(apiKeyID, requestID string) (uuid.UUID, uuid.UUID, error) {

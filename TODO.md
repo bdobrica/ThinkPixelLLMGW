@@ -4,7 +4,6 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 ## P0 — release blockers
 
-- [ ] Correct streaming accounting: request `stream_options.include_usage`, parse the terminal usage chunk, and persist token counts and cost.
 - [ ] Support long-lived streaming responses without the server-wide 30-second `WriteTimeout` terminating them.
 - [ ] Stop and close queue workers, queues, Redis, and PostgreSQL during normal shutdown and on partial router-initialization failures.
 - [ ] Fix the Web UI production launcher so nginx does not attempt to bind the gateway's port 8080.
@@ -35,6 +34,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [ ] Add BFF tests for login, cookie expiry/name/security, proxy errors, and authorization.
 - [ ] Add frontend component/end-to-end tests for API-key lifecycle and authentication expiry.
 - [ ] Add a streaming test covering a response longer than 30 seconds and verifying usage/cost persistence.
+- [ ] Add provider-billing reconciliation for streams whose terminal usage is unavailable.
 - [ ] Add race, fuzz, and load tests; establish measured latency/throughput targets rather than advertising unverified numbers.
 - [ ] Add CI for Go formatting/tests, frontend build/lint, Python tests, container build, and migration up/down checks.
 - [ ] Pin container images instead of using floating `latest` tags.

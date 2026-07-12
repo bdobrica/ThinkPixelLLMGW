@@ -326,40 +326,53 @@ type StreamReader struct {
 
 // NewStreamReader creates a new stream reader
 func NewStreamReader(r io.ReadCloser) *StreamReader {
+	scanner := bufio.NewScanner(r)
+	// Provider chunks can contain large tool calls. Keep a bounded but practical
+	// event size instead of Scanner's 64 KiB default.
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	return &StreamReader{
-		scanner: bufio.NewScanner(r),
+		scanner: scanner,
 		closer:  r,
 	}
 }
 
-// Read reads the next event from the stream
+// Read reads one complete SSE event. Network read boundaries are deliberately
+// ignored; an event ends at a blank line and may contain multiple data fields.
 func (s *StreamReader) Read() (*StreamEvent, error) {
-	if !s.scanner.Scan() {
-		if err := s.scanner.Err(); err != nil {
-			return &StreamEvent{Error: err}, err
+	var data []byte
+	for s.scanner.Scan() {
+		line := bytes.TrimSuffix(s.scanner.Bytes(), []byte{'\r'})
+		if len(line) == 0 {
+			if len(data) == 0 {
+				continue
+			}
+			break
 		}
+		if len(line) > 0 && line[0] == ':' { // SSE comment/heartbeat.
+			continue
+		}
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		field := bytes.TrimPrefix(line, []byte("data:"))
+		if len(field) > 0 && field[0] == ' ' {
+			field = field[1:]
+		}
+		if len(data) > 0 {
+			data = append(data, '\n')
+		}
+		data = append(data, field...)
+	}
+
+	if err := s.scanner.Err(); err != nil {
+		return &StreamEvent{Error: err}, err
+	}
+	if len(data) == 0 {
 		return &StreamEvent{Done: true}, io.EOF
 	}
-
-	line := s.scanner.Bytes()
-
-	// Skip empty lines
-	if len(line) == 0 {
-		return s.Read()
-	}
-
-	// Check for data: prefix
-	if !bytes.HasPrefix(line, []byte("data: ")) {
-		return s.Read()
-	}
-
-	data := bytes.TrimPrefix(line, []byte("data: "))
-
-	// Check for [DONE] marker
-	if bytes.Equal(data, []byte("[DONE]")) {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
 		return &StreamEvent{Done: true}, io.EOF
 	}
-
 	return &StreamEvent{Data: data}, nil
 }
 

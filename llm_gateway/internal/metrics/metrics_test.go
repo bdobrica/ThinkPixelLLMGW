@@ -26,6 +26,7 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 		0.05,                 // cost USD
 		500*time.Millisecond, // latency
 	)
+	m.RecordStreamUsageMissing("openai", "gpt-4", "provider_missing")
 
 	// Record another request with same key
 	m.RecordRequest(
@@ -38,6 +39,7 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 		0.10,          // cost USD
 		1*time.Second, // latency
 	)
+	m.RecordStreamUsageMissing("openai", "gpt-4", "interrupted")
 
 	// Record request with different key
 	m.RecordRequest(
