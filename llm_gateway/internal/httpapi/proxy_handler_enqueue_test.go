@@ -84,6 +84,7 @@ func (m *capturingMetrics) RecordRequest(_ string, _ string, _ map[string]string
 	m.costUSD = costUSD
 }
 func (m *capturingMetrics) RecordStreamUsageMissing(_, _, _ string) { m.missing++ }
+func (m *capturingMetrics) RecordReadiness(bool)                    {}
 
 type stubProvider struct{}
 

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -14,18 +15,24 @@ type Metrics interface {
 	HTTPHandler() http.Handler
 	RecordRequest(apiKeyID, apiKeyName string, tags map[string]string, inputTokens, cachedTokens, outputTokens int, costUSD float64, latency time.Duration)
 	RecordStreamUsageMissing(provider, model, reason string)
+	RecordReadiness(ready bool)
 }
 
 // PrometheusMetrics implements Metrics using Prometheus
 type PrometheusMetrics struct {
-	requestsTotal      *prometheus.CounterVec
-	inputTokensTotal   *prometheus.CounterVec
-	cachedTokensTotal  *prometheus.CounterVec
-	outputTokensTotal  *prometheus.CounterVec
-	costTotal          *prometheus.CounterVec
-	requestLatency     *prometheus.HistogramVec
-	streamUsageMissing *prometheus.CounterVec
-	registry           *prometheus.Registry
+	requestsTotal        *prometheus.CounterVec
+	inputTokensTotal     *prometheus.CounterVec
+	cachedTokensTotal    *prometheus.CounterVec
+	outputTokensTotal    *prometheus.CounterVec
+	costTotal            *prometheus.CounterVec
+	requestLatency       *prometheus.HistogramVec
+	streamUsageMissing   *prometheus.CounterVec
+	readinessTransitions *prometheus.CounterVec
+	readinessState       prometheus.Gauge
+	readinessMu          sync.Mutex
+	readinessInitialized bool
+	lastReadiness        bool
+	registry             *prometheus.Registry
 }
 
 // NewPrometheusMetrics creates a new Prometheus metrics collector
@@ -88,9 +95,29 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"provider", "model", "reason"},
 		),
+		readinessTransitions: promauto.With(registry).NewCounterVec(prometheus.CounterOpts{Name: "llm_gateway_readiness_transitions_total", Help: "Readiness state transitions"}, []string{"state"}),
+		readinessState:       promauto.With(registry).NewGauge(prometheus.GaugeOpts{Name: "llm_gateway_ready", Help: "Whether the gateway is currently ready (1 or 0)"}),
 	}
 
 	return m
+}
+
+func (m *PrometheusMetrics) RecordReadiness(ready bool) {
+	m.readinessMu.Lock()
+	defer m.readinessMu.Unlock()
+	if ready {
+		m.readinessState.Set(1)
+	} else {
+		m.readinessState.Set(0)
+	}
+	if !m.readinessInitialized || m.lastReadiness != ready {
+		state := "unready"
+		if ready {
+			state = "ready"
+		}
+		m.readinessTransitions.WithLabelValues(state).Inc()
+		m.lastReadiness, m.readinessInitialized = ready, true
+	}
 }
 
 func (m *PrometheusMetrics) RecordStreamUsageMissing(provider, model, reason string) {
@@ -144,3 +171,4 @@ func (m *NoopMetrics) RecordRequest(apiKeyID, apiKeyName string, tags map[string
 }
 
 func (m *NoopMetrics) RecordStreamUsageMissing(provider, model, reason string) {}
+func (m *NoopMetrics) RecordReadiness(ready bool)                              {}

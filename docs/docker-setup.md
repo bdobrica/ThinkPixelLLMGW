@@ -138,11 +138,14 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 
 # Health check
 curl http://localhost:8080/health
+curl http://localhost:8080/ready
 ```
 
 Streaming responses clear the server write deadline only for that request. Header and request reads remain bounded, upstream calls use `PROVIDER_REQUEST_TIMEOUT`, and shutdown drains active streams for at most `HTTP_SHUTDOWN_TIMEOUT` before closing their connections. See [Environment Variables](env-variables.md) for the configurable HTTP deadlines.
 
 After HTTP draining, the gateway stops asynchronous workers, flushes request/S3 logs and billing, and closes providers, queues, Redis, and PostgreSQL. Redis-backed queue entries that have not been dequeued remain available after restart. In-memory queue entries cannot survive process termination, so production deployments should use Redis and allow enough termination grace time for two `HTTP_SHUTDOWN_TIMEOUT` windows (HTTP draining followed by dependency flushing).
+
+`/health` is process liveness and intentionally remains successful during dependency outages. `/ready` checks PostgreSQL, Redis, provider-registry access, and billing/usage workers in parallel, bounded by `HTTP_READINESS_TIMEOUT`; it returns only a non-sensitive status. Route traffic only to instances whose `/ready` check succeeds.
 
 ## Service Details
 

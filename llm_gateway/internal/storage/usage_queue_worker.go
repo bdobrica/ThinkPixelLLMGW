@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"llm_gateway/internal/models"
@@ -21,6 +22,7 @@ type UsageQueueWorker struct {
 	stopChan    chan struct{}
 	stoppedChan chan struct{}
 	stopOnce    sync.Once
+	running     atomic.Bool
 }
 
 // NewUsageQueueWorker creates a new usage queue worker
@@ -41,8 +43,12 @@ func NewUsageQueueWorker(q queue.Queue, dlq queue.DeadLetterQueue, db *DB, confi
 
 // Start starts the worker goroutine
 func (w *UsageQueueWorker) Start(ctx context.Context) {
+	w.running.Store(true)
 	go w.run(ctx)
 }
+
+// Ready reports whether the worker is running and able to accept queued work.
+func (w *UsageQueueWorker) Ready() bool { return w.running.Load() }
 
 // Stop gracefully stops the worker
 func (w *UsageQueueWorker) Stop() error {
@@ -68,6 +74,7 @@ func (w *UsageQueueWorker) Enqueue(ctx context.Context, record *models.UsageReco
 // run is the main worker loop
 func (w *UsageQueueWorker) run(ctx context.Context) {
 	defer close(w.stoppedChan)
+	defer w.running.Store(false)
 
 	logger := utils.NewLogger("usage-worker")
 

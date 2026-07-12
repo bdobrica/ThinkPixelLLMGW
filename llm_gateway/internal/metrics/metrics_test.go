@@ -40,6 +40,9 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 		1*time.Second, // latency
 	)
 	m.RecordStreamUsageMissing("openai", "gpt-4", "interrupted")
+	m.RecordReadiness(true)
+	m.RecordReadiness(true)
+	m.RecordReadiness(false)
 
 	// Record request with different key
 	m.RecordRequest(
@@ -60,6 +63,29 @@ func TestPrometheusMetrics_RecordRequest(t *testing.T) {
 	}
 }
 
+func TestPrometheusMetricsReadinessCountsTransitionsOnly(t *testing.T) {
+	m := NewPrometheusMetrics()
+	m.RecordReadiness(true)
+	m.RecordReadiness(true)
+	m.RecordReadiness(false)
+	families, err := m.registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() != "llm_gateway_readiness_transitions_total" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			counts[metric.Label[0].GetValue()] = metric.Counter.GetValue()
+		}
+	}
+	if counts["ready"] != 1 || counts["unready"] != 1 {
+		t.Fatalf("transition counts = %#v", counts)
+	}
+}
+
 func TestNoopMetrics_RecordRequest(t *testing.T) {
 	// Create noop metrics instance
 	m := NewNoopMetrics()
@@ -75,6 +101,7 @@ func TestNoopMetrics_RecordRequest(t *testing.T) {
 		0.05,
 		500*time.Millisecond,
 	)
+	m.RecordReadiness(true)
 
 	// Test that HTTPHandler is not nil
 	handler := m.HTTPHandler()

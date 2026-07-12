@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -396,6 +397,7 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+	mux.Handle("/ready", readinessHandler(deps, cfg.HTTPServer.ReadinessTimeout))
 
 	// Metrics endpoint - public
 	mux.Handle("/metrics", deps.Metrics.HTTPHandler())
@@ -549,4 +551,71 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
+}
+
+type readinessCheck struct {
+	name string
+	run  func(context.Context) error
+}
+
+func readinessHandler(deps *Dependencies, timeout time.Duration) http.Handler {
+	checks := []readinessCheck{
+		{"database", deps.DB.Health},
+		{"redis", deps.redisClient.Health},
+		{"providers", func(ctx context.Context) error { _, err := deps.Providers.ListProviders(ctx); return err }},
+		{"billing worker", func(context.Context) error {
+			if !deps.billingWorker.Ready() {
+				return errors.New("not running")
+			}
+			return nil
+		}},
+		{"usage worker", func(context.Context) error {
+			if !deps.usageWorker.Ready() {
+				return errors.New("not running")
+			}
+			return nil
+		}},
+	}
+	return readinessHandlerForChecks(checks, timeout, deps.Metrics)
+}
+
+func readinessHandlerForChecks(checks []readinessCheck, timeout time.Duration, metric metrics.Metrics) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		results := make(chan error, len(checks))
+		for _, check := range checks {
+			go func(c readinessCheck) { results <- c.run(ctx) }(check)
+		}
+		ready := true
+		for range checks {
+			select {
+			case err := <-results:
+				if err != nil {
+					ready = false
+				}
+			case <-ctx.Done():
+				ready = false
+				metric.RecordReadiness(false)
+				writeReadiness(w, false)
+				return
+			}
+		}
+		metric.RecordReadiness(ready)
+		writeReadiness(w, ready)
+	})
+}
+
+func writeReadiness(w http.ResponseWriter, ready bool) {
+	w.Header().Set("Content-Type", "application/json")
+	status, code := "ready", http.StatusOK
+	if !ready {
+		status, code = "unavailable", http.StatusServiceUnavailable
+	}
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
 }

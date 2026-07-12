@@ -10,6 +10,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 ## P1 — correctness and security
 
+- [x] Add separate process liveness and dependency/worker readiness endpoints with transition metrics.
 - [ ] Make the configured BFF `COOKIE_NAME` work; the dependency currently always reads a cookie named `admin_token`.
 - [ ] Protect `/metrics` when deployed outside a trusted network, or explicitly document the exposure decision.
 - [ ] Define fail-open versus fail-closed policy for Redis failures in rate limiting and billing, and add operational metrics/alerts.

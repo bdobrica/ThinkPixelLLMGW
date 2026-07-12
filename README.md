@@ -108,6 +108,7 @@ The S3 example requires the environment and services described in [llm_gateway/e
 | Endpoint | Authentication | Purpose |
 |---|---|---|
 | `GET /health` | none | Process liveness |
+| `GET /ready` | none | PostgreSQL, Redis, provider registry, and worker readiness |
 | `GET /metrics` | none | Prometheus metrics |
 | `POST /v1/chat/completions` | gateway API key | Chat proxy |
 | `POST /admin/auth/login` | none | Email/password login |

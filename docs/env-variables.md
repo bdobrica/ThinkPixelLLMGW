@@ -42,6 +42,7 @@ HTTP_IDLE_TIMEOUT=120s
 
 # Graceful shutdown drain limit before active connections are closed (default: 30s)
 HTTP_SHUTDOWN_TIMEOUT=30s
+HTTP_READINESS_TIMEOUT=2s
 ```
 
 All HTTP timeout values must be positive Go durations (for example `500ms`, `30s`, or `2m`); invalid values stop startup. `PROVIDER_REQUEST_TIMEOUT` independently bounds upstream provider calls, including streams.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"llm_gateway/internal/queue"
@@ -27,6 +28,7 @@ type BillingQueueWorker struct {
 	stopChan    chan struct{}
 	stoppedChan chan struct{}
 	stopOnce    sync.Once
+	running     atomic.Bool
 }
 
 // NewBillingQueueWorker creates a new billing queue worker
@@ -47,8 +49,12 @@ func NewBillingQueueWorker(q queue.Queue, dlq queue.DeadLetterQueue, service Ser
 
 // Start starts the worker goroutine
 func (w *BillingQueueWorker) Start(ctx context.Context) {
+	w.running.Store(true)
 	go w.run(ctx)
 }
+
+// Ready reports whether the worker is running and able to accept queued work.
+func (w *BillingQueueWorker) Ready() bool { return w.running.Load() }
 
 // Stop gracefully stops the worker
 func (w *BillingQueueWorker) Stop() error {
@@ -74,6 +80,7 @@ func (w *BillingQueueWorker) Enqueue(ctx context.Context, update *BillingUpdate)
 // run is the main worker loop
 func (w *BillingQueueWorker) run(ctx context.Context) {
 	defer close(w.stoppedChan)
+	defer w.running.Store(false)
 
 	logger := utils.NewLogger("billing-worker")
 

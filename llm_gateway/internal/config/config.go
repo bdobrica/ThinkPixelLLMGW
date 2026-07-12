@@ -26,6 +26,7 @@ type HTTPServerConfig struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	ShutdownTimeout   time.Duration
+	ReadinessTimeout  time.Duration
 }
 
 // DatabaseConfig holds database connection settings
@@ -178,6 +179,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	readinessTimeout, err := requiredPositiveDuration("HTTP_READINESS_TIMEOUT", 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		HTTPPort:  port,
@@ -188,6 +193,7 @@ func Load() (*Config, error) {
 			WriteTimeout:      writeTimeout,
 			IdleTimeout:       idleTimeout,
 			ShutdownTimeout:   shutdownTimeout,
+			ReadinessTimeout:  readinessTimeout,
 		},
 		Database: DatabaseConfig{
 			URL:             dbURL,

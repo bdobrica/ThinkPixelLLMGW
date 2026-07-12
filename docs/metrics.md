@@ -35,9 +35,18 @@ Request, token, cost, and latency metrics include the following labels:
    - Labels: `provider`, `model`, and `reason` (`provider_missing` or `interrupted`)
    - Alert on any sustained increase and reconcile affected requests against provider billing exports
 
+7. **`llm_gateway_readiness_transitions_total`**
+   - Counts actual readiness changes, including the initially observed state
+   - Uses only the bounded `state` label (`ready` or `unready`); dependency errors are not labels
+
+### Gauge Metrics
+
+8. **`llm_gateway_ready`**
+   - Current `/ready` result: `1` for ready and `0` for unavailable
+
 ### Histogram Metrics
 
-7. **`llm_gateway_request_duration_seconds`**
+9. **`llm_gateway_request_duration_seconds`**
    - Request latency distribution in seconds
    - Buckets: 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0 seconds
    - Provides `_sum`, `_count`, and `_bucket` metrics for percentile calculations
