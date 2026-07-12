@@ -18,7 +18,6 @@ var gatewayLogger = utils.NewLogger("gateway-main", utils.Info)
 func main() {
 	const (
 		inFlightGracePeriod = 5 * time.Second
-		serverShutdownTTL   = 30 * time.Second
 		finalFlushTTL       = 30 * time.Second
 	)
 
@@ -39,11 +38,12 @@ func main() {
 	// Create HTTP server
 	addr := ":" + cfg.HTTPPort
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: cfg.HTTPServer.ReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTPServer.ReadTimeout,
+		WriteTimeout:      cfg.HTTPServer.WriteTimeout,
+		IdleTimeout:       cfg.HTTPServer.IdleTimeout,
 	}
 
 	// Start server in goroutine
@@ -68,11 +68,14 @@ func main() {
 	server.SetKeepAlivesEnabled(false)
 
 	// Gracefully stop accepting new requests and wait for active handlers.
-	serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), serverShutdownTTL)
+	serverShutdownCtx, serverShutdownCancel := context.WithTimeout(context.Background(), cfg.HTTPServer.ShutdownTimeout)
 	defer serverShutdownCancel()
 
 	if err := server.Shutdown(serverShutdownCtx); err != nil {
 		gatewayLogger.Error("server forced to shutdown", "error", err)
+		if closeErr := server.Close(); closeErr != nil {
+			gatewayLogger.Error("failed to close active server connections", "error", closeErr)
+		}
 	}
 
 	// Use a separate context so flush operations are not canceled by server shutdown timeout.

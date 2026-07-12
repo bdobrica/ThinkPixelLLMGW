@@ -20,6 +20,12 @@ The HTTP/provider unit suites include streaming coverage for SSE events split ac
 go test -short ./internal/httpapi ./internal/providers ./internal/metrics ./internal/models
 ```
 
+The gateway command tests use real loopback sockets (not a response recorder) to verify that a stream outlives the configured write timeout, non-streaming writes and slow headers remain bounded, stalled providers time out, and shutdown can force-close a stream after its drain deadline:
+
+```bash
+go test -short ./cmd/gateway ./internal/config ./internal/providers
+```
+
 For a stricter local/CI run:
 
 ```bash

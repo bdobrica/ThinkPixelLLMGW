@@ -26,7 +26,25 @@ ENCRYPTION_KEY=replace-with-64-hex-characters
 ```bash
 # HTTP server port (default: 8080)
 GATEWAY_HTTP_PORT=8080
+
+# Maximum time allowed to receive request headers (default: 10s)
+HTTP_READ_HEADER_TIMEOUT=10s
+
+# Maximum time allowed to read a complete request (default: 30s)
+HTTP_READ_TIMEOUT=30s
+
+# Maximum non-streaming response write time (default: 30s)
+# SSE handlers clear this deadline for their response only.
+HTTP_WRITE_TIMEOUT=30s
+
+# Keep-alive idle timeout (default: 120s)
+HTTP_IDLE_TIMEOUT=120s
+
+# Graceful shutdown drain limit before active connections are closed (default: 30s)
+HTTP_SHUTDOWN_TIMEOUT=30s
 ```
+
+All HTTP timeout values must be positive Go durations (for example `500ms`, `30s`, or `2m`); invalid values stop startup. `PROVIDER_REQUEST_TIMEOUT` independently bounds upstream provider calls, including streams.
 
 ### Database Connection Pool
 ```bash

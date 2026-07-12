@@ -140,6 +140,8 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 curl http://localhost:8080/health
 ```
 
+Streaming responses clear the server write deadline only for that request. Header and request reads remain bounded, upstream calls use `PROVIDER_REQUEST_TIMEOUT`, and shutdown drains active streams for at most `HTTP_SHUTDOWN_TIMEOUT` before closing their connections. See [Environment Variables](env-variables.md) for the configurable HTTP deadlines.
+
 ## Service Details
 
 ### PostgreSQL

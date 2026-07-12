@@ -10,6 +10,7 @@ import (
 // Config holds configuration for the gateway.
 type Config struct {
 	HTTPPort      string
+	HTTPServer    HTTPServerConfig
 	JWTSecret     []byte
 	Database      DatabaseConfig
 	Cache         CacheConfig
@@ -17,6 +18,14 @@ type Config struct {
 	Provider      ProviderConfig
 	RequestLogger RequestLoggerConfig
 	LoggingSink   LoggingSinkConfig
+}
+
+type HTTPServerConfig struct {
+	ReadHeaderTimeout time.Duration
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	ShutdownTimeout   time.Duration
 }
 
 // DatabaseConfig holds database connection settings
@@ -122,9 +131,21 @@ func getEnvString(key string, defaultValue string) string {
 	return val
 }
 
+func requiredPositiveDuration(key string, defaultValue time.Duration) (time.Duration, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration", key)
+	}
+	return value, nil
+}
+
 // Load reads configuration from environment variables (and, later, other sources).
 func Load() (*Config, error) {
-	port := getEnvString("HTTP_PORT", "8080")
+	port := getEnvString("GATEWAY_HTTP_PORT", getEnvString("HTTP_PORT", "8080"))
 	jwtSecretRaw := os.Getenv("JWT_SECRET")
 	if jwtSecretRaw == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
@@ -137,9 +158,37 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 
+	readHeaderTimeout, err := requiredPositiveDuration("HTTP_READ_HEADER_TIMEOUT", 10*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	readTimeout, err := requiredPositiveDuration("HTTP_READ_TIMEOUT", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	writeTimeout, err := requiredPositiveDuration("HTTP_WRITE_TIMEOUT", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	idleTimeout, err := requiredPositiveDuration("HTTP_IDLE_TIMEOUT", 120*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	shutdownTimeout, err := requiredPositiveDuration("HTTP_SHUTDOWN_TIMEOUT", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		HTTPPort:  port,
 		JWTSecret: jwtSecret,
+		HTTPServer: HTTPServerConfig{
+			ReadHeaderTimeout: readHeaderTimeout,
+			ReadTimeout:       readTimeout,
+			WriteTimeout:      writeTimeout,
+			IdleTimeout:       idleTimeout,
+			ShutdownTimeout:   shutdownTimeout,
+		},
 		Database: DatabaseConfig{
 			URL:             dbURL,
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
