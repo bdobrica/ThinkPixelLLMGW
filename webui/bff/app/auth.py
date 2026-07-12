@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Annotated
 from .config import settings
 from .security import sign_token
-from .gateway_client import gateway_request
+from .gateway_client import gateway_request, upstream_error_detail
 from .dependencies import get_current_admin_token
 
 
@@ -97,7 +97,7 @@ async def me(jwt_token: Annotated[str, Depends(get_current_admin_token)]):
     if status_code != 200:
         raise HTTPException(
             status_code=status_code,
-            detail=data.get("detail", "Failed to get user info") if data else "Failed to get user info"
+            detail=upstream_error_detail(data, "Failed to get user info")
         )
     
     return data

@@ -40,6 +40,7 @@ python3 -m pytest -q
 
 - UI: `http://localhost:5173`
 - BFF health: `http://localhost:8000/health`
+- BFF readiness: `http://localhost:8000/ready`
 - BFF OpenAPI: `http://localhost:8000/docs`
 - Gateway health: `http://localhost:8080/health`
 
@@ -50,6 +51,8 @@ python3 -m pytest -q
 ```dotenv
 ENVIRONMENT=development
 GATEWAY_BASE_URL=http://localhost:8080
+GATEWAY_CONNECT_TIMEOUT=5
+GATEWAY_READ_TIMEOUT=30
 SECRET_KEY=replace-this-development-default
 COOKIE_NAME=admin_token
 COOKIE_PATH=/
@@ -77,6 +80,12 @@ Billing is not implemented. The Models and Billing pages are placeholders.
 **Login always fails:** check gateway and BFF health, confirm the admin exists, inspect the BFF response/logs, and clear the `admin_token` cookie.
 
 **BFF will not start in production:** replace the default/weak signing key and set `COOKIE_SECURE=true`.
+
+**BFF returns 502:** the gateway connection failed or its response was not valid JSON. Check `GATEWAY_BASE_URL` and gateway health/readiness.
+
+**BFF returns 504:** the gateway exceeded a configured timeout; inspect gateway load and tune the specific timeout only after identifying the slow operation.
+
+**`/health` is 200 but `/ready` is 503:** the BFF process is alive but the gateway is not ready, so the instance should not receive browser traffic.
 
 **CORS error:** ensure `CORS_ORIGINS` is a JSON list containing the exact frontend origin. Development normally uses the Vite proxy and same-origin requests.
 

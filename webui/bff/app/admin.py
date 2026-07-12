@@ -1,11 +1,45 @@
 """Admin routes that proxy to the Go gateway."""
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Annotated, Any
-from .gateway_client import gateway_request
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+from .gateway_client import gateway_request, upstream_error_detail
 from .dependencies import get_current_admin_token
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class APIKeyMutation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    allowed_models: list[str] | None = None
+    rate_limit_per_minute: int | None = Field(default=None, ge=0)
+    monthly_budget_usd: float | None = Field(default=None, ge=0)
+    enabled: bool | None = None
+    expires_at: datetime | None = None
+    tags: dict[str, str] | None = None
+
+
+class CreateAPIKeyRequest(APIKeyMutation):
+    name: str = Field(min_length=1, max_length=255)
+    rate_limit_per_minute: int = Field(default=60, ge=0)
+
+
+class UpdateAPIKeyRequest(APIKeyMutation):
+    pass
+
+
+def payload_dict(payload: BaseModel) -> dict:
+    return payload.model_dump(mode="json", exclude_unset=True)
+
+
+def proxy_error(status_code: int, data: dict | None, fallback: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail=upstream_error_detail(data, fallback),
+    )
 
 
 @router.get("/api-keys")
@@ -23,10 +57,7 @@ async def list_api_keys(
     )
     
     if status_code != 200:
-        raise HTTPException(
-            status_code=status_code,
-            detail=data.get("detail", "Failed to list API keys") if data else "Failed to list API keys"
-        )
+        raise proxy_error(status_code, data, "Failed to list API keys")
     
     return data
 
@@ -34,21 +65,18 @@ async def list_api_keys(
 @router.post("/api-keys")
 async def create_api_key(
     jwt_token: Annotated[str, Depends(get_current_admin_token)],
-    payload: dict = None,
+    payload: CreateAPIKeyRequest,
 ):
     """Create API key by proxying to the Go gateway."""
     status_code, data = await gateway_request(
         method="POST",
         path="/admin/keys",
         jwt_token=jwt_token,
-        json_data=payload
+        json_data=payload_dict(payload)
     )
     
     if status_code != 201:
-        raise HTTPException(
-            status_code=status_code,
-            detail=data.get("detail", "Failed to create API key") if data else "Failed to create API key"
-        )
+        raise proxy_error(status_code, data, "Failed to create API key")
     
     return data
 
@@ -57,21 +85,18 @@ async def create_api_key(
 async def update_api_key(
     key_id: str,
     jwt_token: Annotated[str, Depends(get_current_admin_token)],
-    payload: dict = None,
+    payload: UpdateAPIKeyRequest,
 ):
     """Update API key by proxying to the Go gateway."""
     status_code, data = await gateway_request(
         method="PUT",
         path=f"/admin/keys/{key_id}",
         jwt_token=jwt_token,
-        json_data=payload
+        json_data=payload_dict(payload)
     )
     
     if status_code != 200:
-        raise HTTPException(
-            status_code=status_code,
-            detail=data.get("detail", "Failed to update API key") if data else "Failed to update API key"
-        )
+        raise proxy_error(status_code, data, "Failed to update API key")
     
     return data
 
@@ -89,10 +114,7 @@ async def revoke_api_key(
     )
     
     if status_code != 200:
-        raise HTTPException(
-            status_code=status_code,
-            detail=data.get("detail", "Failed to revoke API key") if data else "Failed to revoke API key"
-        )
+        raise proxy_error(status_code, data, "Failed to revoke API key")
     
     return data
 
@@ -112,10 +134,7 @@ async def list_models(
     )
     
     if status_code != 200:
-        raise HTTPException(
-            status_code=status_code,
-            detail=data.get("detail", "Failed to list models") if data else "Failed to list models"
-        )
+        raise proxy_error(status_code, data, "Failed to list models")
     
     return data
 

@@ -31,6 +31,8 @@ Copy `.env.example` to `.env` (defaults work for local development):
 ```env
 ENVIRONMENT=development
 GATEWAY_BASE_URL=http://localhost:8080
+GATEWAY_CONNECT_TIMEOUT=5
+GATEWAY_READ_TIMEOUT=30
 SECRET_KEY=change-this-to-a-secure-random-key-in-production
 COOKIE_NAME=admin_token
 COOKIE_PATH=/
@@ -48,6 +50,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 The BFF will be available at `http://localhost:8000`.
 
+The BFF creates one application-lifetime gateway client with separate connect, read, write, and pool timeouts and bounded connection/keepalive limits. See `.env.example` for every setting.
+
 ## API Endpoints
 
 ### Authentication
@@ -55,6 +59,8 @@ The BFF will be available at `http://localhost:8000`.
 - `POST /auth/login` - Login with email/password, sets cookie
 - `POST /auth/logout` - Clears the auth cookie
 - `GET /auth/me` - Get current admin user info (requires auth)
+- `GET /health` - BFF process liveness only
+- `GET /ready` - BFF readiness including gateway `/ready`
 
 ### Admin Proxies
 
@@ -92,5 +98,7 @@ For production:
 - Use a reverse proxy (nginx/traefik) for SSL termination
 
 Cross-site cookies (`SameSite=None`) are not accepted because the BFF does not yet issue CSRF tokens. Proxy headers are ignored by default. If they are required, set `TRUST_PROXY_HEADERS=true` and start uvicorn with `--proxy-headers --forwarded-allow-ips "$TRUSTED_PROXY_IPS"`, limiting the IP list to known proxies.
+
+Gateway connection failures are exposed as a client-safe `502`, upstream timeouts as `504`, and malformed responses as `502`. Expected gateway error status codes and safe JSON error details are retained. API-key mutations use strict typed payloads and all BFF request bodies are capped by `MAX_REQUEST_BODY_BYTES`.
 
 Run the BFF suite with `pip install -r requirements-dev.txt && python -m pytest -q`.

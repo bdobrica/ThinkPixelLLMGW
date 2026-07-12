@@ -20,6 +20,13 @@ class Settings(BaseSettings):
 
     # Gateway settings
     gateway_base_url: str = "http://localhost:8080"
+    gateway_connect_timeout: float = Field(default=5.0, gt=0)
+    gateway_read_timeout: float = Field(default=30.0, gt=0)
+    gateway_write_timeout: float = Field(default=10.0, gt=0)
+    gateway_pool_timeout: float = Field(default=5.0, gt=0)
+    gateway_max_connections: int = Field(default=100, gt=0)
+    gateway_max_keepalive_connections: int = Field(default=20, ge=0)
+    max_request_body_bytes: int = Field(default=1_048_576, gt=0)
 
     # Security and cookie settings
     secret_key: str = DEFAULT_SECRET_KEY
