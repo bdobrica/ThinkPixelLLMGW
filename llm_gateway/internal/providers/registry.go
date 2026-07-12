@@ -20,12 +20,12 @@ type ProviderRegistry struct {
 	db         *storage.DB
 	encryption *storage.Encryption
 
-	mu                 sync.RWMutex
-	providers          map[string]*managedProvider // provider ID -> Provider instance
-	modelToProvider    map[string]string           // model name -> provider ID
-	aliasToProvider    map[string]string           // alias -> provider ID
-	aliasToModel       map[string]string           // alias -> actual model name
-	closeGracePeriod   time.Duration
+	mu               sync.RWMutex
+	providers        map[string]*managedProvider // provider ID -> Provider instance
+	modelToProvider  map[string]string           // model name -> provider ID
+	aliasToProvider  map[string]string           // alias -> provider ID
+	aliasToModel     map[string]string           // alias -> actual model name
+	closeGracePeriod time.Duration
 
 	reloadInterval time.Duration
 	requestTimeout time.Duration
@@ -70,17 +70,17 @@ func NewProviderRegistry(config RegistryConfig) (*ProviderRegistry, error) {
 	}
 
 	r := &ProviderRegistry{
-		factory:         config.Factory,
-		db:              config.DB,
-		encryption:      config.Encryption,
-		providers:       make(map[string]*managedProvider),
-		modelToProvider: make(map[string]string),
-		aliasToProvider: make(map[string]string),
-		aliasToModel:    make(map[string]string),
+		factory:          config.Factory,
+		db:               config.DB,
+		encryption:       config.Encryption,
+		providers:        make(map[string]*managedProvider),
+		modelToProvider:  make(map[string]string),
+		aliasToProvider:  make(map[string]string),
+		aliasToModel:     make(map[string]string),
 		closeGracePeriod: providerCloseGracePeriod(config.RequestTimeout),
-		reloadInterval:  config.ReloadInterval,
-		requestTimeout:  config.RequestTimeout,
-		stopCh:          make(chan struct{}),
+		reloadInterval:   config.ReloadInterval,
+		requestTimeout:   config.RequestTimeout,
+		stopCh:           make(chan struct{}),
 	}
 
 	// Initial load

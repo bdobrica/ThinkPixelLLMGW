@@ -149,8 +149,4 @@ export const adminAPI = {
   async listModels(page = 1, pageSize = 20): Promise<ModelsResponse> {
     return fetchJSON(`${API_BASE}/admin/models?page=${page}&page_size=${pageSize}`)
   },
-
-  async getBilling(): Promise<any> {
-    return fetchJSON(`${API_BASE}/admin/billing`)
-  },
 }

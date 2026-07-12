@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { adminAPI, ApiKey, Model, CreateApiKeyRequest, UpdateApiKeyRequest } from '../api/client'
 
 export function ApiKeys() {
@@ -16,7 +16,7 @@ export function ApiKeys() {
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null)
   const [newKeyResponse, setNewKeyResponse] = useState<string>('')
 
-  const loadApiKeys = () => {
+  const loadApiKeys = useCallback(() => {
     setLoading(true)
     setError('')
     
@@ -30,9 +30,9 @@ export function ApiKeys() {
         setError(err instanceof Error ? err.message : 'Failed to load API keys')
       })
       .finally(() => setLoading(false))
-  }
+  }, [page])
 
-  const loadModels = () => {
+  const loadModels = useCallback(() => {
     adminAPI
       .listModels(1, 100) // Load all models
       .then((response) => {
@@ -41,12 +41,12 @@ export function ApiKeys() {
       .catch((err) => {
         console.error('Failed to load models:', err)
       })
-  }
+  }, [])
 
   useEffect(() => {
     loadApiKeys()
     loadModels()
-  }, [page])
+  }, [loadApiKeys, loadModels])
 
   const handleCreateKey = () => {
     setShowCreateDialog(true)

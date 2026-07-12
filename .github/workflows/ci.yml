@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-quality:
+    name: Go formatting and vet
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: llm_gateway
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: llm_gateway/go.mod
+          cache-dependency-path: llm_gateway/go.sum
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          test -z "$unformatted" || { echo "$unformatted"; exit 1; }
+      - name: Vet
+        run: go vet ./...
+
+  go-unit:
+    name: Go unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: llm_gateway
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: llm_gateway/go.mod
+          cache-dependency-path: llm_gateway/go.sum
+      - name: Test with race detector
+        run: go test -short -race -coverprofile=coverage.out ./...
+
+  go-integration:
+    name: Go integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: llm_gateway/go.mod
+          cache-dependency-path: llm_gateway/go.sum
+      - name: Run PostgreSQL, Redis, and MinIO suites
+        working-directory: llm_gateway
+        run: make test-integration-all
+
+  migrations:
+    name: Migration round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply down and up migrations
+        working-directory: llm_gateway
+        run: make test-migrations
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui/frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: webui/frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run build
+
+  bff:
+    name: BFF validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui/bff
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: webui/bff/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m compileall -q app
+
+  container:
+    name: Container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: thinkpixel-llm-gateway:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

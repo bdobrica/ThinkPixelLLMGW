@@ -2,12 +2,13 @@
   "name": "llm-gateway-admin-ui",
   "private": true,
   "version": "1.0.0",
+  "packageManager": "pnpm@10.24.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "react": "^19.0.0",

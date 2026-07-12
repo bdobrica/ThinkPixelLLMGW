@@ -6,7 +6,7 @@ INTEGRATION_MINIO_API_PORT ?= 19000
 INTEGRATION_MINIO_CONSOLE_PORT ?= 19001
 INTEGRATION_COMPOSE_ENV = POSTGRES_HOST_PORT=$(INTEGRATION_POSTGRES_PORT) REDIS_HOST_PORT=$(INTEGRATION_REDIS_PORT) MINIO_API_HOST_PORT=$(INTEGRATION_MINIO_API_PORT) MINIO_CONSOLE_HOST_PORT=$(INTEGRATION_MINIO_CONSOLE_PORT)
 
-.PHONY: help test test-unit test-integration test-integration-all test-integration-setup test-integration-teardown test-httpapi test-aliases test-e2e test-e2e-setup test-e2e-run test-e2e-teardown test-e2e-logs test-rate-limit test-init-admin build run clean
+.PHONY: help test test-unit test-integration test-integration-all test-integration-setup test-integration-teardown test-migrations test-httpapi test-aliases test-e2e test-e2e-setup test-e2e-run test-e2e-teardown test-e2e-logs test-rate-limit test-init-admin build run clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -49,6 +49,16 @@ test-integration: ## Run tagged integration tests (requires setup target)
 test-integration-all: test-integration-setup ## Setup, run, and always tear down integration services
 	@status=0; $(MAKE) test-integration || status=$$?; $(MAKE) test-integration-teardown; exit $$status
 
+test-migrations: test-integration-setup ## Validate all migrations down and back up on a clean database
+	@status=0; ( cd .. && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.down.sql && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.down.sql && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.down.sql && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.up.sql && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.up.sql && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.up.sql \
+	) || status=$$?; $(MAKE) test-integration-teardown; exit $$status
+
 test-httpapi: ## Run HTTP API integration tests (requires postgres to be running)
 	@echo "Running HTTP API integration tests..."
 	@echo "Make sure PostgreSQL is running: make dev-up"
@@ -79,10 +89,10 @@ clean: ## Clean build artifacts and test caches
 	go clean -testcache
 
 docker-build: ## Build Docker image
-	docker build -t llm-gateway:latest .
+	cd .. && docker build -t llm-gateway:latest .
 
 docker-run: ## Run Docker container (requires .env file)
-	docker run --env-file .env -p 8080:8080 llm-gateway:latest
+	cd .. && docker run --env-file .env -p 8080:8080 llm-gateway:latest
 
 # Development targets
 dev-up: ## Start development dependencies (Postgres, Redis, Minio)

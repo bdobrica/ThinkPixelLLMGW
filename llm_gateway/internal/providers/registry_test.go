@@ -15,10 +15,12 @@ func newTestProvider(id string) *testProvider {
 	return &testProvider{id: id, closedCh: make(chan struct{})}
 }
 
-func (p *testProvider) ID() string { return p.id }
+func (p *testProvider) ID() string   { return p.id }
 func (p *testProvider) Name() string { return p.id }
 func (p *testProvider) Type() string { return "test" }
-func (p *testProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) { return nil, nil }
+func (p *testProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	return nil, nil
+}
 func (p *testProvider) ValidateCredentials(ctx context.Context) error { return nil }
 func (p *testProvider) Close() error {
 	select {

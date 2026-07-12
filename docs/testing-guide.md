@@ -53,6 +53,12 @@ make test-httpapi
 make test-aliases
 ```
 
+Validate every migration down and back up on a clean PostgreSQL volume:
+
+```bash
+make test-migrations
+```
+
 To invoke a tagged package directly, supply its service configuration:
 
 ```bash
@@ -108,6 +114,10 @@ python3 -m compileall -q app
 ```
 
 Automated BFF and frontend tests are still tracked in `TODO.md`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the commands above on pushes to `main` and on pull requests. It also checks Go formatting/vet, runs unit tests with the race detector, validates the frontend and BFF, builds the Docker image, and performs a complete migration round trip. These checks do not use an OpenAI key or make provider requests.
 
 ## Troubleshooting
 
