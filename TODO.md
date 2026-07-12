@@ -12,12 +12,12 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 - [x] Add separate process liveness and dependency/worker readiness endpoints with transition metrics.
 - [ ] Make the configured BFF `COOKIE_NAME` work; the dependency currently always reads a cookie named `admin_token`.
-- [ ] Protect `/metrics` when deployed outside a trusted network, or explicitly document the exposure decision.
+- [x] Protect `/metrics` with a dedicated strong bearer token and document Prometheus authentication.
 - [ ] Define fail-open versus fail-closed policy for Redis failures in rate limiting and billing, and add operational metrics/alerts.
 - [ ] Use exact decimal or integer minor units for persisted and accumulated currency values instead of `float64`.
 - [ ] Add request timeouts/body limits to all BFF calls and translate gateway/network failures into stable `502/504` responses.
 - [ ] Avoid persisting provider API keys from environment variables back into PostgreSQL on every startup, or document and audit that behavior.
-- [ ] Validate production configuration at startup (secret strength, S3 settings when enabled, cookie security, and public bind choices).
+- [ ] Complete production configuration validation for Web UI cookie security and public bind choices; gateway secret strength and enabled S3 settings are validated.
 
 ## P2 — product completeness
 
@@ -37,7 +37,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [ ] Add provider-billing reconciliation for streams whose terminal usage is unavailable.
 - [ ] Add race, fuzz, and load tests; establish measured latency/throughput targets rather than advertising unverified numbers.
 - [ ] Add CI for Go formatting/tests, frontend build/lint, Python tests, container build, and migration up/down checks.
-- [ ] Pin container images instead of using floating `latest` tags.
+- [x] Pin third-party Docker Compose images instead of using floating `latest` tags.
 - [ ] Add Kubernetes deployment resources and an operations/runbook only after the release blockers are resolved.
 
 ## Documentation follow-up

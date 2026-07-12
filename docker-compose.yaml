@@ -42,7 +42,7 @@ services:
 
   # MinIO (S3-compatible storage)
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: gw-minio
     command: server /data --console-address ":9001"
     environment:
@@ -63,7 +63,7 @@ services:
 
   # MinIO Client - Create bucket on startup
   minio-create-bucket:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
     container_name: gw-minio-setup
     depends_on:
       minio:
@@ -146,8 +146,9 @@ services:
       # Security (required)
       ENCRYPTION_KEY: "${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set}"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
+      METRICS_AUTH_TOKEN: "${METRICS_AUTH_TOKEN:?METRICS_AUTH_TOKEN must be set}"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-8080}:8080"
     volumes:
       - gw_request_logs:/var/log/llm-gateway
     networks:

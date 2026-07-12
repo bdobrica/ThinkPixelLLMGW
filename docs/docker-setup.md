@@ -237,7 +237,7 @@ mc cp local/llm-logs/logs/ ./downloaded-logs/ --recursive
 
 - **Port:** 8080
 - **Health:** http://localhost:8080/health
-- **Metrics:** http://localhost:8080/metrics (placeholder)
+- **Metrics:** http://localhost:8080/metrics (requires `Authorization: Bearer $METRICS_AUTH_TOKEN`)
 
 **View Logs:**
 ```bash
@@ -306,7 +306,7 @@ docker-compose logs gateway
 
 **Common issues:**
 - Database not ready: Wait a few seconds and check `docker-compose ps`
-- Port already in use: Change `8080:8080` to `8081:8080` in docker-compose.yaml
+- Port already in use: Set `GATEWAY_HOST_PORT=8081`; Compose binds development services to loopback only.
 - Migration failed: Check PostgreSQL logs and apply migrations manually
 
 ### Database Connection Failed
@@ -377,6 +377,8 @@ services:
 ## Production Considerations
 
 **⚠️ This setup is for DEVELOPMENT ONLY. For production:**
+
+The repository pins the gateway build/runtime base images by digest and pins Compose MinIO tools to explicit releases. Review and update those pins deliberately as part of dependency maintenance; never substitute floating `latest` tags in production manifests.
 
 1. **Change Passwords:**
    - PostgreSQL password

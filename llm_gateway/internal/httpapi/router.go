@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -399,8 +401,8 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 	})
 	mux.Handle("/ready", readinessHandler(deps, cfg.HTTPServer.ReadinessTimeout))
 
-	// Metrics endpoint - public
-	mux.Handle("/metrics", deps.Metrics.HTTPHandler())
+	// Metrics endpoint - protected with a dedicated scrape token.
+	mux.Handle("/metrics", bearerTokenAuth(cfg.MetricsAuthToken, deps.Metrics.HTTPHandler()))
 
 	// Admin authentication endpoints - public (no middleware)
 	adminAuthHandler := NewAdminAuthHandler(deps.AdminStore, cfg)
@@ -551,6 +553,19 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
+}
+
+func bearerTokenAuth(token string, next http.Handler) http.Handler {
+	expected := sha256.Sum256([]byte("Bearer " + token))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actual := sha256.Sum256([]byte(r.Header.Get("Authorization")))
+		if subtle.ConstantTimeCompare(actual[:], expected[:]) != 1 {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type readinessCheck struct {

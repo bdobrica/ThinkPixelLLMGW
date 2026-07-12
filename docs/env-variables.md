@@ -15,9 +15,12 @@ DATABASE_URL=postgres://postgres:password@localhost:5432/llmgateway?sslmode=disa
 ```bash
 # JWT signing secret for admin API authentication (REQUIRED)
 JWT_SECRET=replace-with-a-long-random-secret
+METRICS_AUTH_TOKEN=replace-with-at-least-32-random-characters
 
 # 32-byte AES key encoded as 64 hex characters (REQUIRED)
 ENCRYPTION_KEY=replace-with-64-hex-characters
+
+`JWT_SECRET` and `METRICS_AUTH_TOKEN` must each contain at least 32 characters. `ENCRYPTION_KEY` must contain exactly 64 hexadecimal characters (32 bytes). The gateway rejects weak or malformed values before opening database or Redis connections. When `LOGGING_SINK_ENABLED=true`, the S3 bucket and region and positive buffer/flush settings are required.
 ```
 
 ## Optional Variables
@@ -216,6 +219,7 @@ This ensures the pod has enough time (30-60 seconds recommended) to flush buffer
 GATEWAY_HTTP_PORT=8080
 DATABASE_URL=postgres://postgres:devpass@localhost:5432/llmgateway_dev?sslmode=disable
 JWT_SECRET=dev-only-random-secret
+METRICS_AUTH_TOKEN=dev-only-random-metrics-token-32chars
 ENCRYPTION_KEY=dev-only-64-hex-character-key
 
 # Smaller pool for development
@@ -245,6 +249,7 @@ PROVIDER_REQUEST_TIMEOUT=30s
 GATEWAY_HTTP_PORT=8080
 DATABASE_URL=postgres://llmgateway:secure_password@db.example.com:5432/llmgateway?sslmode=require
 JWT_SECRET=production-random-secret-from-secret-manager
+METRICS_AUTH_TOKEN=production-random-metrics-token-from-secret-manager
 ENCRYPTION_KEY=production-64-hex-character-key-from-secret-manager
 
 # Larger pool for production load
@@ -393,7 +398,7 @@ curl http://localhost:8080/health
 version: '3.8'
 services:
   gateway:
-    image: llmgateway:latest
+    image: your-registry/llmgateway:<version-or-digest>
     environment:
       - GATEWAY_HTTP_PORT=8080
       - DATABASE_URL=postgres://postgres:password@db:5432/llmgateway?sslmode=disable
@@ -404,7 +409,7 @@ services:
       - CACHE_MODEL_SIZE=500
       - CACHE_MODEL_TTL=15m
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - db
   
@@ -462,7 +467,7 @@ spec:
     spec:
       containers:
       - name: gateway
-        image: llmgateway:latest
+        image: your-registry/llmgateway:<version-or-digest>
         envFrom:
         - configMapRef:
             name: llmgateway-config

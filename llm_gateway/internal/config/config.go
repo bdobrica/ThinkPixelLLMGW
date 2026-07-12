@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,15 +10,16 @@ import (
 
 // Config holds configuration for the gateway.
 type Config struct {
-	HTTPPort      string
-	HTTPServer    HTTPServerConfig
-	JWTSecret     []byte
-	Database      DatabaseConfig
-	Cache         CacheConfig
-	Redis         RedisConfig
-	Provider      ProviderConfig
-	RequestLogger RequestLoggerConfig
-	LoggingSink   LoggingSinkConfig
+	HTTPPort         string
+	HTTPServer       HTTPServerConfig
+	JWTSecret        []byte
+	MetricsAuthToken string
+	Database         DatabaseConfig
+	Cache            CacheConfig
+	Redis            RedisConfig
+	Provider         ProviderConfig
+	RequestLogger    RequestLoggerConfig
+	LoggingSink      LoggingSinkConfig
 }
 
 type HTTPServerConfig struct {
@@ -151,7 +153,19 @@ func Load() (*Config, error) {
 	if jwtSecretRaw == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
 	}
+	if len(jwtSecretRaw) < 32 {
+		return nil, fmt.Errorf("JWT_SECRET must be at least 32 characters")
+	}
 	jwtSecret := []byte(jwtSecretRaw)
+	metricsAuthToken := os.Getenv("METRICS_AUTH_TOKEN")
+	if len(metricsAuthToken) < 32 {
+		return nil, fmt.Errorf("METRICS_AUTH_TOKEN must be at least 32 characters")
+	}
+	encryptionKey := os.Getenv("ENCRYPTION_KEY")
+	decodedEncryptionKey, decodeErr := hex.DecodeString(encryptionKey)
+	if decodeErr != nil || len(decodedEncryptionKey) != 32 {
+		return nil, fmt.Errorf("ENCRYPTION_KEY must be 64 hexadecimal characters")
+	}
 
 	// Load database configuration
 	dbURL := os.Getenv("DATABASE_URL")
@@ -185,8 +199,9 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		HTTPPort:  port,
-		JWTSecret: jwtSecret,
+		HTTPPort:         port,
+		JWTSecret:        jwtSecret,
+		MetricsAuthToken: metricsAuthToken,
 		HTTPServer: HTTPServerConfig{
 			ReadHeaderTimeout: readHeaderTimeout,
 			ReadTimeout:       readTimeout,
@@ -239,6 +254,17 @@ func Load() (*Config, error) {
 			S3Prefix:      getEnvString("LOGGING_SINK_S3_PREFIX", "logs/"),
 			PodName:       getEnvString("POD_NAME", "gateway-0"),
 		},
+	}
+	if cfg.LoggingSink.Enabled {
+		if cfg.LoggingSink.S3Bucket == "" {
+			return nil, fmt.Errorf("LOGGING_SINK_S3_BUCKET is required when LOGGING_SINK_ENABLED=true")
+		}
+		if cfg.LoggingSink.S3Region == "" {
+			return nil, fmt.Errorf("LOGGING_SINK_S3_REGION is required when LOGGING_SINK_ENABLED=true")
+		}
+		if cfg.LoggingSink.BufferSize <= 0 || cfg.LoggingSink.FlushSize <= 0 || cfg.LoggingSink.FlushInterval <= 0 {
+			return nil, fmt.Errorf("logging sink buffer, flush size, and flush interval must be positive")
+		}
 	}
 
 	return cfg, nil

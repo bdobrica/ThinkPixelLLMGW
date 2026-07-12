@@ -45,6 +45,7 @@ Edit `.env` and set at least:
 ```dotenv
 JWT_SECRET=replace-with-a-long-random-value
 ENCRYPTION_KEY=replace-with-64-hex-characters
+METRICS_AUTH_TOKEN=replace-with-at-least-32-random-characters
 OPENAI_API_KEY=sk-...
 ```
 
@@ -65,7 +66,7 @@ The gateway listens on `http://localhost:8080`. See [docs/quickstart.md](docs/qu
 
 ## Local development
 
-The gateway requires PostgreSQL, Redis, `DATABASE_URL`, `JWT_SECRET`, and `ENCRYPTION_KEY` at startup.
+The gateway requires PostgreSQL, Redis, `DATABASE_URL`, `JWT_SECRET` (at least 32 characters), `ENCRYPTION_KEY` (exactly 64 hexadecimal characters), and `METRICS_AUTH_TOKEN` (at least 32 characters) at startup. When S3 logging is enabled, its bucket, region, and positive buffer/flush settings are also validated before startup.
 
 ```bash
 docker compose up -d postgres redis minio minio-create-bucket
@@ -109,7 +110,7 @@ The S3 example requires the environment and services described in [llm_gateway/e
 |---|---|---|
 | `GET /health` | none | Process liveness |
 | `GET /ready` | none | PostgreSQL, Redis, provider registry, and worker readiness |
-| `GET /metrics` | none | Prometheus metrics |
+| `GET /metrics` | metrics bearer token | Prometheus metrics |
 | `POST /v1/chat/completions` | gateway API key | Chat proxy |
 | `POST /admin/auth/login` | none | Email/password login |
 | `POST /admin/auth/token` | none | Service-token login |

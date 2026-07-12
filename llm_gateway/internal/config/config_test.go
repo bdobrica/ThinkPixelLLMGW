@@ -7,8 +7,7 @@ import (
 )
 
 func TestLoadHTTPServerTimeouts(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
-	t.Setenv("DATABASE_URL", "postgres://example")
+	setRequiredConfig(t)
 	t.Setenv("GATEWAY_HTTP_PORT", "9090")
 	t.Setenv("HTTP_READ_HEADER_TIMEOUT", "2s")
 	t.Setenv("HTTP_READ_TIMEOUT", "3s")
@@ -27,8 +26,7 @@ func TestLoadHTTPServerTimeouts(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidReadinessTimeout(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
-	t.Setenv("DATABASE_URL", "postgres://example")
+	setRequiredConfig(t)
 	t.Setenv("HTTP_READINESS_TIMEOUT", "invalid")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "HTTP_READINESS_TIMEOUT") {
@@ -37,11 +35,42 @@ func TestLoadRejectsInvalidReadinessTimeout(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidHTTPTimeout(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
-	t.Setenv("DATABASE_URL", "postgres://example")
+	setRequiredConfig(t)
 	t.Setenv("HTTP_WRITE_TIMEOUT", "0")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "HTTP_WRITE_TIMEOUT") {
 		t.Fatalf("expected HTTP_WRITE_TIMEOUT validation error, got %v", err)
 	}
+}
+
+func TestLoadRejectsWeakRequiredSecrets(t *testing.T) {
+	for _, key := range []string{"JWT_SECRET", "METRICS_AUTH_TOKEN", "ENCRYPTION_KEY"} {
+		t.Run(key, func(t *testing.T) {
+			setRequiredConfig(t)
+			t.Setenv(key, "weak")
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("expected %s validation error, got %v", key, err)
+			}
+		})
+	}
+}
+
+func TestLoadValidatesEnabledS3Sink(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("LOGGING_SINK_ENABLED", "true")
+	t.Setenv("LOGGING_SINK_S3_BUCKET", "")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOGGING_SINK_S3_BUCKET") {
+		t.Fatalf("expected bucket validation error, got %v", err)
+	}
+}
+
+func setRequiredConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("METRICS_AUTH_TOKEN", "abcdef0123456789abcdef0123456789")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("LOGGING_SINK_ENABLED", "false")
 }

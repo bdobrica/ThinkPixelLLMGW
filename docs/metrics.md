@@ -1,6 +1,6 @@
 # Metrics Implementation
 
-The LLM Gateway now exposes Prometheus metrics at the `/metrics` endpoint.
+The LLM Gateway exposes Prometheus metrics at the `/metrics` endpoint. Scrapes require `Authorization: Bearer <METRICS_AUTH_TOKEN>`; missing or invalid credentials return `401`.
 
 ## Available Metrics
 
@@ -99,7 +99,7 @@ To correlate metrics with API key tags:
 - An interrupted stream or a completed stream without terminal usage produces an unknown-accounting usage record and increments `llm_gateway_stream_usage_missing_total`; it is not treated as a successful zero-cost request. Automatic estimation/reconciliation is not yet implemented.
 - Cost calculations use the accurate pricing components from the model configuration
 - Latency includes the full gateway processing time, not just provider response time
-- The `/metrics` endpoint is publicly accessible (no authentication required)
+- The `/metrics` endpoint uses a dedicated bearer token of at least 32 characters. Keep it in a secret manager and do not reuse the admin JWT secret.
 
 ## Prometheus Configuration
 
@@ -109,6 +109,9 @@ Add the following to your Prometheus `prometheus.yml`:
 scrape_configs:
   - job_name: 'llm_gateway'
     scrape_interval: 15s
+    authorization:
+      type: Bearer
+      credentials: '<METRICS_AUTH_TOKEN>'
     static_configs:
       - targets: ['gateway:8080']  # Adjust host:port as needed
 ```
