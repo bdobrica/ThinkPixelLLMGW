@@ -102,12 +102,9 @@ Enable background worker to drain logs from Redis to S3:
 ## How It Works
 
 1. When the gateway starts, it reads environment variables from the `.env` file
-2. If provider API keys are found (e.g., `OPENAI_API_KEY`), they are:
-   - Encrypted using the `ENCRYPTION_KEY`
-   - Stored securely in the database
-   - Associated with the corresponding provider
-
-3. The provider registry loads these credentials and uses them for API calls
+2. Provider API keys found in the environment (for example `OPENAI_API_KEY`) are runtime-only overrides. They take precedence in memory, are reapplied on registry reload, and are never written to PostgreSQL.
+3. Startup fails distinctly if an override targets a provider row that is missing or disabled. Storage failures remain database errors rather than being treated as “not found.”
+4. Audit events include only provider name, credential field names, and source—never credential values. Rotate an environment credential by updating the deployment secret and restarting the process.
 
 ## Security Notes
 
@@ -170,11 +167,11 @@ GATEWAY_HTTP_PORT=8080
 
 ### API Key Not Being Used
 
-**Symptoms:** Provider credentials aren't being updated.
+**Symptoms:** A provider environment credential is not active.
 
 **Solutions:**
 1. Check that the provider exists in the database (seeded by migrations)
-2. Verify the encryption key is valid (64 hex characters)
+2. Verify the provider is enabled and restart after changing its environment credential
 3. Check container logs: `docker-compose logs gateway`
 
 ### Changes Not Reflected

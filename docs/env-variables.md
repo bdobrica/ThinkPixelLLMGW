@@ -391,6 +391,8 @@ curl http://localhost:8080/health
 3. **Credentials**: Use strong passwords (20+ characters)
 4. **Environment**: Use `.env` files or secrets management (AWS Secrets Manager, HashiCorp Vault)
 
+`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are runtime-only overrides for provider rows named `openai` and `anthropic`. They are never persisted. Overrides for missing or disabled rows produce a distinct provider-not-found failure; logs contain provider and field metadata only.
+
 ## Docker Example
 
 ```yaml

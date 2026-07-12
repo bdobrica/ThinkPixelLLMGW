@@ -16,7 +16,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [ ] Define fail-open versus fail-closed policy for Redis failures in rate limiting and billing, and add operational metrics/alerts.
 - [x] Use exact integer nano-USD for persisted and accumulated currency values, with half-away-from-zero rounding and legacy Redis dual reads.
 - [x] Add request timeouts/body limits to all BFF calls and translate gateway/network failures into stable `502/504` responses.
-- [ ] Avoid persisting provider API keys from environment variables back into PostgreSQL on every startup, or document and audit that behavior.
+- [x] Apply provider API keys from environment variables as auditable runtime-only overrides without mutating PostgreSQL.
 - [x] Complete production configuration validation for Web UI cookie security and public bind choices; gateway secret strength and enabled S3 settings are validated.
 
 ## P2 — product completeness

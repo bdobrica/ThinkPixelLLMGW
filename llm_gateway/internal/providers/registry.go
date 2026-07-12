@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -27,10 +28,11 @@ type ProviderRegistry struct {
 	aliasToModel     map[string]string           // alias -> actual model name
 	closeGracePeriod time.Duration
 
-	reloadInterval time.Duration
-	requestTimeout time.Duration
-	stopCh         chan struct{}
-	wg             sync.WaitGroup
+	reloadInterval      time.Duration
+	requestTimeout      time.Duration
+	credentialOverrides map[string]map[string]string
+	stopCh              chan struct{}
+	wg                  sync.WaitGroup
 }
 
 type managedProvider struct {
@@ -57,6 +59,8 @@ type RegistryConfig struct {
 	Encryption     *storage.Encryption
 	ReloadInterval time.Duration // how often to reload providers from DB (0 = no auto-reload)
 	RequestTimeout time.Duration // default timeout injected into providers when not explicitly configured
+	// CredentialOverrides are runtime-only and are never written to storage.
+	CredentialOverrides map[string]map[string]string // provider name -> credential key -> value
 }
 
 // NewProviderRegistry creates a new provider registry
@@ -70,17 +74,18 @@ func NewProviderRegistry(config RegistryConfig) (*ProviderRegistry, error) {
 	}
 
 	r := &ProviderRegistry{
-		factory:          config.Factory,
-		db:               config.DB,
-		encryption:       config.Encryption,
-		providers:        make(map[string]*managedProvider),
-		modelToProvider:  make(map[string]string),
-		aliasToProvider:  make(map[string]string),
-		aliasToModel:     make(map[string]string),
-		closeGracePeriod: providerCloseGracePeriod(config.RequestTimeout),
-		reloadInterval:   config.ReloadInterval,
-		requestTimeout:   config.RequestTimeout,
-		stopCh:           make(chan struct{}),
+		factory:             config.Factory,
+		db:                  config.DB,
+		encryption:          config.Encryption,
+		providers:           make(map[string]*managedProvider),
+		modelToProvider:     make(map[string]string),
+		aliasToProvider:     make(map[string]string),
+		aliasToModel:        make(map[string]string),
+		closeGracePeriod:    providerCloseGracePeriod(config.RequestTimeout),
+		reloadInterval:      config.ReloadInterval,
+		requestTimeout:      config.RequestTimeout,
+		credentialOverrides: config.CredentialOverrides,
+		stopCh:              make(chan struct{}),
 	}
 
 	// Initial load
@@ -223,12 +228,12 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 	newModelToProvider := make(map[string]string)
 	newAliasToProvider := make(map[string]string)
 	newAliasToModel := make(map[string]string)
+	overridesApplied := make(map[string]bool, len(r.credentialOverrides))
 
 	for _, dbProvider := range dbProviders {
 		if !dbProvider.Enabled {
 			continue
 		}
-
 		// Decrypt credentials
 		credentials := make(map[string]string)
 		if len(dbProvider.EncryptedCredentials) > 0 && r.encryption != nil {
@@ -248,6 +253,13 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 					credentials[key] = string(decrypted)
 				}
 			}
+		}
+		if override, exists := r.credentialOverrides[dbProvider.Name]; exists {
+			for key, value := range override {
+				credentials[key] = value
+			}
+			overridesApplied[dbProvider.Name] = true
+			registryLogger.Info("provider credential override applied", "provider", dbProvider.Name, "credential_keys", credentialKeyNames(override), "source", "environment")
 		}
 
 		// Parse config (already a JSONB map)
@@ -276,6 +288,11 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 		}
 
 		newProviders[dbProvider.ID.String()] = newManagedProvider(provider)
+	}
+	for providerName := range r.credentialOverrides {
+		if !overridesApplied[providerName] {
+			return fmt.Errorf("%w: environment credential override targets %q", storage.ErrProviderNotFound, providerName)
+		}
 	}
 
 	// Map models to providers
@@ -333,6 +350,15 @@ func (r *ProviderRegistry) Reload(ctx context.Context) error {
 	r.retireProviders(oldProviders)
 
 	return nil
+}
+
+func credentialKeyNames(credentials map[string]string) []string {
+	keys := make([]string, 0, len(credentials))
+	for key := range credentials {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // Close closes all providers and stops the reload loop

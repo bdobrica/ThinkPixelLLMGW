@@ -14,6 +14,7 @@ ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralize
 - Admin authentication with Argon2id credentials and HS256 JWTs
 - Admin CRUD for API keys, providers, models, and model aliases
 - AES-256-GCM provider-credential encryption
+- Runtime-only environment credential overrides that never mutate provider rows
 - Prometheus metrics at `GET /metrics`
 - File request logging plus an optional Redis-to-S3/MinIO sink
 - React 19 admin UI with a FastAPI backend-for-frontend (BFF); API-key management is implemented, while models, billing, and dashboard statistics remain placeholders

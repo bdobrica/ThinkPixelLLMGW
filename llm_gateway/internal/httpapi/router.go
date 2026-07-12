@@ -184,17 +184,13 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 		return nil, nil, fmt.Errorf("failed to initialize encryption: %w", err)
 	}
 
-	// Update provider credentials from environment variables before loading registry
-	if err := updateProviderCredentialsFromEnv(context.Background(), db, encryption); err != nil {
-		return nil, nil, fmt.Errorf("failed to update provider credentials: %w", err)
-	}
-
 	// Initialize provider registry
 	registry, err := providers.NewProviderRegistry(providers.RegistryConfig{
-		DB:             db,
-		Encryption:     encryption,
-		ReloadInterval: cfg.Provider.ReloadInterval,
-		RequestTimeout: cfg.Provider.RequestTimeout,
+		DB:                  db,
+		Encryption:          encryption,
+		CredentialOverrides: providers.CredentialOverridesFromEnvironment(),
+		ReloadInterval:      cfg.Provider.ReloadInterval,
+		RequestTimeout:      cfg.Provider.RequestTimeout,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize provider registry: %w", err)
@@ -340,54 +336,6 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 	registerRoutes(mux, deps, cfg)
 
 	return mux, deps, nil
-}
-
-// updateProviderCredentialsFromEnv updates provider credentials from environment variables
-func updateProviderCredentialsFromEnv(ctx context.Context, db *storage.DB, encryption *storage.Encryption) error {
-	providerRepo := storage.NewProviderRepository(db)
-
-	// Map of environment variable name to provider name and credential key
-	envMapping := map[string]struct {
-		providerName string
-		credKey      string
-	}{
-		"OPENAI_API_KEY":    {"openai", "api_key"},
-		"ANTHROPIC_API_KEY": {"anthropic", "api_key"},
-		// Add more providers as needed
-	}
-
-	for envVar, mapping := range envMapping {
-		apiKey := os.Getenv(envVar)
-		if apiKey == "" {
-			continue // Skip if not set
-		}
-
-		// Get provider by name
-		provider, err := providerRepo.GetByName(ctx, mapping.providerName)
-		if err != nil {
-			// Provider doesn't exist, skip
-			continue
-		}
-
-		// Encrypt the API key
-		encryptedKey, err := encryption.Encrypt([]byte(apiKey))
-		if err != nil {
-			return fmt.Errorf("failed to encrypt %s: %w", envVar, err)
-		}
-
-		// Update credentials
-		if provider.EncryptedCredentials == nil {
-			provider.EncryptedCredentials = make(map[string]interface{})
-		}
-		provider.EncryptedCredentials[mapping.credKey] = encryptedKey
-
-		// Save to database
-		if err := providerRepo.Update(ctx, provider); err != nil {
-			return fmt.Errorf("failed to update provider %s: %w", mapping.providerName, err)
-		}
-	}
-
-	return nil
 }
 
 func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) {
