@@ -1,6 +1,9 @@
+//go:build integration
+
 package logging
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -236,8 +239,13 @@ func TestS3Integration_WriteBatch(t *testing.T) {
 	}
 	defer getOutput.Body.Close()
 
-	// Read and verify content
-	body, err := io.ReadAll(getOutput.Body)
+	// Read and verify gzip-compressed content.
+	gzipReader, err := gzip.NewReader(getOutput.Body)
+	if err != nil {
+		t.Fatalf("Failed to create gzip reader: %v", err)
+	}
+	defer gzipReader.Close()
+	body, err := io.ReadAll(gzipReader)
 	if err != nil {
 		t.Fatalf("Failed to read object body: %v", err)
 	}
@@ -262,6 +270,9 @@ func TestS3Integration_WriteBatch(t *testing.T) {
 	// Verify content type
 	if getOutput.ContentType == nil || *getOutput.ContentType != "application/x-ndjson" {
 		t.Errorf("Expected content type application/x-ndjson, got %v", getOutput.ContentType)
+	}
+	if getOutput.ContentEncoding == nil || *getOutput.ContentEncoding != "gzip" {
+		t.Errorf("Expected content encoding gzip, got %v", getOutput.ContentEncoding)
 	}
 }
 
@@ -361,7 +372,13 @@ func TestS3Integration_S3Sink(t *testing.T) {
 			t.Fatalf("Failed to get object %s: %v", *obj.Key, err)
 		}
 
-		body, err := io.ReadAll(getOutput.Body)
+		gzipReader, err := gzip.NewReader(getOutput.Body)
+		if err != nil {
+			getOutput.Body.Close()
+			t.Fatalf("Failed to create gzip reader for %s: %v", *obj.Key, err)
+		}
+		body, err := io.ReadAll(gzipReader)
+		gzipReader.Close()
 		getOutput.Body.Close()
 		if err != nil {
 			t.Fatalf("Failed to read body: %v", err)
@@ -465,7 +482,13 @@ func TestS3Integration_GracefulShutdown(t *testing.T) {
 			t.Fatalf("Failed to get object: %v", err)
 		}
 
-		body, err := io.ReadAll(getOutput.Body)
+		gzipReader, err := gzip.NewReader(getOutput.Body)
+		if err != nil {
+			getOutput.Body.Close()
+			t.Fatalf("Failed to create gzip reader for %s: %v", *obj.Key, err)
+		}
+		body, err := io.ReadAll(gzipReader)
+		gzipReader.Close()
 		getOutput.Body.Close()
 		if err != nil {
 			t.Fatalf("Failed to read body: %v", err)

@@ -87,7 +87,7 @@ cd ../bff
 python3 -m compileall -q app
 ```
 
-All Go packages now compile with the command above. Some tests still require local sockets or PostgreSQL, Redis, and MinIO; separating those integration tests from the default unit-test command is tracked in [TODO.md](TODO.md).
+`go test -short ./...` is the hermetic Go unit suite. PostgreSQL, Redis-server, and MinIO tests are explicitly tagged and run with `make test-integration-all`; see the [testing guide](docs/testing-guide.md).
 
 Runnable Go examples are isolated as independent commands:
 

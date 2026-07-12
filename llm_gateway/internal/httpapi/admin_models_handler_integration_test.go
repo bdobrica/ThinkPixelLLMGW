@@ -1,3 +1,5 @@
+//go:build integration
+
 package httpapi
 
 import (
@@ -337,6 +339,9 @@ func TestAdminModelsHandlerList(t *testing.T) {
 			t.Fatalf("Failed to create test model: %v", err)
 		}
 	}
+	if _, err := storage.NewModelRepository(db).ListWithFilters(ctx, storage.ModelListFilters{Page: 1, PageSize: 20}); err != nil {
+		t.Fatalf("Model list fixture is not readable: %v", err)
+	}
 
 	tests := []struct {
 		name           string
@@ -351,10 +356,7 @@ func TestAdminModelsHandlerList(t *testing.T) {
 			roles:          []string{auth.RoleViewer.String()},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *httptest.ResponseRecorder) {
-				var results []ModelResponse
-				if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
+				results := decodeModelListResponse(t, resp)
 
 				// Should have at least our test models
 				if len(results) < 2 {
@@ -368,10 +370,7 @@ func TestAdminModelsHandlerList(t *testing.T) {
 			roles:          []string{auth.RoleViewer.String()},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *httptest.ResponseRecorder) {
-				var results []ModelResponse
-				if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
+				results := decodeModelListResponse(t, resp)
 
 				// All results should be from our test provider
 				for _, m := range results {
@@ -387,10 +386,7 @@ func TestAdminModelsHandlerList(t *testing.T) {
 			roles:          []string{auth.RoleViewer.String()},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *httptest.ResponseRecorder) {
-				var results []ModelResponse
-				if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
+				results := decodeModelListResponse(t, resp)
 
 				// Should find the specific model
 				found := false
@@ -407,14 +403,11 @@ func TestAdminModelsHandlerList(t *testing.T) {
 		},
 		{
 			name:           "pagination",
-			queryParams:    "limit=1&offset=0",
+			queryParams:    "page=1&page_size=1",
 			roles:          []string{auth.RoleViewer.String()},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *httptest.ResponseRecorder) {
-				var results []ModelResponse
-				if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
+				results := decodeModelListResponse(t, resp)
 
 				// Should have exactly 1 result due to limit
 				if len(results) != 1 {
@@ -451,6 +444,20 @@ func TestAdminModelsHandlerList(t *testing.T) {
 			}
 		})
 	}
+}
+
+func decodeModelListResponse(t *testing.T, resp *httptest.ResponseRecorder) []ModelResponse {
+	t.Helper()
+	var response struct {
+		Items      []ModelResponse `json:"items"`
+		TotalCount int             `json:"total_count"`
+		Page       int             `json:"page"`
+		PageSize   int             `json:"page_size"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	return response.Items
 }
 
 // TestAdminModelsHandlerGetByID tests getting a model by ID
@@ -819,6 +826,9 @@ func TestAdminModelsHandlerDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create test model: %v", err)
 		}
+	}
+	if _, err := storage.NewModelRepository(db).GetByID(ctx, modelWithoutAlias.ID); err != nil {
+		t.Fatalf("Model delete fixture is not readable: %v", err)
 	}
 
 	// Create an alias for the second model

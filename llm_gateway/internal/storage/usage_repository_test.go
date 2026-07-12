@@ -79,3 +79,44 @@ func TestUsageRepository_CreateWithTx(t *testing.T) {
 		t.Fatalf("unmet SQL expectations: %v", err)
 	}
 }
+
+func TestUsageRepository_CreateWithTx_NullableForeignKeys(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock database: %v", err)
+	}
+	defer sqlDB.Close()
+
+	sqlxDB := sqlx.NewDb(sqlDB, "sqlmock")
+	repo := NewUsageRepository(&DB{conn: sqlxDB})
+	record := &models.UsageRecord{
+		ID:         uuid.New(),
+		APIKeyID:   uuid.New(),
+		RequestID:  uuid.New(),
+		ModelName:  "unresolved-model",
+		Endpoint:   "/v1/chat/completions",
+		StatusCode: 502,
+	}
+
+	createdAt := time.Now().UTC()
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO usage_records").WithArgs(
+		record.ID, record.APIKeyID, nil, nil, record.RequestID,
+		record.ModelName, record.Endpoint, 0, 0, 0, 0, 0, 502, "",
+	).WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectCommit()
+
+	tx, err := sqlxDB.BeginTxx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("failed to begin transaction: %v", err)
+	}
+	if err := repo.CreateWithTx(context.Background(), tx, record); err != nil {
+		t.Fatalf("CreateWithTx returned error: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("failed to commit transaction: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}

@@ -32,7 +32,6 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 ## Testing and delivery
 
-- [ ] Separate unit and integration tests with build tags or reliable skips; `go test ./...` should not require PostgreSQL.
 - [ ] Add BFF tests for login, cookie expiry/name/security, proxy errors, and authorization.
 - [ ] Add frontend component/end-to-end tests for API-key lifecycle and authentication expiry.
 - [ ] Add a streaming test covering a response longer than 30 seconds and verifying usage/cost persistence.

@@ -60,9 +60,18 @@ func (r *UsageRepository) createWithQueryer(ctx context.Context, queryer usageRe
 		record.ID = uuid.New()
 	}
 
+	var modelID interface{}
+	if record.ModelID != uuid.Nil {
+		modelID = record.ModelID
+	}
+	var providerID interface{}
+	if record.ProviderID != uuid.Nil {
+		providerID = record.ProviderID
+	}
+
 	err := queryer.QueryRowxContext(
 		ctx, query,
-		record.ID, record.APIKeyID, record.ModelID, record.ProviderID,
+		record.ID, record.APIKeyID, modelID, providerID,
 		record.RequestID, record.ModelName, record.Endpoint,
 		record.InputTokens, record.OutputTokens, record.CachedTokens,
 		record.ReasoningTokens, record.ResponseTimeMS, record.StatusCode,

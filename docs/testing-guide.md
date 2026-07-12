@@ -1,517 +1,117 @@
-# Testing the LLM Gateway
+# Testing guide
 
-This guide shows how to test the gateway end-to-end.
+The repository has three intentionally separate test tiers. Run commands from `llm_gateway` unless noted otherwise.
 
-## Prerequisites
+## 1. Hermetic Go tests
 
-1. **PostgreSQL Database** running with migrations applied
-2. **Redis** running for rate limiting and billing
-3. **OpenAI API Key** (or other provider credentials)
-4. **Environment variables** configured
-
-## Quick Start
-
-### 1. Setup Database
+These tests do not require PostgreSQL, Redis, MinIO, Docker, or provider credentials:
 
 ```bash
-# Apply migrations
-cd llm-gateway
-sqlx database create
-sqlx migrate run
+make test
+# equivalent to:
+go test -short ./...
 ```
 
-### 2. Configure Environment
+`make test-unit` is an alias for the same suite. Redis-server, PostgreSQL, and MinIO tests carry the `integration` build tag and are not compiled into this tier. Tests using in-process fakes such as miniredis remain unit tests.
 
-Create a `.env` file in `llm-gateway/` directory:
+For a stricter local/CI run:
 
 ```bash
-# Database
-DATABASE_URL=postgres://postgres:password@localhost:5432/llmgateway?sslmode=disable
-
-# Redis
-REDIS_ADDRESS=localhost:6379
-REDIS_PASSWORD=
-REDIS_DB=0
-
-# Server
-GATEWAY_HTTP_PORT=8080
-
-# Provider settings
-PROVIDER_RELOAD_INTERVAL=5m
-PROVIDER_REQUEST_TIMEOUT=60s
-
-# Cache settings
-CACHE_API_KEY_SIZE=1000
-CACHE_API_KEY_TTL=5m
-CACHE_MODEL_SIZE=500
-CACHE_MODEL_TTL=15m
+make ci-test
 ```
 
-### 3. Setup Test Data
+This enables the race detector and writes `coverage.out`.
 
-```sql
--- Connect to PostgreSQL
-psql postgres://postgres:password@localhost:5432/llmgateway
+## 2. Go integration tests
 
--- Create an OpenAI provider
-INSERT INTO providers (id, name, display_name, provider_type, encrypted_credentials, config, enabled)
-VALUES (
-    gen_random_uuid(),
-    'openai-main',
-    'OpenAI',
-    'openai',
-    '{"api_key": "sk-proj-YOUR_OPENAI_API_KEY_HERE"}',  -- Will be encrypted by app
-    '{"base_url": "https://api.openai.com/v1"}',
-    true
-);
+Prerequisite: Docker with Compose. Integration targets use isolated host ports by default: PostgreSQL 15432, Redis 16379, MinIO API 19000, and MinIO console 19001. Override the corresponding `INTEGRATION_*_PORT` Make variables when necessary.
 
--- Create a test API key
--- Key will be: "test-key-12345"
--- Hash: SHA256("test-key-12345")
-INSERT INTO api_keys (id, name, key_hash, enabled, rate_limit, monthly_budget)
-VALUES (
-    gen_random_uuid(),
-    'Test Key',
-    encode(sha256('test-key-12345'::bytea), 'hex'),
-    true,
-    100,  -- 100 requests per minute
-    10.0  -- $10 monthly budget
-);
-
--- Add GPT-4 model (assuming you have the BerriAI model catalog synced)
--- If not, you can add it manually:
-INSERT INTO models (id, model_name, litellm_provider, input_cost_per_token, output_cost_per_token, mode)
-VALUES (
-    gen_random_uuid(),
-    'gpt-4',
-    'openai',
-    0.00003,  -- $0.03 per 1K input tokens
-    0.00006,  -- $0.06 per 1K output tokens
-    'chat'
-);
-
--- Create a model alias (optional)
-INSERT INTO model_aliases (id, alias, target_model_id, provider_id, enabled)
-VALUES (
-    gen_random_uuid(),
-    'my-gpt4',
-    (SELECT id FROM models WHERE model_name = 'gpt-4'),
-    (SELECT id FROM providers WHERE name = 'openai-main'),
-    true
-);
-```
-
-### 4. Start the Gateway
+The safest command starts dependencies, runs every tagged suite, and tears dependencies down even if a test fails:
 
 ```bash
-cd llm-gateway
-go run cmd/gateway/main.go
+make test-integration-all
 ```
 
-You should see:
-```
-LLM Gateway listening on :8080
-```
-
-## Testing with cURL
-
-### Basic Chat Completion
+Manual lifecycle:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-key-12345" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [
-      {"role": "user", "content": "Say hello!"}
-    ],
-    "temperature": 0.7
-  }'
+make test-integration-setup
+make test-integration
+make test-integration-teardown
 ```
 
-Expected response:
-```json
-{
-  "id": "chatcmpl-...",
-  "object": "chat.completion",
-  "created": 1234567890,
-  "model": "gpt-4",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "Hello! How can I assist you today?"
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 10,
-    "completion_tokens": 9,
-    "total_tokens": 19
-  }
-}
-```
+The tagged suites cover:
 
-### Streaming Chat Completion
+- PostgreSQL-backed admin API handlers
+- Redis queues and dead-letter queues
+- MinIO/S3 log writing and shutdown
+
+Focused commands are also available:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-key-12345" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [
-      {"role": "user", "content": "Count to 5"}
-    ],
-    "stream": true
-  }'
+make test-httpapi
+make test-aliases
 ```
 
-Expected response (Server-Sent Events):
-```
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
-
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"1"},"finish_reason":null}]}
-
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"content":", "},"finish_reason":null}]}
-
-...
-
-data: [DONE]
-```
-
-### Using Model Alias
+To invoke a tagged package directly, supply its service configuration:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-key-12345" \
-  -d '{
-    "model": "my-gpt4",
-    "messages": [
-      {"role": "user", "content": "Hello!"}
-    ]
-  }'
+DATABASE_URL='postgres://gateway:password@localhost:15432/gateway?sslmode=disable' \
+  go test -tags=integration -v ./internal/httpapi -run '^TestAdmin'
+
+REDIS_TEST_ADDR=localhost:16379 \
+  go test -tags=integration -v ./internal/queue -run '^TestRedis'
+
+MINIO_ENDPOINT=http://localhost:19000 \
+  go test -tags=integration -v ./internal/logging -run '^TestS3Integration'
 ```
 
-### Health Check
+## 3. End-to-end tests
+
+The Python tests exercise the running Docker Compose stack and may make real OpenAI requests. Create the root `.env` file first and set `OPENAI_API_KEY`, `JWT_SECRET`, and `ENCRYPTION_KEY`.
+
+Install dependencies into any active Python environment; the Makefile does not assume a developer-specific virtual-environment path:
 
 ```bash
-curl http://localhost:8080/health
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r tests/requirements.txt
 ```
 
-Expected response:
-```
-OK
-```
-
-## Error Scenarios
-
-### Invalid API Key
+Then run:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer invalid-key" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
+cd llm_gateway
+make test-e2e
 ```
 
-Expected response (401):
-```json
-{
-  "error": {
-    "message": "invalid API key",
-    "type": "invalid_request_error",
-    "code": 401
-  }
-}
-```
-
-### Missing Authorization Header
+For manual control:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
+make test-e2e-setup
+make test-e2e-logs
+make test-e2e-run
+make test-e2e-teardown
 ```
 
-Expected response (401):
-```json
-{
-  "error": {
-    "message": "missing or invalid Authorization header",
-    "type": "invalid_request_error",
-    "code": 401
-  }
-}
-```
+`make test-init-admin` exercises bootstrap, login, user creation, and API-key creation. `make test-rate-limit` runs the rate-limit subset against an already running stack.
 
-### Unknown Model
+## Frontend and BFF checks
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type": application/json" \
-  -H "Authorization: Bearer test-key-12345" \
-  -d '{
-    "model": "gpt-99",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
+cd webui/frontend
+pnpm install
+pnpm run build
+
+cd ../bff
+python3 -m compileall -q app
 ```
 
-Expected response (400):
-```json
-{
-  "error": {
-    "message": "unknown model: gpt-99",
-    "type": "invalid_request_error",
-    "code": 400
-  }
-}
-```
-
-### Rate Limit Exceeded
-
-Make 101+ requests within 60 seconds:
-
-```bash
-for i in {1..101}; do
-  curl -X POST http://localhost:8080/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer test-key-12345" \
-    -d '{
-      "model": "gpt-4",
-      "messages": [{"role": "user", "content": "Test"}],
-      "max_tokens": 1
-    }' &
-done
-```
-
-Expected response (429) after 100 requests:
-```json
-{
-  "error": {
-    "message": "rate limit exceeded",
-    "type": "invalid_request_error",
-    "code": 429
-  }
-}
-```
-
-### Budget Exceeded
-
-After spending $10 in a month:
-
-```json
-{
-  "error": {
-    "message": "monthly budget exceeded",
-    "type": "invalid_request_error",
-    "code": 402
-  }
-}
-```
-
-## Monitoring
-
-### Check Rate Limit Status (Redis)
-
-```bash
-redis-cli
-> ZCARD rate_limit:<api-key-id>
-> ZRANGE rate_limit:<api-key-id> 0 -1 WITHSCORES
-```
-
-### Check Billing Status (Redis)
-
-```bash
-redis-cli
-> GET cost:<api-key-id>:2025:01
-```
-
-### Check Log Buffer (Redis)
-
-```bash
-redis-cli
-> LLEN gateway:logs
-> LRANGE gateway:logs 0 10
-```
-
-### Check Database
-
-```sql
--- Check API key usage
-SELECT 
-    ak.name,
-    COUNT(ur.*) as total_requests,
-    SUM(ur.total_cost_usd) as total_cost,
-    MAX(ur.created_at) as last_request
-FROM api_keys ak
-LEFT JOIN usage_records ur ON ur.api_key_id = ak.id
-GROUP BY ak.id, ak.name;
-
--- Check monthly summaries
-SELECT 
-    ak.name,
-    mus.year,
-    mus.month,
-    mus.total_requests,
-    mus.total_cost_usd
-FROM monthly_usage_summary mus
-JOIN api_keys ak ON ak.id = mus.api_key_id
-ORDER BY mus.year DESC, mus.month DESC;
-
--- Check provider status
-SELECT 
-    name,
-    display_name,
-    provider_type,
-    enabled,
-    created_at
-FROM providers;
-```
-
-## Using with OpenAI SDK
-
-### Python
-
-```python
-from openai import OpenAI
-
-# Point to your gateway
-client = OpenAI(
-    api_key="test-key-12345",
-    base_url="http://localhost:8080/v1"
-)
-
-# Use as normal
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[
-        {"role": "user", "content": "Hello!"}
-    ]
-)
-
-print(response.choices[0].message.content)
-```
-
-### Node.js
-
-```javascript
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  apiKey: 'test-key-12345',
-  baseURL: 'http://localhost:8080/v1'
-});
-
-const response = await client.chat.completions.create({
-  model: 'gpt-4',
-  messages: [
-    { role: 'user', content: 'Hello!' }
-  ]
-});
-
-console.log(response.choices[0].message.content);
-```
-
-## Load Testing
-
-### Using Apache Bench
-
-```bash
-# 1000 requests, 10 concurrent
-ab -n 1000 -c 10 \
-   -H "Authorization: Bearer test-key-12345" \
-   -H "Content-Type: application/json" \
-   -p payload.json \
-   http://localhost:8080/v1/chat/completions
-```
-
-### payload.json
-
-```json
-{
-  "model": "gpt-4",
-  "messages": [
-    {"role": "user", "content": "Test"}
-  ],
-  "max_tokens": 1
-}
-```
+Automated BFF and frontend tests are still tracked in `TODO.md`.
 
 ## Troubleshooting
 
-### Gateway Won't Start
-
-**Error**: `Failed to initialize database`
-
-**Solution**: Check DATABASE_URL is correct and PostgreSQL is running
-
-```bash
-psql $DATABASE_URL -c "SELECT 1"
-```
-
-**Error**: `Failed to initialize Redis`
-
-**Solution**: Check Redis is running
-
-```bash
-redis-cli ping
-```
-
-### Requests Failing
-
-**Error**: `unknown model: gpt-4`
-
-**Solution**: Ensure model exists in database and provider mapping is correct
-
-```sql
-SELECT model_name, litellm_provider FROM models WHERE model_name = 'gpt-4';
-```
-
-**Error**: `provider error`
-
-**Solution**: Check provider credentials are correct
-
-```sql
-SELECT name, provider_type, enabled FROM providers;
-```
-
-Update credentials if needed (app will decrypt/re-encrypt):
-
-```sql
-UPDATE providers 
-SET encrypted_credentials = '{"api_key": "sk-proj-YOUR_NEW_KEY"}'
-WHERE name = 'openai-main';
-```
-
-### High Latency
-
-1. **Check Redis**: `redis-cli --latency`
-2. **Check Database**: `SELECT pg_stat_statements FROM pg_stat_activity;`
-3. **Check Provider**: Time actual OpenAI API calls
-4. **Check Logs**: Look for slow queries or timeouts
-
-### Memory Issues
-
-1. **Check cache sizes**: Reduce CACHE_API_KEY_SIZE and CACHE_MODEL_SIZE
-2. **Check Redis memory**: `redis-cli info memory`
-3. **Check connection pools**: Reduce DB_MAX_OPEN_CONNS
-
-## Next Steps
-
-1. **Add More Providers**: Insert Vertex AI or Bedrock providers
-2. **Add More Models**: Import BerriAI model catalog
-3. **Create More API Keys**: For different projects/teams
-4. **Set up Monitoring**: Add Prometheus metrics
-5. **Enable Logging**: Configure S3 writer for log persistence
-6. **Add Admin API**: Manage keys and providers via API
+- Use `docker compose ps` and `docker compose logs <service>` when integration setup fails.
+- Ensure no local database, Redis, or MinIO already owns the required ports.
+- Set `GOCACHE=/tmp/thinkpixel-go-cache` if the default Go build cache is not writable.
+- A missing provider key should not affect hermetic Go tests; it is required only for provider-backed end-to-end requests.

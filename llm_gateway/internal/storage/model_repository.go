@@ -42,7 +42,7 @@ func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.M
 	var model models.Model
 	query := `
 		SELECT 
-			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			id, model_name, provider_id, source, COALESCE(version, '') AS version, deprecation_date, is_deprecated,
 			supported_regions, supported_resolutions,
 			supports_assistant_prefill, supports_audio_input, supports_audio_output,
 			supports_computer_use, supports_embedding_image_input, supports_function_calling,
@@ -216,7 +216,7 @@ func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Mo
 	var model models.Model
 	query := `
 		SELECT 
-			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			id, model_name, provider_id, source, COALESCE(version, '') AS version, deprecation_date, is_deprecated,
 			supported_regions, supported_resolutions,
 			supports_assistant_prefill, supports_audio_input, supports_audio_output,
 			supports_computer_use, supports_embedding_image_input, supports_function_calling,
@@ -266,7 +266,7 @@ func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Mo
 func (r *ModelRepository) GetByProvider(ctx context.Context, providerID string) ([]*models.Model, error) {
 	query := `
 		SELECT 
-			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			id, model_name, provider_id, source, COALESCE(version, '') AS version, deprecation_date, is_deprecated,
 			supported_regions, supported_resolutions,
 			supports_assistant_prefill, supports_audio_input, supports_audio_output,
 			supports_computer_use, supports_embedding_image_input, supports_function_calling,
@@ -314,7 +314,7 @@ func (r *ModelRepository) GetByProvider(ctx context.Context, providerID string) 
 func (r *ModelRepository) List(ctx context.Context, limit, offset int) ([]*models.Model, error) {
 	query := `
 		SELECT 
-			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			id, model_name, provider_id, source, COALESCE(version, '') AS version, deprecation_date, is_deprecated,
 			supported_regions, supported_resolutions,
 			supports_assistant_prefill, supports_audio_input, supports_audio_output,
 			supports_computer_use, supports_embedding_image_input, supports_function_calling,
@@ -414,7 +414,7 @@ func (r *ModelRepository) ListWithFilters(ctx context.Context, filters ModelList
 	offset := (filters.Page - 1) * filters.PageSize
 	dataQuery := fmt.Sprintf(`
 		SELECT 
-			id, model_name, provider_id, source, version, deprecation_date, is_deprecated,
+			id, model_name, provider_id, source, COALESCE(version, '') AS version, deprecation_date, is_deprecated,
 			supported_regions, supported_resolutions,
 			supports_assistant_prefill, supports_audio_input, supports_audio_output,
 			supports_computer_use, supports_embedding_image_input, supports_function_calling,

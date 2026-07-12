@@ -8,12 +8,13 @@ services:
       POSTGRES_USER: gateway
       POSTGRES_PASSWORD: password
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Only mount the .up.sql files to avoid running .down.sql migrations
       - ./llm_gateway/migrations/20251125000001_initial_schema.up.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./llm_gateway/migrations/20251125000002_seed_data.up.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./llm_gateway/migrations/20260429000003_add_monthly_usage_summary.up.sql:/docker-entrypoint-initdb.d/03_monthly_usage_summary.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway"]
       interval: 10s
@@ -28,7 +29,7 @@ services:
     container_name: gw-redis
     command: redis-server --appendonly yes
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -48,8 +49,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "127.0.0.1:9000:9000"  # API
-      - "127.0.0.1:9001:9001"  # Console
+      - "127.0.0.1:${MINIO_API_HOST_PORT:-9000}:9000"  # API
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Console
     volumes:
       - minio_data:/data
     healthcheck:

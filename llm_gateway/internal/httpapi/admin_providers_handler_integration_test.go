@@ -1,3 +1,5 @@
+//go:build integration
+
 package httpapi
 
 import (
@@ -122,6 +124,28 @@ func setupTestConfig(t *testing.T) *config.Config {
 // setupTestProviderRegistry creates a test provider registry
 func setupTestProviderRegistry(t *testing.T, db *storage.DB, encryption *storage.Encryption) providers.Registry {
 	t.Helper()
+
+	// Seed migrations intentionally omit provider credentials. Give enabled OpenAI
+	// providers a deterministic encrypted test credential so registry construction
+	// tests provider wiring without requiring a real external API key.
+	providerRepo := storage.NewProviderRepository(db)
+	dbProviders, err := providerRepo.List(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to list providers for test registry: %v", err)
+	}
+	for _, provider := range dbProviders {
+		if !provider.Enabled || provider.ProviderType != "openai" || len(provider.EncryptedCredentials) > 0 {
+			continue
+		}
+		encryptedKey, err := encryption.Encrypt([]byte("test-openai-api-key"))
+		if err != nil {
+			t.Fatalf("Failed to encrypt test provider credential: %v", err)
+		}
+		provider.EncryptedCredentials = models.JSONB{"api_key": encryptedKey}
+		if err := providerRepo.Update(context.Background(), provider); err != nil {
+			t.Fatalf("Failed to store test provider credential: %v", err)
+		}
+	}
 
 	registry, err := providers.NewProviderRegistry(providers.RegistryConfig{
 		DB:             db,

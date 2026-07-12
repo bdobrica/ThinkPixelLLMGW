@@ -143,17 +143,25 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *models.APIKey) error
 
 // Update updates an existing API key
 func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error {
+	var previousHash string
+	if err := r.db.conn.GetContext(ctx, &previousHash, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrAPIKeyNotFound
+		}
+		return fmt.Errorf("failed to get existing API key hash: %w", err)
+	}
+
 	query := `
 		UPDATE api_keys
-		SET name = $2, allowed_models = $3, rate_limit_per_minute = $4,
-		    monthly_budget_usd = $5, enabled = $6, expires_at = $7
+		SET name = $2, key_hash = $3, allowed_models = $4, rate_limit_per_minute = $5,
+		    monthly_budget_usd = $6, enabled = $7, expires_at = $8
 		WHERE id = $1
 		RETURNING updated_at
 	`
 
 	err := r.db.conn.QueryRowxContext(
 		ctx, query,
-		key.ID, key.Name, key.AllowedModels, key.RateLimitPerMinute,
+		key.ID, key.Name, key.KeyHash, key.AllowedModels, key.RateLimitPerMinute,
 		key.MonthlyBudgetUSD, key.Enabled, key.ExpiresAt,
 	).Scan(&key.UpdatedAt)
 
@@ -164,7 +172,8 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 		return fmt.Errorf("failed to update API key: %w", err)
 	}
 
-	// Invalidate cache
+	// Invalidate both cache keys when a key is regenerated.
+	r.cache.Delete(previousHash)
 	r.cache.Delete(key.KeyHash)
 
 	return nil
