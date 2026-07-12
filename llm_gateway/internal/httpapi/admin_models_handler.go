@@ -155,17 +155,34 @@ type UpdateModelRequest struct {
 
 // ModelResponse represents a model response (summary view)
 type ModelResponse struct {
-	ID           string   `json:"id"`
-	ModelName    string   `json:"model_name"`
-	ProviderID   string   `json:"provider_id"`
-	ProviderName string   `json:"provider_name"`
-	Source       string   `json:"source"`
-	Version      string   `json:"version,omitempty"`
-	IsDeprecated bool     `json:"is_deprecated"`
-	Currency     string   `json:"currency"`
-	Features     []string `json:"features"` // Summary of enabled features
-	CreatedAt    string   `json:"created_at"`
-	UpdatedAt    string   `json:"updated_at"`
+	ID                string                     `json:"id"`
+	ModelName         string                     `json:"model_name"`
+	ProviderID        string                     `json:"provider_id"`
+	ProviderName      string                     `json:"provider_name"`
+	Source            string                     `json:"source"`
+	Version           string                     `json:"version,omitempty"`
+	IsDeprecated      bool                       `json:"is_deprecated"`
+	Currency          string                     `json:"currency"`
+	Features          []string                   `json:"features"` // Summary of enabled features
+	MaxInputTokens    int                        `json:"max_input_tokens"`
+	MaxOutputTokens   int                        `json:"max_output_tokens"`
+	PricingComponents []PricingComponentResponse `json:"pricing_components"`
+	CreatedAt         string                     `json:"created_at"`
+	UpdatedAt         string                     `json:"updated_at"`
+}
+
+func pricingComponentResponses(components []models.PricingComponent) []PricingComponentResponse {
+	responses := make([]PricingComponentResponse, 0, len(components))
+	for _, component := range components {
+		responses = append(responses, PricingComponentResponse{
+			ID: component.ID, Code: component.Code,
+			Direction: string(component.Direction), Modality: string(component.Modality),
+			Unit: string(component.Unit), Tier: utils.StringPtrValue(component.Tier),
+			Scope: utils.StringPtrValue(component.Scope), Price: component.Price,
+			Metadata: component.Metadata,
+		})
+	}
+	return responses
 }
 
 // ModelDetailResponse represents a detailed model response
@@ -439,17 +456,20 @@ func (h *AdminModelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := &ModelResponse{
-		ID:           model.ID.String(),
-		ModelName:    model.ModelName,
-		ProviderID:   model.ProviderID,
-		ProviderName: provider.Name,
-		Source:       model.Source,
-		Version:      model.Version,
-		IsDeprecated: model.IsDeprecated,
-		Currency:     model.Currency,
-		Features:     extractFeatures(model),
-		CreatedAt:    model.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    model.UpdatedAt.Format(time.RFC3339),
+		ID:                model.ID.String(),
+		ModelName:         model.ModelName,
+		ProviderID:        model.ProviderID,
+		ProviderName:      provider.Name,
+		Source:            model.Source,
+		Version:           model.Version,
+		IsDeprecated:      model.IsDeprecated,
+		Currency:          model.Currency,
+		Features:          extractFeatures(model),
+		MaxInputTokens:    model.MaxInputTokens,
+		MaxOutputTokens:   model.MaxOutputTokens,
+		PricingComponents: pricingComponentResponses(model.PricingComponents),
+		CreatedAt:         model.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:         model.UpdatedAt.Format(time.RFC3339),
 	}
 
 	utils.RespondWithJSON(w, http.StatusCreated, response)
@@ -613,17 +633,20 @@ func (h *AdminModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 		responses = append(responses, ModelResponse{
-			ID:           m.ID.String(),
-			ModelName:    m.ModelName,
-			ProviderID:   m.ProviderID,
-			ProviderName: providerName,
-			Source:       m.Source,
-			Version:      m.Version,
-			IsDeprecated: m.IsDeprecated,
-			Currency:     m.Currency,
-			Features:     extractFeatures(m),
-			CreatedAt:    m.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:    m.UpdatedAt.Format(time.RFC3339),
+			ID:                m.ID.String(),
+			ModelName:         m.ModelName,
+			ProviderID:        m.ProviderID,
+			ProviderName:      providerName,
+			Source:            m.Source,
+			Version:           m.Version,
+			IsDeprecated:      m.IsDeprecated,
+			Currency:          m.Currency,
+			Features:          extractFeatures(m),
+			MaxInputTokens:    m.MaxInputTokens,
+			MaxOutputTokens:   m.MaxOutputTokens,
+			PricingComponents: pricingComponentResponses(m.PricingComponents),
+			CreatedAt:         m.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:         m.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 
@@ -664,25 +687,7 @@ func (h *AdminModelsHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	aliases, _ := aliasRepo.ListByModel(r.Context(), modelID)
 
 	// Build pricing components response
-	pricingComponents := make([]PricingComponentResponse, 0, len(model.PricingComponents))
-	for _, pc := range model.PricingComponents {
-		var metadata map[string]interface{}
-		if pc.Metadata != nil {
-			metadata = pc.Metadata
-		}
-
-		pricingComponents = append(pricingComponents, PricingComponentResponse{
-			ID:        pc.ID,
-			Code:      pc.Code,
-			Direction: string(pc.Direction),
-			Modality:  string(pc.Modality),
-			Unit:      string(pc.Unit),
-			Tier:      utils.StringPtrValue(pc.Tier),
-			Scope:     utils.StringPtrValue(pc.Scope),
-			Price:     pc.Price,
-			Metadata:  metadata,
-		})
-	}
+	pricingComponents := pricingComponentResponses(model.PricingComponents)
 
 	var metadata map[string]interface{}
 	if model.Metadata != nil {
@@ -895,16 +900,19 @@ func (h *AdminModelsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := &ModelResponse{
-		ID:           model.ID.String(),
-		ModelName:    model.ModelName,
-		ProviderID:   model.ProviderID,
-		Source:       model.Source,
-		Version:      model.Version,
-		IsDeprecated: model.IsDeprecated,
-		Currency:     model.Currency,
-		Features:     extractFeatures(model),
-		CreatedAt:    model.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    model.UpdatedAt.Format(time.RFC3339),
+		ID:                model.ID.String(),
+		ModelName:         model.ModelName,
+		ProviderID:        model.ProviderID,
+		Source:            model.Source,
+		Version:           model.Version,
+		IsDeprecated:      model.IsDeprecated,
+		Currency:          model.Currency,
+		Features:          extractFeatures(model),
+		MaxInputTokens:    model.MaxInputTokens,
+		MaxOutputTokens:   model.MaxOutputTokens,
+		PricingComponents: pricingComponentResponses(model.PricingComponents),
+		CreatedAt:         model.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:         model.UpdatedAt.Format(time.RFC3339),
 	}
 
 	utils.RespondWithJSON(w, http.StatusOK, response)

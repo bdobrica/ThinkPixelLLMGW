@@ -9,12 +9,12 @@ The Web UI is a React 19/Vite single-page application backed by a small FastAPI 
 | Email/password login, logout, protected routes | Implemented |
 | API-key list/create/update/revoke UI | Implemented |
 | Models BFF list endpoint | Implemented |
-| Models page | Placeholder |
+| Models page | Implemented (read-only catalog) |
 | Billing endpoint and page | Not implemented / placeholder |
 | Dashboard statistics | Placeholder |
 | Service-token login | Gateway supports it; Web UI does not expose it |
 
-Authentication cookies, gateway proxying, and the artifact-only production launcher are production-aware. Product pages listed as placeholders remain unfinished.
+Authentication cookies, gateway proxying, and the artifact-only production launcher are production-aware. Billing and dashboard statistics remain unfinished. Model mutation stays in the gateway admin API for this release; both viewer and admin roles may use the read-only catalog, while gateway mutations still require the admin role.
 
 ## Development
 
@@ -80,7 +80,7 @@ The BFF reuses one bounded HTTP connection pool for its lifetime. Connect, read,
 | `GET /auth/me` | Return current identity via gateway `GET /admin/me` |
 | `GET, POST /admin/api-keys` | List/create keys |
 | `PUT, DELETE /admin/api-keys/{id}` | Update/revoke a key |
-| `GET /admin/models` | List models |
+| `GET /admin/models` | Paginated model list; accepts `search` and `provider_id` |
 
 There is no BFF `/admin/billing` route today.
 

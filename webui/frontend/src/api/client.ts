@@ -49,9 +49,30 @@ export interface ApiKeyCreatedResponse extends ApiKey {
 
 export interface Model {
   id: string
-  name: string
+  model_name: string
+  provider_id: string
   provider_name: string
-  enabled: boolean
+  source: string
+  version?: string
+  is_deprecated: boolean
+  currency: string
+  features: string[]
+  max_input_tokens: number
+  max_output_tokens: number
+  pricing_components: PricingComponent[]
+  created_at: string
+  updated_at: string
+}
+
+export interface PricingComponent {
+  id: string
+  code: string
+  direction: string
+  modality: string
+  unit: string
+  tier?: string
+  scope?: string
+  price: number
 }
 
 export interface ApiKeysResponse {
@@ -147,7 +168,9 @@ export const adminAPI = {
     })
   },
 
-  async listModels(page = 1, pageSize = 20): Promise<ModelsResponse> {
-    return fetchJSON(`${API_BASE}/admin/models?page=${page}&page_size=${pageSize}`)
+  async listModels(page = 1, pageSize = 20, search = ''): Promise<ModelsResponse> {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (search.trim()) params.set('search', search.trim())
+    return fetchJSON(`${API_BASE}/admin/models?${params}`)
   },
 }

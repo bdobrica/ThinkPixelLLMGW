@@ -30,6 +30,7 @@ pnpm run dev
 ```bash
 cd webui/frontend
 pnpm run build
+pnpm test
 
 cd ../bff
 pip install -r requirements-dev.txt
@@ -86,7 +87,7 @@ For production use `ENVIRONMENT=production`, `COOKIE_SECURE=true`, HTTPS, and a 
 - `PUT, DELETE /admin/api-keys/{id}`
 - `GET /admin/models`
 
-Billing is not implemented. The Models and Billing pages are placeholders.
+The Models page is a searchable, paginated, read-only catalog with provider, lifecycle, capability, token-limit, and pricing data. Billing is not implemented.
 
 `GET /auth/me` proxies the stable gateway `GET /admin/me` identity contract. The former production `/admin/test` route has been removed.
 
@@ -108,6 +109,8 @@ Billing is not implemented. The Models and Billing pages are placeholders.
 
 **nginx preflight fails:** inspect the printed `nginx -t` error and verify `FRONTEND_ROOT`, `NGINX_MIME_TYPES`, listen address, and BFF address. There is intentionally no degraded static-server fallback.
 
-**Models or billing show TODO text:** expected in the current implementation.
+**Models fail to load:** confirm the gateway migrations are current and the signed-in identity has at least the `viewer` role.
+
+**Billing shows TODO text:** expected in the current implementation.
 
 See [README.md](README.md), [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md), and [../CODE_REVIEW.md](../CODE_REVIEW.md).

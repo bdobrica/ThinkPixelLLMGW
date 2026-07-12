@@ -124,13 +124,20 @@ async def list_models(
     jwt_token: Annotated[str, Depends(get_current_admin_token)],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(default=None, max_length=255),
+    provider_id: str | None = Query(default=None, max_length=64),
 ):
     """List models by proxying to the Go gateway."""
     status_code, data = await gateway_request(
         method="GET",
         path="/admin/models",
         jwt_token=jwt_token,
-        params={"page": page, "page_size": page_size}
+        params={
+            "page": page,
+            "page_size": page_size,
+            **({"search": search} if search else {}),
+            **({"provider_id": provider_id} if provider_id else {}),
+        }
     )
     
     if status_code != 200:

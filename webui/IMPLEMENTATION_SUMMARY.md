@@ -32,7 +32,8 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 - Login and logout flow
 - Dashboard showing current JWT claims
 - API-key management, including the one-time plaintext-key response
-- Models and billing placeholder pages
+- Searchable, paginated read-only model catalog with lifecycle, capability, limit, and pricing hierarchy
+- Billing placeholder page
 - Same-origin fetch client with `credentials: include`
 - Vite development proxy for `/auth` and `/admin`
 - Production launcher with distinct `8080` gateway, `8000` BFF, and `8081` UI defaults
@@ -51,10 +52,10 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 
 ## Known gaps
 
-- Models, billing, and dashboard-statistics UI are unfinished.
+- Billing and dashboard-statistics UI are unfinished.
 - The gateway has no `/admin/billing` endpoint and the BFF route is commented out.
-- The frontend client still contains an unused `getBilling()` call that would receive 404.
-- BFF cookie/configuration tests are present; frontend tests are not yet present.
+- Model create/edit/delete is intentionally API-only in this release; the UI is read-only for viewers and administrators.
+- BFF cookie/configuration and model proxy tests are present, along with model-page component tests.
 - Cross-site cookies are deliberately disallowed until a CSRF token mechanism exists; strict/lax same-site cookies are supported.
 
 ## Verification

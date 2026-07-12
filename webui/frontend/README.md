@@ -11,7 +11,7 @@ A minimal React + TypeScript admin interface for the LLM Gateway.
 
 ## Tech Stack
 
-- React 18
+- React 19
 - TypeScript
 - Vite (dev server & build tool)
 - React Router v6
@@ -78,7 +78,7 @@ src/
 │   ├── Login.tsx         # Login page
 │   ├── Dashboard.tsx     # Dashboard
 │   ├── ApiKeys.tsx       # API keys management
-│   ├── Models.tsx        # Models (stub)
+│   ├── Models.tsx        # Read-only model catalog
 │   └── Billing.tsx       # Billing (stub)
 ├── App.tsx               # Root component
 ├── router.tsx            # Route configuration

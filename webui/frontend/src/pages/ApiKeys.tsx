@@ -36,7 +36,7 @@ export function ApiKeys() {
     adminAPI
       .listModels(1, 100) // Load all models
       .then((response) => {
-        setModels(response.items.filter(m => m.enabled))
+        setModels(response.items.filter(m => !m.is_deprecated))
       })
       .catch((err) => {
         console.error('Failed to load models:', err)
@@ -367,10 +367,10 @@ function CreateApiKeyDialog({ models, newKeyResponse, onClose, onCreate }: Creat
                 <label key={model.id} style={{ display: 'block', marginBottom: '0.25rem' }}>
                   <input
                     type="checkbox"
-                    checked={selectedModels.includes(model.name)}
-                    onChange={() => handleModelToggle(model.name)}
+                    checked={selectedModels.includes(model.model_name)}
+                    onChange={() => handleModelToggle(model.model_name)}
                   />
-                  {model.name} ({model.provider_name})
+                  {model.model_name} ({model.provider_name})
                 </label>
               ))}
             </div>
@@ -517,10 +517,10 @@ function EditApiKeyDialog({ apiKey, models, onClose, onUpdate }: EditApiKeyDialo
                 <label key={model.id} style={{ display: 'block', marginBottom: '0.25rem' }}>
                   <input
                     type="checkbox"
-                    checked={selectedModels.includes(model.name)}
-                    onChange={() => handleModelToggle(model.name)}
+                    checked={selectedModels.includes(model.model_name)}
+                    onChange={() => handleModelToggle(model.model_name)}
                   />
-                  {model.name} ({model.provider_name})
+                  {model.model_name} ({model.provider_name})
                 </label>
               ))}
             </div>
