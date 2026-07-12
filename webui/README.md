@@ -14,7 +14,7 @@ The Web UI is a React 19/Vite single-page application backed by a small FastAPI 
 | Dashboard statistics | Placeholder |
 | Service-token login | Gateway supports it; Web UI does not expose it |
 
-This UI is suitable for development but needs the production hardening listed in [the repository code review](../CODE_REVIEW.md), especially cookie configuration and the production launcher's port conflict.
+Authentication cookies and signing-key validation are production-aware. The production launcher still needs the port and process-management work described below.
 
 ## Development
 
@@ -50,19 +50,20 @@ Open `http://localhost:5173`. Vite proxies `/auth` and `/admin` to the BFF.
 Create `webui/bff/.env` as needed:
 
 ```dotenv
+ENVIRONMENT=development
 GATEWAY_BASE_URL=http://localhost:8080
 SECRET_KEY=replace-with-a-long-random-value
 COOKIE_NAME=admin_token
+COOKIE_PATH=/
+COOKIE_SECURE=false
+COOKIE_SAMESITE=strict
 COOKIE_MAX_AGE=3600
 CORS_ORIGINS=["http://localhost:5173"]
 ```
 
-Important current limitations:
+Copy [bff/.env.example](bff/.env.example) for the full list. In production, set `ENVIRONMENT=production`, a non-default high-entropy `SECRET_KEY` of at least 32 characters, and `COOKIE_SECURE=true`; invalid settings stop startup. Cookie name, path, optional domain, SameSite policy, and lifetime are configurable and used consistently for login, authentication, and logout.
 
-- `SECRET_KEY` has a development default in code; always override it.
-- Cookies are currently emitted with `Secure=false`.
-- Changing `COOKIE_NAME` currently breaks protected endpoints because the cookie reader is hardcoded to `admin_token`.
-- `start-prod.sh` currently tries to bind nginx to the gateway's port 8080 and therefore cannot run beside the expected local gateway. Do not use it unchanged.
+Cross-site cookies are intentionally unsupported: `COOKIE_SAMESITE` accepts only `strict` or `lax`. This keeps cookie-authenticated mutation routes protected by same-site browser policy until a separate CSRF token mechanism is implemented. Proxy headers remain untrusted by default; enable uvicorn's `--proxy-headers --forwarded-allow-ips "$TRUSTED_PROXY_IPS"` only when `TRUST_PROXY_HEADERS=true` and the BFF is behind those known proxies.
 
 ## BFF endpoints
 
@@ -80,7 +81,7 @@ There is no BFF `/admin/billing` route today.
 
 ## Production deployment direction
 
-Build static assets with `pnpm run build`, serve `frontend/dist` on a port/domain distinct from the gateway, and reverse-proxy `/auth` and `/admin` to a multi-worker BFF. Before deployment, fix/configure secure cookies, require a strong signing key, enable HTTPS, normalize upstream failures, and restrict CORS to the actual UI origin.
+Build static assets with `pnpm run build`, serve `frontend/dist` on a port/domain distinct from the gateway, and reverse-proxy `/auth` and `/admin` to a multi-worker BFF. Enable HTTPS, set the production cookie/signing configuration, and restrict CORS to the actual UI origin.
 
 ## More detail
 

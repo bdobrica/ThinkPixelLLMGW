@@ -6,7 +6,7 @@ from .security import verify_token
 
 
 async def get_current_admin_token(
-    admin_token: Annotated[str | None, Cookie()] = None
+    admin_token: Annotated[str | None, Cookie(alias=settings.cookie_name)] = None
 ) -> str:
     """Extract and verify the admin JWT from the signed cookie.
     

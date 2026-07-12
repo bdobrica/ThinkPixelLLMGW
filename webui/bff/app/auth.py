@@ -11,6 +11,17 @@ from .dependencies import get_current_admin_token
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def cookie_options() -> dict:
+    """Return the shared attributes used to create and remove the auth cookie."""
+    return {
+        "path": settings.cookie_path,
+        "domain": settings.cookie_domain,
+        "secure": settings.cookie_secure,
+        "httponly": True,
+        "samesite": settings.cookie_samesite,
+    }
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -55,9 +66,7 @@ async def login(request: LoginRequest, response: Response):
         key=settings.cookie_name,
         value=signed_token,
         max_age=settings.cookie_max_age,
-        httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="strict",
+        **cookie_options(),
     )
     
     return LoginResponse(success=True)
@@ -68,9 +77,7 @@ async def logout(response: Response):
     """Clear the authentication cookie."""
     response.delete_cookie(
         key=settings.cookie_name,
-        httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="strict",
+        **cookie_options(),
     )
     return LogoutResponse(success=True)
 

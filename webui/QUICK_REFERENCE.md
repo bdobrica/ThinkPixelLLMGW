@@ -32,7 +32,8 @@ cd webui/frontend
 pnpm run build
 
 cd ../bff
-python3 -m compileall -q app
+pip install -r requirements-dev.txt
+python3 -m pytest -q
 ```
 
 ## URLs
@@ -47,14 +48,18 @@ python3 -m compileall -q app
 `webui/bff/.env`:
 
 ```dotenv
+ENVIRONMENT=development
 GATEWAY_BASE_URL=http://localhost:8080
 SECRET_KEY=replace-this-development-default
 COOKIE_NAME=admin_token
+COOKIE_PATH=/
+COOKIE_SECURE=false
+COOKIE_SAMESITE=strict
 COOKIE_MAX_AGE=3600
 CORS_ORIGINS=["http://localhost:5173"]
 ```
 
-Do not change `COOKIE_NAME` until the hardcoded cookie-reader issue is fixed. Production also requires code/config changes for `Secure` cookies and a UI port distinct from gateway port 8080.
+For production use `ENVIRONMENT=production`, `COOKIE_SECURE=true`, HTTPS, and a high-entropy `SECRET_KEY` of at least 32 characters. `COOKIE_NAME`, `COOKIE_PATH`, `COOKIE_DOMAIN`, `COOKIE_SAMESITE`, and `COOKIE_MAX_AGE` are supported. See `bff/.env.example`.
 
 ## Implemented routes
 
@@ -71,7 +76,7 @@ Billing is not implemented. The Models and Billing pages are placeholders.
 
 **Login always fails:** check gateway and BFF health, confirm the admin exists, inspect the BFF response/logs, and clear the `admin_token` cookie.
 
-**401 after changing `COOKIE_NAME`:** restore `admin_token`; the current dependency does not honor a custom name.
+**BFF will not start in production:** replace the default/weak signing key and set `COOKIE_SECURE=true`.
 
 **CORS error:** ensure `CORS_ORIGINS` is a JSON list containing the exact frontend origin. Development normally uses the Vite proxy and same-origin requests.
 

@@ -19,7 +19,7 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 ### BFF
 
 - `app/main.py`: FastAPI app, CORS middleware, `/health`, and router registration
-- `app/config.py`: environment-backed gateway, cookie, signing, and CORS settings
+- `app/config.py`: environment-backed gateway, validated production signing, explicit cookie, proxy-trust, and CORS settings
 - `app/security.py`: timed itsdangerous signing and verification
 - `app/dependencies.py`: authentication-cookie dependency
 - `app/gateway_client.py`: async gateway HTTP calls
@@ -51,16 +51,17 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 - Models, billing, and dashboard-statistics UI are unfinished.
 - The gateway has no `/admin/billing` endpoint and the BFF route is commented out.
 - The frontend client still contains an unused `getBilling()` call that would receive 404.
-- No automated BFF or frontend tests are present.
+- BFF cookie/configuration tests are present; frontend tests are not yet present.
 - BFF upstream connection/timeout errors are not translated into explicit 502/504 responses.
 - Each gateway request creates a new `httpx.AsyncClient` rather than reusing an application-lifetime pool.
-- Cookie secure mode is hardcoded off, the signing secret has a public default, and a custom cookie name is not read correctly.
+- Cross-site cookies are deliberately disallowed until a CSRF token mechanism exists; strict/lax same-site cookies are supported.
 - `start-prod.sh` conflicts with the gateway on port 8080; the fallback server also lacks API proxying and SPA routing.
 
 ## Verification
 
 - `pnpm run build`: passed
 - `python3 -m compileall -q app`: passed
+- `python3 -m pytest -q`: 6 passed (cookie/configuration suite)
 - Runtime login/proxy flow: not exercised because the review environment did not run the dependency stack
 
 For prioritized remediation, see [../CODE_REVIEW.md](../CODE_REVIEW.md) and [../TODO.md](../TODO.md).

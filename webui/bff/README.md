@@ -26,22 +26,17 @@ pip install -r requirements.txt
 
 ### 3. Configure environment variables
 
-Create a `.env` file in this directory (optional, defaults work for local dev):
+Copy `.env.example` to `.env` (defaults work for local development):
 
 ```env
-# Go gateway URL
+ENVIRONMENT=development
 GATEWAY_BASE_URL=http://localhost:8080
-
-# Cookie signing secret (change in production!)
 SECRET_KEY=change-this-to-a-secure-random-key-in-production
-
-# Cookie name
 COOKIE_NAME=admin_token
-
-# Cookie max age (seconds)
+COOKIE_PATH=/
+COOKIE_SECURE=false
+COOKIE_SAMESITE=strict
 COOKIE_MAX_AGE=3600
-
-# CORS origins (comma-separated)
 CORS_ORIGINS=["http://localhost:5173"]
 ```
 
@@ -89,8 +84,13 @@ For local development, ensure:
 ## Security Notes
 
 For production:
-- Set `SECRET_KEY` to a secure random value
-- Enable `secure=True` on cookies (requires HTTPS)
+- Set `ENVIRONMENT=production`; startup rejects a default, short, or low-entropy `SECRET_KEY`
+- Set `COOKIE_SECURE=true` and terminate HTTPS before the browser
+- Configure cookie name, path, optional domain, SameSite (`strict` or `lax`), and maximum age as needed
 - Update `CORS_ORIGINS` to match your production frontend URL
 - Consider adding rate limiting
 - Use a reverse proxy (nginx/traefik) for SSL termination
+
+Cross-site cookies (`SameSite=None`) are not accepted because the BFF does not yet issue CSRF tokens. Proxy headers are ignored by default. If they are required, set `TRUST_PROXY_HEADERS=true` and start uvicorn with `--proxy-headers --forwarded-allow-ips "$TRUSTED_PROXY_IPS"`, limiting the IP list to known proxies.
+
+Run the BFF suite with `pip install -r requirements-dev.txt && python -m pytest -q`.
