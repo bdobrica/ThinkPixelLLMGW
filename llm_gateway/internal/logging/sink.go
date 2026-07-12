@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -70,6 +71,7 @@ type S3Sink struct {
 	flushSize     int
 	flushInterval time.Duration
 	logger        *utils.Logger
+	privacy       PrivacyPolicy
 
 	stopChan    chan struct{}
 	stoppedChan chan struct{}
@@ -86,6 +88,9 @@ type S3Sink struct {
 
 // NewS3Sink creates a new S3-based logging sink with Redis buffer
 func NewS3Sink(ctx context.Context, config S3SinkConfig, buffer LogBuffer) (*S3Sink, error) {
+	if config.Privacy.MaxBodyBytes == 0 {
+		config.Privacy = DefaultPrivacyPolicy()
+	}
 	// Create S3 writer
 	writer, err := NewS3Writer(ctx, config.S3Bucket, config.S3Region, config.S3Prefix, config.PodName)
 	if err != nil {
@@ -98,6 +103,7 @@ func NewS3Sink(ctx context.Context, config S3SinkConfig, buffer LogBuffer) (*S3S
 		flushSize:     config.FlushSize,
 		flushInterval: config.FlushInterval,
 		logger:        utils.NewLogger("s3-sink", utils.Info),
+		privacy:       config.Privacy,
 		stopChan:      make(chan struct{}),
 		stoppedChan:   make(chan struct{}),
 	}
@@ -120,12 +126,20 @@ type S3SinkConfig struct {
 	S3Region      string
 	S3Prefix      string
 	PodName       string
+	Privacy       PrivacyPolicy
 }
 
 // Enqueue adds a log record to the Redis buffer
 func (s *S3Sink) Enqueue(rec *LogRecord) error {
+	if s.privacy.SampleRate <= 0 || (s.privacy.SampleRate < 1 && rand.Float64() >= s.privacy.SampleRate) {
+		return nil
+	}
+	copy := *rec
+	copy.Error = redactCredentialPatterns(rec.Error)
+	copy.RequestPayload = sanitizePayload(rec.RequestPayload, s.privacy)
+	copy.ResponsePayload = sanitizePayload(rec.ResponsePayload, s.privacy)
 	ctx := context.Background()
-	return s.buffer.Enqueue(ctx, rec)
+	return s.buffer.Enqueue(ctx, &copy)
 }
 
 // run is the main background worker loop that drains Redis buffer and flushes batches to S3

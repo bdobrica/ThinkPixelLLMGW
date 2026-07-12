@@ -66,6 +66,34 @@ func TestLoadValidatesEnabledS3Sink(t *testing.T) {
 	}
 }
 
+func TestLoadAuditPrivacyPolicy(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("AUDIT_BODY_MODE", "redacted")
+	t.Setenv("AUDIT_MAX_BODY_BYTES", "2048")
+	t.Setenv("AUDIT_SAMPLE_RATE", "0.25")
+	t.Setenv("AUDIT_SENSITIVE_FIELDS", "ssn,customer_secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RequestLogger.BodyMode != "redacted" || cfg.RequestLogger.MaxBodyBytes != 2048 || cfg.RequestLogger.SampleRate != 0.25 {
+		t.Fatalf("unexpected policy: %#v", cfg.RequestLogger)
+	}
+}
+
+func TestLoadRejectsInvalidAuditPrivacyPolicy(t *testing.T) {
+	for key, value := range map[string]string{"AUDIT_BODY_MODE": "plaintext", "AUDIT_MAX_BODY_BYTES": "0", "AUDIT_SAMPLE_RATE": "1.1"} {
+		t.Run(key, func(t *testing.T) {
+			setRequiredConfig(t)
+			t.Setenv(key, value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("expected %s error, got %v", key, err)
+			}
+		})
+	}
+}
+
 func setRequiredConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")

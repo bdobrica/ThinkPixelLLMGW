@@ -158,6 +158,17 @@ REQUEST_LOGGER_BUFFER_SIZE=100
 REQUEST_LOGGER_FLUSH_INTERVAL=60s
 ```
 
+Audit content controls apply to local files and Redis/S3:
+
+```bash
+AUDIT_BODY_MODE=hash              # none, hash, or redacted
+AUDIT_MAX_BODY_BYTES=4096
+AUDIT_SAMPLE_RATE=1               # 0..1
+AUDIT_SENSITIVE_FIELDS=ssn,customer_secret
+```
+
+See [Audit Logging Privacy and Retention](logging-privacy.md) before retaining prompt or response content.
+
 ### Logging Sink Configuration (S3 Analytics)
 
 The logging sink writes structured request/response logs to S3 for analytics and compliance.

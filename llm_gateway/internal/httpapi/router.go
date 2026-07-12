@@ -216,6 +216,7 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 	})
 
 	// Initialize S3 logging sink
+	privacyPolicy := logging.NewPrivacyPolicy(cfg.RequestLogger.BodyMode, cfg.RequestLogger.MaxBodyBytes, cfg.RequestLogger.SampleRate, cfg.RequestLogger.SensitiveFields)
 	s3SinkConfig := logging.S3SinkConfig{
 		Enabled:       cfg.LoggingSink.Enabled,
 		BufferSize:    cfg.LoggingSink.BufferSize,
@@ -225,6 +226,7 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 		S3Region:      cfg.LoggingSink.S3Region,
 		S3Prefix:      cfg.LoggingSink.S3Prefix,
 		PodName:       cfg.LoggingSink.PodName,
+		Privacy:       privacyPolicy,
 	}
 	s3Sink, err := logging.NewSinkFromConfig(context.Background(), s3SinkConfig, logBuffer)
 	if err != nil {
@@ -233,12 +235,13 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 	deps.Logger = s3Sink
 
 	// Initialize request logger
-	requestLogger, err := logging.NewLogger(
+	requestLogger, err := logging.NewLoggerWithPrivacy(
 		cfg.RequestLogger.FilePathTemplate,
 		cfg.RequestLogger.MaxSize,
 		cfg.RequestLogger.MaxFiles,
 		cfg.RequestLogger.BufferSize,
 		cfg.RequestLogger.FlushInterval,
+		privacyPolicy,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize request logger: %w", err)

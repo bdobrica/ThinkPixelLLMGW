@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,10 +43,11 @@ type RequestLogger struct {
 	writer      *bufio.Writer
 	currentSize int64
 
-	logCh  chan RequestLog
-	doneCh chan struct{}
-	wg     sync.WaitGroup
-	closed bool
+	logCh   chan RequestLog
+	doneCh  chan struct{}
+	wg      sync.WaitGroup
+	closed  bool
+	privacy PrivacyPolicy
 }
 
 var sensitiveHeaderNames = map[string]struct{}{
@@ -85,13 +87,17 @@ func (logger *RequestLogger) openFile() error {
 	// Ensure the directory exists
 	dir := filepath.Dir(logger.currentFile)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
 
 	file, err := os.OpenFile(logger.currentFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, requestLogFilePerm)
 	if err != nil {
+		return err
+	}
+	if err := file.Chmod(requestLogFilePerm); err != nil {
+		file.Close()
 		return err
 	}
 	fi, err := file.Stat()
@@ -215,12 +221,19 @@ func (logger *RequestLogger) writeEntry(entry RequestLog) {
 
 // LogRequest queues a request for logging. If the queue is full, the log entry is dropped.
 func (logger *RequestLogger) LogRequest(r *http.Request) {
+	if logger.privacy.SampleRate <= 0 || (logger.privacy.SampleRate < 1 && rand.Float64() >= logger.privacy.SampleRate) {
+		return
+	}
 	headers := make(map[string][]string, len(r.Header))
 	for k, v := range r.Header {
 		if isSensitiveHeader(k) {
 			continue
 		}
-		headers[k] = v
+		clean := make([]string, len(v))
+		for i := range v {
+			clean[i] = redactCredentialPatterns(v[i])
+		}
+		headers[k] = clean
 	}
 
 	// Read the request body and store it as a string.
@@ -229,7 +242,22 @@ func (logger *RequestLogger) LogRequest(r *http.Request) {
 		// Read the request body.
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil {
-			bodyStr = sanitizeBodyForLogging(bodyBytes)
+			switch logger.privacy.BodyMode {
+			case "hash":
+				bodyStr = sanitizeBodyForLogging(bodyBytes)
+			case "redacted":
+				if len(bodyBytes) > logger.privacy.MaxBodyBytes {
+					bodyStr = sanitizeBodyForLogging(bodyBytes)
+				} else {
+					var value any
+					if json.Unmarshal(bodyBytes, &value) == nil {
+						redacted, _ := json.Marshal(redactJSONValue(value, logger.privacy.SensitiveFields))
+						bodyStr = string(redacted)
+					} else {
+						bodyStr = sanitizeBodyForLogging(bodyBytes)
+					}
+				}
+			}
 		}
 		// Reset the request body so the handler can read it.
 		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -238,7 +266,7 @@ func (logger *RequestLogger) LogRequest(r *http.Request) {
 	entry := RequestLog{
 		Timestamp:  time.Now(),
 		Method:     r.Method,
-		URL:        r.URL.String(),
+		URL:        sanitizeURL(r, logger.privacy),
 		Headers:    headers,
 		RemoteAddr: r.RemoteAddr,
 		Body:       bodyStr,
@@ -248,6 +276,18 @@ func (logger *RequestLogger) LogRequest(r *http.Request) {
 	default:
 		// Queue full; dropping log entry.
 	}
+}
+
+func sanitizeURL(r *http.Request, policy PrivacyPolicy) string {
+	copy := *r.URL
+	query := copy.Query()
+	for key := range query {
+		if _, sensitive := policy.SensitiveFields[strings.ToLower(key)]; sensitive {
+			query.Set(key, "[REDACTED]")
+		}
+	}
+	copy.RawQuery = query.Encode()
+	return copy.String()
 }
 
 // Shutdown signals the logger to flush its buffer and close the file.
@@ -269,6 +309,10 @@ func (logger *RequestLogger) Shutdown() {
 // bufferSize determines how many log entries can be queued before writes block.
 // flushInterval defines how often the logger should flush its buffer.
 func NewLogger(fileTemplate string, maxSize int64, maxFiles, bufferSize int, flushInterval time.Duration) (*RequestLogger, error) {
+	return NewLoggerWithPrivacy(fileTemplate, maxSize, maxFiles, bufferSize, flushInterval, DefaultPrivacyPolicy())
+}
+
+func NewLoggerWithPrivacy(fileTemplate string, maxSize int64, maxFiles, bufferSize int, flushInterval time.Duration, privacy PrivacyPolicy) (*RequestLogger, error) {
 	logger := &RequestLogger{
 		fileTemplate:  fileTemplate,
 		maxSize:       maxSize,
@@ -276,6 +320,7 @@ func NewLogger(fileTemplate string, maxSize int64, maxFiles, bufferSize int, flu
 		flushInterval: flushInterval,
 		logCh:         make(chan RequestLog, bufferSize),
 		doneCh:        make(chan struct{}),
+		privacy:       privacy,
 	}
 
 	if err := logger.openFile(); err != nil {

@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"llm_gateway/internal/utils"
 )
@@ -85,11 +86,12 @@ func (w *S3Writer) WriteBatch(ctx context.Context, records []*LogRecord) (string
 
 	// Upload to S3
 	_, err := w.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:          aws.String(w.bucket),
-		Key:             aws.String(key),
-		Body:            bytes.NewReader(buf.Bytes()),
-		ContentType:     aws.String("application/x-ndjson"),
-		ContentEncoding: aws.String("gzip"),
+		Bucket:               aws.String(w.bucket),
+		Key:                  aws.String(key),
+		Body:                 bytes.NewReader(buf.Bytes()),
+		ContentType:          aws.String("application/x-ndjson"),
+		ContentEncoding:      aws.String("gzip"),
+		ServerSideEncryption: types.ServerSideEncryptionAes256,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to S3: %w", err)

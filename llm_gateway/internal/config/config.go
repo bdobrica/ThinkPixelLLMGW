@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -72,6 +73,10 @@ type RequestLoggerConfig struct {
 	MaxFiles         int
 	BufferSize       int
 	FlushInterval    time.Duration
+	BodyMode         string
+	MaxBodyBytes     int
+	SampleRate       float64
+	SensitiveFields  []string
 }
 
 // LoggingSinkConfig holds configuration for the S3-based logging sink
@@ -110,6 +115,14 @@ func getEnvInt64(key string, defaultValue int64) int64 {
 		return defaultValue
 	}
 	return intVal
+}
+
+func getEnvFloat(key string, defaultValue float64) float64 {
+	value, err := strconv.ParseFloat(os.Getenv(key), 64)
+	if err != nil {
+		return defaultValue
+	}
+	return value
 }
 
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
@@ -243,6 +256,10 @@ func Load() (*Config, error) {
 			MaxFiles:         getEnvInt("REQUEST_LOGGER_MAX_FILES", 5),                        // default 5
 			BufferSize:       getEnvInt("REQUEST_LOGGER_BUFFER_SIZE", 100),                    // default 100
 			FlushInterval:    getEnvDuration("REQUEST_LOGGER_FLUSH_INTERVAL", 60*time.Second), // default 60 seconds
+			BodyMode:         getEnvString("AUDIT_BODY_MODE", "hash"),
+			MaxBodyBytes:     getEnvInt("AUDIT_MAX_BODY_BYTES", 4096),
+			SampleRate:       getEnvFloat("AUDIT_SAMPLE_RATE", 1),
+			SensitiveFields:  strings.Split(getEnvString("AUDIT_SENSITIVE_FIELDS", ""), ","),
 		},
 		LoggingSink: LoggingSinkConfig{
 			Enabled:       getEnvString("LOGGING_SINK_ENABLED", "false") == "true",
@@ -254,6 +271,15 @@ func Load() (*Config, error) {
 			S3Prefix:      getEnvString("LOGGING_SINK_S3_PREFIX", "logs/"),
 			PodName:       getEnvString("POD_NAME", "gateway-0"),
 		},
+	}
+	if cfg.RequestLogger.BodyMode != "none" && cfg.RequestLogger.BodyMode != "hash" && cfg.RequestLogger.BodyMode != "redacted" {
+		return nil, fmt.Errorf("AUDIT_BODY_MODE must be none, hash, or redacted")
+	}
+	if cfg.RequestLogger.MaxBodyBytes <= 0 {
+		return nil, fmt.Errorf("AUDIT_MAX_BODY_BYTES must be positive")
+	}
+	if cfg.RequestLogger.SampleRate < 0 || cfg.RequestLogger.SampleRate > 1 {
+		return nil, fmt.Errorf("AUDIT_SAMPLE_RATE must be between 0 and 1")
 	}
 	if cfg.LoggingSink.Enabled {
 		if cfg.LoggingSink.S3Bucket == "" {

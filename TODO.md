@@ -44,4 +44,4 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 - [ ] Reconcile the detailed files under `docs/` with current environment-variable names and routes.
 - [ ] Add an actual root `.env.example` or remove instructions that reference it from older guides.
-- [ ] Document data retention/redaction policy for prompts, responses, request files, Redis, and S3.
+- [x] Document and enforce audit body modes, sampling, redaction, size limits, file permissions, Redis lifecycle, and encrypted S3 retention responsibilities.

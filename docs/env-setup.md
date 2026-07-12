@@ -111,6 +111,7 @@ Enable background worker to drain logs from Redis to S3:
 ⚠️ **Important Security Considerations:**
 
 - **Never commit `.env` to version control** - It's already in `.gitignore`
+- Keep `AUDIT_BODY_MODE=hash` or `none` unless prompt/response retention has an approved privacy and lifecycle policy; see `docs/logging-privacy.md`.
 - **Always use strong random secrets** for `ENCRYPTION_KEY` and `JWT_SECRET`
 - **Use secure key generation:**
   ```bash

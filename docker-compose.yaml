@@ -131,6 +131,9 @@ services:
       
       # Logging
       LOG_BUFFER_MAX_SIZE: "100000"
+      AUDIT_BODY_MODE: "hash"
+      AUDIT_MAX_BODY_BYTES: "4096"
+      AUDIT_SAMPLE_RATE: "1"
       
       # S3 Logging Background Worker
       LOGGING_SINK_ENABLED: "true"
