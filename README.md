@@ -114,6 +114,7 @@ The S3 example requires the environment and services described in [llm_gateway/e
 | `POST /v1/chat/completions` | gateway API key | Chat proxy |
 | `POST /admin/auth/login` | none | Email/password login |
 | `POST /admin/auth/token` | none | Service-token login |
+| `GET /admin/me` | admin JWT | Current administrator/service identity |
 | `/admin/keys[/{id}]` | admin JWT | API-key CRUD and regeneration |
 | `/admin/providers[/{id}]` | admin JWT | Provider CRUD |
 | `/admin/models[/{id}]` | admin JWT | Model CRUD |

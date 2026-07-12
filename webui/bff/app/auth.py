@@ -35,6 +35,14 @@ class LogoutResponse(BaseModel):
     success: bool
 
 
+class CurrentAdminResponse(BaseModel):
+    admin_id: str
+    auth_type: str
+    roles: list[str]
+    email: str | None = None
+    service_name: str | None = None
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest, response: Response):
     """Authenticate with email/password and set signed cookie with JWT.
@@ -82,15 +90,15 @@ async def logout(response: Response):
     return LogoutResponse(success=True)
 
 
-@router.get("/me")
+@router.get("/me", response_model=CurrentAdminResponse)
 async def me(jwt_token: Annotated[str, Depends(get_current_admin_token)]):
-    """Get current admin user info by proxying to gateway /admin/test.
+    """Get current administrator identity from gateway /admin/me.
     
     This endpoint verifies the cookie and calls the gateway to get user details.
     """
     status_code, data = await gateway_request(
         method="GET",
-        path="/admin/test",
+        path="/admin/me",
         jwt_token=jwt_token
     )
     

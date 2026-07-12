@@ -43,6 +43,15 @@ type AuthResponse struct {
 	AuthType  string `json:"auth_type"`
 }
 
+// CurrentAdminResponse is the stable identity schema returned by GET /admin/me.
+type CurrentAdminResponse struct {
+	AdminID     string             `json:"admin_id"`
+	AuthType    auth.AdminAuthType `json:"auth_type"`
+	Roles       []string           `json:"roles"`
+	Email       string             `json:"email,omitempty"`
+	ServiceName string             `json:"service_name,omitempty"`
+}
+
 // Login handles email/password authentication
 func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -121,20 +130,25 @@ func (h *AdminAuthHandler) TokenAuth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// TestProtected is a test endpoint to verify JWT middleware
-func (h *AdminAuthHandler) TestProtected(w http.ResponseWriter, r *http.Request) {
+// CurrentAdmin returns the authenticated administrator or service identity.
+func (h *AdminAuthHandler) CurrentAdmin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		utils.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
 	claims, ok := middleware.GetAdminClaims(r.Context())
 	if !ok {
 		utils.RespondWithError(w, http.StatusUnauthorized, "No admin claims found")
 		return
 	}
 
-	utils.RespondWithJSON(w, http.StatusOK, map[string]interface{}{
-		"message":      "Access granted",
-		"admin_id":     claims.AdminID,
-		"auth_type":    claims.AuthType,
-		"roles":        claims.Roles,
-		"email":        claims.Email,
-		"service_name": claims.ServiceName,
+	utils.RespondWithJSON(w, http.StatusOK, CurrentAdminResponse{
+		AdminID:     claims.AdminID,
+		AuthType:    claims.AuthType,
+		Roles:       claims.Roles,
+		Email:       claims.Email,
+		ServiceName: claims.ServiceName,
 	})
 }

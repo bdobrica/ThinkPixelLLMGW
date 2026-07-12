@@ -80,9 +80,21 @@ async def test_custom_cookie_name_round_trip_and_logout_attributes(monkeypatch) 
             )
             with patch(
                 "app.auth.gateway_request",
-                new=AsyncMock(return_value=(200, {"email": "admin@example.test"})),
+                new=AsyncMock(
+                    return_value=(
+                        200,
+                        {
+                            "admin_id": "admin-123",
+                            "auth_type": "user",
+                            "roles": ["admin"],
+                            "email": "admin@example.test",
+                        },
+                    )
+                ),
             ):
-                assert (await client.get("/auth/me")).status_code == 200
+                current = await client.get("/auth/me")
+                assert current.status_code == 200
+                assert current.json()["admin_id"] == "admin-123"
 
             logout = await client.post("/auth/logout")
             deleted = logout.headers["set-cookie"]

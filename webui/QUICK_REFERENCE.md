@@ -88,6 +88,8 @@ For production use `ENVIRONMENT=production`, `COOKIE_SECURE=true`, HTTPS, and a 
 
 Billing is not implemented. The Models and Billing pages are placeholders.
 
+`GET /auth/me` proxies the stable gateway `GET /admin/me` identity contract. The former production `/admin/test` route has been removed.
+
 ## Troubleshooting
 
 **Login always fails:** check gateway and BFF health, confirm the admin exists, inspect the BFF response/logs, and clear the `admin_token` cookie.

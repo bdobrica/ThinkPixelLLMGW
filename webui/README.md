@@ -77,7 +77,7 @@ The BFF reuses one bounded HTTP connection pool for its lifetime. Connect, read,
 | `GET /ready` | BFF and gateway readiness |
 | `POST /auth/login` | Gateway login and cookie creation |
 | `POST /auth/logout` | Delete the cookie |
-| `GET /auth/me` | Return current JWT claims via gateway `/admin/test` |
+| `GET /auth/me` | Return current identity via gateway `GET /admin/me` |
 | `GET, POST /admin/api-keys` | List/create keys |
 | `PUT, DELETE /admin/api-keys/{id}` | Update/revoke a key |
 | `GET /admin/models` | List models |

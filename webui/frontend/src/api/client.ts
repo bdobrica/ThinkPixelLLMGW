@@ -73,6 +73,7 @@ export interface AdminUser {
   email?: string
   roles: string[]
   auth_type: string
+  service_name?: string
 }
 
 /**

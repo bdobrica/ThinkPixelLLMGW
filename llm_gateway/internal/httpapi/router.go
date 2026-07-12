@@ -24,6 +24,7 @@ import (
 	"llm_gateway/internal/queue"
 	"llm_gateway/internal/ratelimit"
 	"llm_gateway/internal/storage"
+	"llm_gateway/internal/utils"
 )
 
 // Dependencies aggregates all services the HTTP layer needs.
@@ -409,9 +410,16 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 	mux.HandleFunc("/admin/auth/login", adminAuthHandler.Login)
 	mux.HandleFunc("/admin/auth/token", adminAuthHandler.TokenAuth)
 
-	// Protected admin test endpoint
+	// Current authenticated administrator endpoint.
 	adminJWT := middleware.AdminJWTMiddleware(cfg)
-	mux.Handle("/admin/test", adminJWT(http.HandlerFunc(adminAuthHandler.TestProtected)))
+	mux.Handle("/admin/me", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			utils.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		adminJWT(http.HandlerFunc(adminAuthHandler.CurrentAdmin)).ServeHTTP(w, r)
+	}))
 
 	// Admin management endpoints - protected with AdminJWTMiddleware
 	// Require at least "viewer" role

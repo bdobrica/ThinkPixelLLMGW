@@ -44,7 +44,7 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 | Browser/BFF route | Gateway route |
 |---|---|
 | `POST /auth/login` | `POST /admin/auth/login` |
-| `GET /auth/me` | `GET /admin/test` |
+| `GET /auth/me` | `GET /admin/me` |
 | `GET, POST /admin/api-keys` | `GET, POST /admin/keys` |
 | `PUT, DELETE /admin/api-keys/{id}` | `PUT, DELETE /admin/keys/{id}` |
 | `GET /admin/models` | `GET /admin/models` |
@@ -61,7 +61,7 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 
 - `pnpm run build`: passed
 - `python3 -m compileall -q app`: passed
-- `python3 -m pytest -q`: 16 passed (including launcher rendering, failure propagation, and cleanup)
+- `python3 -m pytest -q`: 17 passed (including the current-administrator gateway contract)
 - `bash -n webui/start-prod.sh`: passed
 - Runtime login/proxy flow: not exercised because the review environment did not run the dependency stack
 

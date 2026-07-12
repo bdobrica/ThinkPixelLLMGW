@@ -58,7 +58,7 @@ The BFF creates one application-lifetime gateway client with separate connect, r
 
 - `POST /auth/login` - Login with email/password, sets cookie
 - `POST /auth/logout` - Clears the auth cookie
-- `GET /auth/me` - Get current admin user info (requires auth)
+- `GET /auth/me` - Get the current identity through gateway `GET /admin/me` (requires auth)
 - `GET /health` - BFF process liveness only
 - `GET /ready` - BFF readiness including gateway `/ready`
 
@@ -68,7 +68,8 @@ All admin endpoints require authentication via cookie:
 
 - `GET /admin/api-keys` - List API keys
 - `GET /admin/models` - List models
-- `GET /admin/billing` - Get billing information
+
+Billing is not implemented in either the BFF or gateway yet.
 
 ## Architecture
 
