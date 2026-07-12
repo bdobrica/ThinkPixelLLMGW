@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"llm_gateway/internal/queue"
@@ -25,6 +26,7 @@ type BillingQueueWorker struct {
 	config      *queue.Config
 	stopChan    chan struct{}
 	stoppedChan chan struct{}
+	stopOnce    sync.Once
 }
 
 // NewBillingQueueWorker creates a new billing queue worker
@@ -50,9 +52,18 @@ func (w *BillingQueueWorker) Start(ctx context.Context) {
 
 // Stop gracefully stops the worker
 func (w *BillingQueueWorker) Stop() error {
-	close(w.stopChan)
-	<-w.stoppedChan
-	return nil
+	return w.StopContext(context.Background())
+}
+
+// StopContext gracefully stops the worker without waiting beyond ctx's deadline.
+func (w *BillingQueueWorker) StopContext(ctx context.Context) error {
+	w.stopOnce.Do(func() { close(w.stopChan) })
+	select {
+	case <-w.stoppedChan:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Enqueue adds a billing update to the queue

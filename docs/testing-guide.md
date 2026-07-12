@@ -26,6 +26,8 @@ The gateway command tests use real loopback sockets (not a response recorder) to
 go test -short ./cmd/gateway ./internal/config ./internal/providers
 ```
 
+Lifecycle unit tests also verify idempotent resource closure and aggregated cleanup errors. Router construction uses deferred rollback for partial startup failures. Compose-backed shutdown verification should confirm the final usage/billing rows and S3 log objects; Redis-backed queue entries not reached before the deadline are deliberately retained for the next process.
+
 For a stricter local/CI run:
 
 ```bash

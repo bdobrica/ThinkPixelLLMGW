@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"llm_gateway/internal/models"
@@ -19,6 +20,7 @@ type UsageQueueWorker struct {
 	config      *queue.Config
 	stopChan    chan struct{}
 	stoppedChan chan struct{}
+	stopOnce    sync.Once
 }
 
 // NewUsageQueueWorker creates a new usage queue worker
@@ -44,9 +46,18 @@ func (w *UsageQueueWorker) Start(ctx context.Context) {
 
 // Stop gracefully stops the worker
 func (w *UsageQueueWorker) Stop() error {
-	close(w.stopChan)
-	<-w.stoppedChan
-	return nil
+	return w.StopContext(context.Background())
+}
+
+// StopContext gracefully stops the worker without waiting beyond ctx's deadline.
+func (w *UsageQueueWorker) StopContext(ctx context.Context) error {
+	w.stopOnce.Do(func() { close(w.stopChan) })
+	select {
+	case <-w.stoppedChan:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Enqueue adds a usage record to the queue

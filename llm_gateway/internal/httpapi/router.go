@@ -3,10 +3,12 @@ package httpapi
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"llm_gateway/internal/auth"
@@ -37,10 +39,87 @@ type Dependencies struct {
 	// Database and encryption for admin handlers
 	DB         *storage.DB
 	Encryption *storage.Encryption
+
+	redisClient   *storage.RedisClient
+	billingQueue  queue.Queue
+	billingDLQ    queue.DeadLetterQueue
+	usageQueue    queue.Queue
+	usageDLQ      queue.DeadLetterQueue
+	billingWorker *billing.BillingQueueWorker
+	usageWorker   *storage.UsageQueueWorker
+	workerCancel  context.CancelFunc
+	closeOnce     sync.Once
+	closeErr      error
+}
+
+// Close stops background producers and workers, flushes buffered state, and
+// releases every infrastructure resource owned by NewRouter. It is idempotent.
+func (d *Dependencies) Close(ctx context.Context) error {
+	d.closeOnce.Do(func() {
+		var errs []error
+		if d.workerCancel != nil {
+			d.workerCancel()
+		}
+		if d.billingWorker != nil {
+			errs = appendCloseError(errs, "billing worker", d.billingWorker.StopContext(ctx))
+		}
+		if d.usageWorker != nil {
+			errs = appendCloseError(errs, "usage worker", d.usageWorker.StopContext(ctx))
+		}
+		if d.RequestLogger != nil {
+			d.RequestLogger.Shutdown()
+		}
+		if d.Logger != nil {
+			errs = appendCloseError(errs, "logging sink", d.Logger.Shutdown(ctx))
+		}
+		if service, ok := d.Billing.(interface{ Shutdown(context.Context) error }); ok {
+			errs = appendCloseError(errs, "billing service", service.Shutdown(ctx))
+		}
+		if registry, ok := d.Providers.(interface{ Close() error }); ok {
+			errs = appendCloseError(errs, "provider registry", registry.Close())
+		}
+		if d.billingQueue != nil {
+			errs = appendCloseError(errs, "billing queue", d.billingQueue.Close())
+		}
+		if d.billingDLQ != nil {
+			errs = appendCloseError(errs, "billing dead-letter queue", d.billingDLQ.Close())
+		}
+		if d.usageQueue != nil {
+			errs = appendCloseError(errs, "usage queue", d.usageQueue.Close())
+		}
+		if d.usageDLQ != nil {
+			errs = appendCloseError(errs, "usage dead-letter queue", d.usageDLQ.Close())
+		}
+		if d.redisClient != nil {
+			errs = appendCloseError(errs, "Redis client", d.redisClient.Close())
+		}
+		if d.DB != nil {
+			errs = appendCloseError(errs, "database", d.DB.Close())
+		}
+		d.closeErr = errors.Join(errs...)
+	})
+	return d.closeErr
+}
+
+func appendCloseError(errs []error, name string, err error) []error {
+	if err != nil {
+		return append(errs, fmt.Errorf("close %s: %w", name, err))
+	}
+	return errs
 }
 
 // NewRouter creates an HTTP router with all dependencies wired up
-func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
+func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err error) {
+	deps = &Dependencies{}
+	defer func() {
+		if err != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if cleanupErr := deps.Close(cleanupCtx); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("rollback router dependencies: %w", cleanupErr))
+			}
+		}
+	}()
 	// Initialize database
 	dbConfig := storage.DBConfig{
 		DSN:             cfg.Database.URL,
@@ -58,6 +137,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
+	deps.DB = db
 
 	// Initialize Redis client
 	redisClient, err := storage.NewRedisClient(storage.RedisConfig{
@@ -73,6 +153,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize Redis: %w", err)
 	}
+	deps.redisClient = redisClient
 
 	// Initialize repositories
 	apiKeyRepo := storage.NewAPIKeyRepository(db)
@@ -114,6 +195,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize provider registry: %w", err)
 	}
+	deps.Providers = registry
 
 	// Initialize rate limiter
 	rateLimiter := ratelimit.NewRateLimiter(redisClient.Client())
@@ -124,6 +206,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		db,
 		5*time.Minute, // Sync to database every 5 minutes
 	)
+	deps.Billing = billingService
 
 	// Initialize logging buffer
 	logBuffer := logging.NewRedisBuffer(redisClient.Client(), logging.RedisBufferConfig{
@@ -147,6 +230,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize S3 sink: %w", err)
 	}
+	deps.Logger = s3Sink
 
 	// Initialize request logger
 	requestLogger, err := logging.NewLogger(
@@ -159,6 +243,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize request logger: %w", err)
 	}
+	deps.RequestLogger = requestLogger
 
 	// Initialize queue infrastructure
 	// Check if Redis is available for queues
@@ -182,14 +267,17 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create billing queue: %w", err)
 		}
+		deps.billingQueue = billingQueue
 		billingDLQ, err = queue.NewRedisDeadLetterQueue(billingQueueCfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create billing DLQ: %w", err)
 		}
+		deps.billingDLQ = billingDLQ
 	} else {
 		billingQueue = queue.NewMemoryQueue(billingQueueCfg)
 		billingDLQ = queue.NewMemoryDeadLetterQueue()
 	}
+	deps.billingQueue, deps.billingDLQ = billingQueue, billingDLQ
 
 	// Create usage queue
 	var usageQueue queue.Queue
@@ -209,6 +297,7 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create usage queue: %w", err)
 		}
+		deps.usageQueue = usageQueue
 		usageDLQ, err = queue.NewRedisDeadLetterQueue(usageQueueCfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create usage DLQ: %w", err)
@@ -217,34 +306,31 @@ func NewRouter(cfg *config.Config) (*http.ServeMux, *Dependencies, error) {
 		usageQueue = queue.NewMemoryQueue(usageQueueCfg)
 		usageDLQ = queue.NewMemoryDeadLetterQueue()
 	}
+	deps.usageQueue, deps.usageDLQ = usageQueue, usageDLQ
 
 	// Create queue workers
 	billingWorker := billing.NewBillingQueueWorker(billingQueue, billingDLQ, billingService, billingQueueCfg)
 	usageWorker := storage.NewUsageQueueWorker(usageQueue, usageDLQ, db, usageQueueCfg)
 
 	// Start queue workers
-	billingWorker.Start(context.Background())
-	usageWorker.Start(context.Background())
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	deps.workerCancel = workerCancel
+	billingWorker.Start(workerCtx)
+	usageWorker.Start(workerCtx)
 
 	// Initialize Prometheus metrics
 	prometheusMetrics := metrics.NewPrometheusMetrics()
 
 	// Create dependencies
-	deps := &Dependencies{
-		APIKeys:       NewDatabaseAPIKeyStore(apiKeyRepo),
-		AdminStore:    NewAdminStoreAdapter(adminUserRepo, adminTokenRepo),
-		Providers:     registry,
-		RateLimit:     rateLimiter,
-		Billing:       billingService,
-		Logger:        s3Sink,            // S3 sink with Redis buffer and background worker
-		Metrics:       prometheusMetrics, // Prometheus metrics
-		RequestLogger: requestLogger,
-		BillingWorker: billingWorker,
-		UsageWorker:   usageWorker,
-		DB:            db,
-		Encryption:    encryption,
-	}
-
+	deps.APIKeys = NewDatabaseAPIKeyStore(apiKeyRepo)
+	deps.AdminStore = NewAdminStoreAdapter(adminUserRepo, adminTokenRepo)
+	deps.RateLimit = rateLimiter
+	deps.Metrics = prometheusMetrics
+	deps.BillingWorker = billingWorker
+	deps.UsageWorker = usageWorker
+	deps.Encryption = encryption
+	deps.billingWorker = billingWorker
+	deps.usageWorker = usageWorker
 	// Create router
 	mux := http.NewServeMux()
 	registerRoutes(mux, deps, cfg)

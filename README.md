@@ -91,7 +91,7 @@ python3 -m compileall -q app
 
 For OpenAI streaming requests, the gateway requests terminal usage, parses complete SSE events independently of network read boundaries, and records input, output, cached, and reasoning tokens. If a stream is interrupted or completes without provider usage, its accounting status is recorded as unknown and no zero-cost success is silently claimed; operators should alert and reconcile those requests from provider billing data.
 
-The HTTP server keeps header reads, request reads, ordinary response writes, and idle connections bounded. Streaming handlers clear only their response write deadline; provider calls remain bounded by `PROVIDER_REQUEST_TIMEOUT`. During shutdown, streams may drain until `HTTP_SHUTDOWN_TIMEOUT`, after which active connections are closed.
+The HTTP server keeps header reads, request reads, ordinary response writes, and idle connections bounded. Streaming handlers clear only their response write deadline; provider calls remain bounded by `PROVIDER_REQUEST_TIMEOUT`. During shutdown, streams may drain until `HTTP_SHUTDOWN_TIMEOUT`, after which active connections are closed. The gateway then uses a fresh shutdown deadline to stop queue workers, flush billing and logs, and close queues, providers, Redis, and PostgreSQL. Startup is transactional: a router-construction failure rolls back resources already created.
 
 Runnable Go examples are isolated as independent commands:
 

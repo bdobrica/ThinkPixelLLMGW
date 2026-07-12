@@ -4,7 +4,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 ## P0 — release blockers
 
-- [ ] Stop and close queue workers, queues, Redis, and PostgreSQL during normal shutdown and on partial router-initialization failures.
+- [x] Stop and close queue workers, queues, Redis, PostgreSQL, providers, billing, and log sinks during normal shutdown and on partial router-initialization failures.
 - [ ] Fix the Web UI production launcher so nginx does not attempt to bind the gateway's port 8080.
 - [ ] Require a non-default BFF signing secret in production and make secure-cookie behavior configurable and HTTPS-safe.
 
