@@ -22,7 +22,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 ## P2 — product completeness
 
 - [x] Implement the paginated, searchable Web UI models page with capabilities, limits, pricing, and frontend/BFF coverage.
-- [ ] Add a gateway billing/usage admin endpoint and implement the Web UI billing page.
+- [x] Add bounded gateway billing/usage admin endpoints and implement the Web UI billing page.
 - [ ] Add dashboard statistics.
 - [ ] Implement Vertex AI and Bedrock providers or remove them from advertised provider support until ready.
 - [ ] Add embeddings and other desired OpenAI-compatible endpoints.

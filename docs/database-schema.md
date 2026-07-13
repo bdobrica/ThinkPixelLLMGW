@@ -410,6 +410,7 @@ Audit log of all API requests for billing, analytics, and debugging.
 - Response metadata (latency, status code, errors)
 - Request correlation via `request_id`
 - Flexible `metadata` JSONB for additional context
+- Admin queries are time-bounded to 90 days and use created-time plus API-key, model, and status indexes; result sets are capped at 100 rows per page.
 
 **Partitioning Strategy**:
 For large-scale deployments, partition by month:
@@ -438,10 +439,7 @@ Pre-aggregated monthly usage statistics for fast budget checks.
 - ✅ Dashboard queries: Instant monthly reports
 - ✅ Redis cache seed: Use for distributed rate limiting
 
-**Update Strategy**:
-- **Option 1**: Trigger on INSERT to `usage_records`
-- **Option 2**: Periodic job (every 5 minutes) to aggregate recent records
-- **Option 3**: Real-time via application code
+**Update Strategy**: the asynchronous billing worker persists the latest exact nano-USD cost while the usage worker increments token/request counters. The admin API reads these acknowledged monthly rows; page totals are not estimates of queued work.
 
 **Example Query**:
 ```sql

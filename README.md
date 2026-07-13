@@ -17,7 +17,7 @@ ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralize
 - Runtime-only environment credential overrides that never mutate provider rows
 - Prometheus metrics at `GET /metrics`
 - Privacy-controlled file logging plus an optional encrypted Redis-to-S3/MinIO sink
-- React 19 admin UI with a FastAPI backend-for-frontend (BFF); API-key management and the paginated read-only model catalog are implemented, while billing and dashboard statistics remain placeholders
+- React 19 admin UI with a FastAPI backend-for-frontend (BFF); API-key management, the model catalog, and read-only billing/usage administration are implemented, while dashboard statistics remain a placeholder
 
 Only the OpenAI provider currently performs requests. Vertex AI and Bedrock are scaffolds.
 
@@ -123,6 +123,8 @@ The S3 example requires the environment and services described in [llm_gateway/e
 | `/admin/providers[/{id}]` | admin JWT | Provider CRUD |
 | `/admin/models[/{id}]` | admin JWT | Model CRUD |
 | `/admin/aliases[/{id}]` | admin JWT | Alias CRUD |
+| `GET /admin/usage` | admin JWT | Bounded, paginated request usage (maximum 90-day range) |
+| `GET /admin/billing/monthly` | admin JWT | Paginated monthly nano-USD billing summaries |
 
 Read operations require the `viewer` role; mutations require `admin`. There is no `editor` role in the current implementation.
 

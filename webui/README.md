@@ -10,11 +10,11 @@ The Web UI is a React 19/Vite single-page application backed by a small FastAPI 
 | API-key list/create/update/revoke UI | Implemented |
 | Models BFF list endpoint | Implemented |
 | Models page | Implemented (read-only catalog) |
-| Billing endpoint and page | Not implemented / placeholder |
+| Billing and usage endpoints/page | Implemented (read-only) |
 | Dashboard statistics | Placeholder |
 | Service-token login | Gateway supports it; Web UI does not expose it |
 
-Authentication cookies, gateway proxying, and the artifact-only production launcher are production-aware. Billing and dashboard statistics remain unfinished. Model mutation stays in the gateway admin API for this release; both viewer and admin roles may use the read-only catalog, while gateway mutations still require the admin role.
+Authentication cookies, gateway proxying, and the artifact-only production launcher are production-aware. Dashboard statistics remain unfinished. Model mutation stays in the gateway admin API for this release; both viewer and admin roles may use the read-only catalog and billing views, while gateway mutations still require the admin role.
 
 ## Development
 
@@ -81,8 +81,10 @@ The BFF reuses one bounded HTTP connection pool for its lifetime. Connect, read,
 | `GET, POST /admin/api-keys` | List/create keys |
 | `PUT, DELETE /admin/api-keys/{id}` | Update/revoke a key |
 | `GET /admin/models` | Paginated model list; accepts `search` and `provider_id` |
+| `GET /admin/usage` | Bounded, paginated request usage |
+| `GET /admin/billing/monthly` | Monthly cost/token summaries by API key |
 
-There is no BFF `/admin/billing` route today.
+Billing and usage are read-only for both viewer and admin roles. Usage ranges are capped at 90 days and pages at 100 records. The UI labels UTC and USD explicitly; monthly costs include records acknowledged by the asynchronous workers.
 
 ## Production deployment
 

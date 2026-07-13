@@ -97,6 +97,22 @@ export interface AdminUser {
   service_name?: string
 }
 
+export interface UsageRecord {
+  id: string; api_key_id: string; api_key_name: string; request_id: string; model_name: string; endpoint: string
+  input_tokens: number; output_tokens: number; cached_tokens: number; reasoning_tokens: number
+  response_time_ms: number; status_code: number; created_at: string
+}
+export interface UsageResponse { items: UsageRecord[]; total_count: number; page: number; page_size: number; start: string; end: string }
+export interface MonthlyBilling {
+  api_key_id: string; api_key_name: string; year: number; month: number; total_requests: number
+  total_input_tokens: number; total_output_tokens: number; total_cached_tokens: number; total_reasoning_tokens: number
+  total_tokens: number; total_cost_usd: number; currency: string
+}
+export interface BillingResponse {
+  items: MonthlyBilling[]; total_count: number; page: number; page_size: number; year: number; month: number
+  page_totals: { requests: number; tokens: number; cost_usd: number; currency: string }
+}
+
 /**
  * Generic fetch wrapper that throws on non-ok responses.
  */
@@ -172,5 +188,19 @@ export const adminAPI = {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
     if (search.trim()) params.set('search', search.trim())
     return fetchJSON(`${API_BASE}/admin/models?${params}`)
+  },
+
+  async listUsage(page = 1, pageSize = 20, start?: string, end?: string): Promise<UsageResponse> {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (start) params.set('start', start)
+    if (end) params.set('end', end)
+    return fetchJSON(`${API_BASE}/admin/usage?${params}`)
+  },
+
+  async listMonthlyBilling(page = 1, pageSize = 20, year?: number, month?: number): Promise<BillingResponse> {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (year) params.set('year', String(year))
+    if (month) params.set('month', String(month))
+    return fetchJSON(`${API_BASE}/admin/billing/monthly?${params}`)
   },
 }

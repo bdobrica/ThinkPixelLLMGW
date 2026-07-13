@@ -86,8 +86,10 @@ For production use `ENVIRONMENT=production`, `COOKIE_SECURE=true`, HTTPS, and a 
 - `GET, POST /admin/api-keys`
 - `PUT, DELETE /admin/api-keys/{id}`
 - `GET /admin/models`
+- `GET /admin/usage`
+- `GET /admin/billing/monthly`
 
-The Models page is a searchable, paginated, read-only catalog with provider, lifecycle, capability, token-limit, and pricing data. Billing is not implemented.
+The Models page is a searchable, paginated, read-only catalog. Billing provides month selection, per-key costs/token totals, and recent usage; displayed costs are USD and request timestamps are UTC.
 
 `GET /auth/me` proxies the stable gateway `GET /admin/me` identity contract. The former production `/admin/test` route has been removed.
 
@@ -111,6 +113,6 @@ The Models page is a searchable, paginated, read-only catalog with provider, lif
 
 **Models fail to load:** confirm the gateway migrations are current and the signed-in identity has at least the `viewer` role.
 
-**Billing shows TODO text:** expected in the current implementation.
+**Billing totals lag recent requests:** check billing/usage worker readiness and dead-letter queues; the page reports persisted acknowledged records.
 
 See [README.md](README.md), [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md), and [../CODE_REVIEW.md](../CODE_REVIEW.md).

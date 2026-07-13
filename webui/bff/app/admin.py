@@ -146,22 +146,37 @@ async def list_models(
     return data
 
 
-# NOTE: /admin/billing endpoint is not implemented in the Go gateway yet
-# @router.get("/billing")
-# async def get_billing(
-#     jwt_token: Annotated[str, Depends(get_current_admin_token)],
-# ):
-#     """Get billing information by proxying to the Go gateway."""
-#     status_code, data = await gateway_request(
-#         method="GET",
-#         path="/admin/billing",
-#         jwt_token=jwt_token,
-#     )
-#     
-#     if status_code != 200:
-#         raise HTTPException(
-#             status_code=status_code,
-#             detail=data.get("detail", "Failed to get billing info") if data else "Failed to get billing info"
-#         )
-#     
-#     return data
+@router.get("/usage")
+async def list_usage(
+    jwt_token: Annotated[str, Depends(get_current_admin_token)],
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    start: datetime | None = None, end: datetime | None = None,
+    api_key_id: str | None = None, model: str | None = Query(None, max_length=255),
+    status_code: int | None = Query(None, ge=100, le=599),
+):
+    params = {"page": page, "page_size": page_size}
+    for key, value in {"start": start.isoformat() if start else None, "end": end.isoformat() if end else None,
+                       "api_key_id": api_key_id, "model": model, "status_code": status_code}.items():
+        if value is not None:
+            params[key] = value
+    status, data = await gateway_request(method="GET", path="/admin/usage", jwt_token=jwt_token, params=params)
+    if status != 200:
+        raise proxy_error(status, data, "Failed to list usage")
+    return data
+
+
+@router.get("/billing/monthly")
+async def list_monthly_billing(
+    jwt_token: Annotated[str, Depends(get_current_admin_token)],
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    year: int | None = Query(None, ge=2000, le=9999), month: int | None = Query(None, ge=1, le=12),
+    api_key_id: str | None = None,
+):
+    params = {"page": page, "page_size": page_size}
+    for key, value in {"year": year, "month": month, "api_key_id": api_key_id}.items():
+        if value is not None:
+            params[key] = value
+    status, data = await gateway_request(method="GET", path="/admin/billing/monthly", jwt_token=jwt_token, params=params)
+    if status != 200:
+        raise proxy_error(status, data, "Failed to list monthly billing")
+    return data

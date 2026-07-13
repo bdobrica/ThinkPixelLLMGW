@@ -79,7 +79,7 @@ src/
 │   ├── Dashboard.tsx     # Dashboard
 │   ├── ApiKeys.tsx       # API keys management
 │   ├── Models.tsx        # Read-only model catalog
-│   └── Billing.tsx       # Billing (stub)
+│   └── Billing.tsx       # Monthly billing and usage
 ├── App.tsx               # Root component
 ├── router.tsx            # Route configuration
 └── main.tsx              # Entry point

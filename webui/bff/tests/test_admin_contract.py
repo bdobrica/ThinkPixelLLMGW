@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.auth import CurrentAdminResponse, me
-from app.admin import list_models
+from app.admin import list_models, list_monthly_billing, list_usage
 
 
 @pytest.mark.anyio
@@ -53,3 +53,16 @@ async def test_model_list_forwards_bounded_filters() -> None:
         },
     )
     assert response == upstream
+
+
+@pytest.mark.anyio
+async def test_usage_and_billing_use_real_gateway_contracts() -> None:
+    request = AsyncMock(side_effect=[(200, {"items": []}), (200, {"items": []})])
+    with patch("app.admin.gateway_request", new=request):
+        await list_usage(jwt_token="jwt", page=1, page_size=20)
+        await list_monthly_billing(jwt_token="jwt", page=1, page_size=20, year=2026, month=7)
+    assert request.await_args_list[0].kwargs["path"] == "/admin/usage"
+    assert request.await_args_list[1].kwargs == {
+        "method": "GET", "path": "/admin/billing/monthly", "jwt_token": "jwt",
+        "params": {"page": 1, "page_size": 20, "year": 2026, "month": 7},
+    }

@@ -6,6 +6,10 @@ Billing totals and budgets are stored as integer nano-USD (`1 USD = 1,000,000,00
 
 During a rolling deployment, new gateway instances accept legacy decimal-dollar Redis values, convert them once, and rewrite the key as integer nano-USD. Deploy the migration before starting new application instances; do not roll application binaries back without first applying the down migration.
 
+## Administrative usage indexes (20260712000005)
+
+Adds status/time and model-name/time indexes used by the bounded administrative usage filters. On a large production `usage_records` table, schedule this migration in a maintenance window or adapt it to an operator-managed `CREATE INDEX CONCURRENTLY` procedure.
+
 This directory contains SQL migrations for the ThinkPixelLLMGW database schema.
 
 ## Tools

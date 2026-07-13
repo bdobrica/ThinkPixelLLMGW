@@ -51,6 +51,7 @@ test-integration-all: test-integration-setup ## Setup, run, and always tear down
 
 test-migrations: test-integration-setup ## Validate all migrations down and back up on a clean database
 	@status=0; ( cd .. && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000005_admin_usage_indexes.down.sql && \
 		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.down.sql && \
 		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.down.sql && \
 		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.down.sql && \
@@ -58,7 +59,8 @@ test-migrations: test-integration-setup ## Validate all migrations down and back
 		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.up.sql && \
 		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.up.sql && \
 		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.up.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.up.sql \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.up.sql && \
+		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000005_admin_usage_indexes.up.sql \
 	) || status=$$?; $(MAKE) test-integration-teardown; exit $$status
 
 test-httpapi: ## Run HTTP API integration tests (requires postgres to be running)

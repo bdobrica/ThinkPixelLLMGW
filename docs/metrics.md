@@ -100,6 +100,7 @@ To correlate metrics with API key tags:
 - Cost calculations use the accurate pricing components from the model configuration
 - Latency includes the full gateway processing time, not just provider response time
 - The `/metrics` endpoint uses a dedicated bearer token of at least 32 characters. Keep it in a secret manager and do not reuse the admin JWT secret.
+- Prometheus counters are process-lifetime observability data. For durable administrative reporting, use `GET /admin/usage` and `GET /admin/billing/monthly`; the latter reports USD display values derived from persisted integer nano-USD.
 
 ## Prometheus Configuration
 
