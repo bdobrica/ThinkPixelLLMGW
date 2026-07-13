@@ -2,7 +2,7 @@
 
 ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralizes API-key authentication, model routing, provider credentials, per-key rate limits and budgets, usage accounting, audit logging, and administration.
 
-> Project status (reviewed July 12, 2026): active MVP. The OpenAI chat-completions path and the core admin API are implemented. The project is not yet production-ready; see [CODE_REVIEW.md](CODE_REVIEW.md) and [TODO.md](TODO.md).
+> Project status (reviewed July 13, 2026): active MVP. The OpenAI and Vertex AI chat-completions paths and the core admin API are implemented. The project is not yet production-ready; see [CODE_REVIEW.md](CODE_REVIEW.md) and [TODO.md](TODO.md).
 
 ## Implemented
 
@@ -19,12 +19,12 @@ ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralize
 - Privacy-controlled file logging plus an optional encrypted Redis-to-S3/MinIO sink
 - React 19 admin UI with a FastAPI backend-for-frontend (BFF), including API-key management, model catalog, read-only billing/usage administration, and bounded dashboard statistics
 
-Only the OpenAI provider currently performs requests. Vertex AI and Bedrock are scaffolds.
+OpenAI and Google Vertex AI perform non-streaming and streaming chat-completion requests. Vertex AI uses its OpenAI-compatible endpoint with Google OAuth access-token refresh. AWS Bedrock implementation is tracked in the backlog. See [provider configuration](docs/providers.md) for credentials, capabilities, and provider-specific limits.
 
 ## Architecture
 
 ```text
-LLM client ── API key ──> Go gateway ──> OpenAI
+LLM client ── API key ──> Go gateway ──> OpenAI / Vertex AI
                               │
                               ├── PostgreSQL (configuration and durable usage)
                               ├── Redis (rate limits, budgets, queues, log buffer)
@@ -133,6 +133,7 @@ Read operations require the `viewer` role; mutations require `admin`. There is n
 
 - [Quick start](docs/quickstart.md)
 - [Environment variables](docs/env-variables.md)
+- [Provider configuration](docs/providers.md)
 - [Database schema](docs/database-schema.md)
 - [Metrics](docs/metrics.md)
 - [Testing guide](docs/testing-guide.md)

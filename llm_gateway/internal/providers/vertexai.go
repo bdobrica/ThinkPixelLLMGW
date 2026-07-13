@@ -1,112 +1,178 @@
 package providers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
-// VertexAIProvider implements the Provider interface for Google Cloud Vertex AI
-// This provider uses Google Cloud SDK for authentication (more complex than simple API key)
+const vertexCloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+// VertexAIProvider calls Vertex AI's OpenAI-compatible Chat Completions API.
+// The compatibility endpoint lets the gateway preserve its public request and
+// streaming contracts while Google OAuth handles short-lived access tokens.
 type VertexAIProvider struct {
-	id        string
-	name      string
-	projectID string
-	location  string
-	// TODO: Add Google Cloud SDK client when implementing
-	// client *aiplatform.PredictionClient
+	id            string
+	name          string
+	projectID     string
+	location      string
+	client        *http.Client
+	baseURL       string
+	validationURL string
 }
 
-// NewVertexAIProvider creates a new Vertex AI provider instance
+// NewVertexAIProvider creates a Vertex AI provider using a service-account JSON
+// key, a supplied short-lived access token, or Application Default Credentials.
 func NewVertexAIProvider(config ProviderConfig) (Provider, error) {
-	// Extract required configuration
-	projectID, ok := config.Config["project_id"].(string)
-	if !ok || projectID == "" {
+	projectID, _ := config.Config["project_id"].(string)
+	if projectID == "" {
 		return nil, fmt.Errorf("project_id is required for Vertex AI provider")
 	}
 
-	location, ok := config.Config["location"].(string)
-	if !ok || location == "" {
-		location = "us-central1" // default location
+	location, _ := config.Config["location"].(string)
+	if location == "" {
+		location = "us-central1"
 	}
 
-	// TODO: Initialize Google Cloud SDK client
-	// This would involve:
-	// 1. Loading service account credentials from config.Credentials["service_account_json"]
-	// 2. Creating an authenticated client using google.golang.org/api/option
-	// 3. Creating a PredictionClient for the aiplatform API
+	tokenSource, err := vertexTokenSource(config.Credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	baseURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/endpoints/openapi", location, projectID, location)
+	if configured, _ := config.Config["base_url"].(string); configured != "" {
+		baseURL = strings.TrimRight(configured, "/")
+	}
+	validationURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models?pageSize=1", location, projectID, location)
+	if configured, _ := config.Config["validation_url"].(string); configured != "" {
+		validationURL = configured
+	}
+
+	client := oauth2.NewClient(context.Background(), oauth2.ReuseTokenSource(nil, tokenSource))
+	client.Timeout = parseProviderTimeout(config.Config)
 
 	return &VertexAIProvider{
-		id:        config.ID,
-		name:      config.Name,
-		projectID: projectID,
-		location:  location,
+		id:            config.ID,
+		name:          config.Name,
+		projectID:     projectID,
+		location:      location,
+		client:        client,
+		baseURL:       baseURL,
+		validationURL: validationURL,
 	}, nil
 }
 
-// ID returns the provider ID
-func (p *VertexAIProvider) ID() string {
-	return p.id
+func vertexTokenSource(credentials map[string]string) (oauth2.TokenSource, error) {
+	if accessToken := credentials["access_token"]; accessToken != "" {
+		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken, TokenType: "Bearer"}), nil
+	}
+
+	serviceAccountJSON := credentials["service_account_json"]
+	if serviceAccountJSON == "" {
+		serviceAccountJSON = credentials["credentials_json"]
+	}
+	if serviceAccountJSON != "" {
+		creds, err := google.CredentialsFromJSON(context.Background(), []byte(serviceAccountJSON), vertexCloudPlatformScope)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Vertex AI service account credentials: %w", err)
+		}
+		return creds.TokenSource, nil
+	}
+
+	creds, err := google.FindDefaultCredentials(context.Background(), vertexCloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("Vertex AI credentials are required (service_account_json, access_token, or application default credentials): %w", err)
+	}
+	return creds.TokenSource, nil
 }
 
-// Name returns the provider name
-func (p *VertexAIProvider) Name() string {
-	return p.name
-}
+func (p *VertexAIProvider) ID() string   { return p.id }
+func (p *VertexAIProvider) Name() string { return p.name }
+func (p *VertexAIProvider) Type() string { return "vertexai" }
 
-// Type returns the provider type
-func (p *VertexAIProvider) Type() string {
-	return "vertexai"
-}
-
-// Chat sends a chat completion request to Vertex AI
+// Chat forwards the normalized OpenAI payload to Vertex AI. The provider
+// response is already OpenAI-compatible, including terminal stream usage.
 func (p *VertexAIProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	// TODO: Implement Vertex AI chat completion
-	// This would involve:
-	// 1. Converting OpenAI-style request to Vertex AI format
-	// 2. Using the PredictionClient to call the predict endpoint
-	// 3. Converting Vertex AI response back to our standard format
-	// 4. Calculating cost based on token usage
+	start := time.Now()
+	payload := clonePayload(req.Payload)
+	if payload["model"] == nil {
+		payload["model"] = req.Model
+	}
+	isStream := req.Stream
+	if stream, ok := payload["stream"].(bool); ok {
+		isStream = stream
+	}
 
-	return nil, fmt.Errorf("Vertex AI provider not yet implemented")
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Vertex AI request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Vertex AI request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("Vertex AI request failed: %w", err)
+	}
+	latency := time.Since(start)
+	if isStream && resp.StatusCode == http.StatusOK {
+		return &ChatResponse{StatusCode: resp.StatusCode, Stream: resp.Body, ProviderLatency: latency}, nil
+	}
+	defer resp.Body.Close()
+	responseBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read Vertex AI response: %w", readErr)
+	}
+	usage := &UsageInfo{}
+	if resp.StatusCode == http.StatusOK {
+		usage = extractUsageFromResponse(responseBody)
+	}
+	return &ChatResponse{
+		StatusCode: resp.StatusCode, Body: responseBody, ProviderLatency: latency,
+		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
+		CachedTokens: usage.CachedTokens, ReasoningTokens: usage.ReasoningTokens,
+	}, nil
 }
 
-// ValidateCredentials validates the provider credentials
+// ValidateCredentials verifies both OAuth token acquisition and Vertex AI API
+// access without running a billable generation request.
 func (p *VertexAIProvider) ValidateCredentials(ctx context.Context) error {
-	// TODO: Implement credential validation
-	// This would involve making a simple API call to verify the service account
-	// has the necessary permissions
-
-	return fmt.Errorf("Vertex AI credential validation not yet implemented")
-}
-
-// Close cleans up resources
-func (p *VertexAIProvider) Close() error {
-	// TODO: Close Google Cloud SDK client
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.validationURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create Vertex AI validation request: %w", err)
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Vertex AI credential validation failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		return fmt.Errorf("Vertex AI credential validation failed: status=%d, body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	return nil
 }
 
-/*
-Example configuration for Vertex AI provider in database:
-
-{
-	"provider_type": "vertexai",
-	"encrypted_credentials": {
-		"service_account_json": "{...}" // GCP service account key JSON
-	},
-	"config": {
-		"project_id": "my-gcp-project",
-		"location": "us-central1"
-	}
+func (p *VertexAIProvider) Close() error {
+	p.client.CloseIdleConnections()
+	return nil
 }
 
-Required dependencies (add to go.mod when implementing):
-- cloud.google.com/go/aiplatform/apiv1
-- google.golang.org/api/option
-- google.golang.org/genproto/googleapis/cloud/aiplatform/v1
-
-Authentication flow:
-1. Load service account JSON from encrypted credentials
-2. Create credentials using google.CredentialsFromJSON()
-3. Pass credentials to aiplatform.NewPredictionClient() via option.WithCredentials()
-4. Use client to make authenticated requests to Vertex AI API
-*/
+func clonePayload(payload map[string]any) map[string]any {
+	cloned := make(map[string]any, len(payload)+1)
+	for key, value := range payload {
+		cloned[key] = value
+	}
+	return cloned
+}

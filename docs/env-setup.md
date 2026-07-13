@@ -54,8 +54,9 @@ If you plan to use additional providers:
 
 - **Google Vertex AI** - For Gemini models
   - `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON
-  - `GOOGLE_PROJECT_ID` - Your GCP project ID
-  - `GOOGLE_REGION` - Region (e.g., `us-central1`)
+  - `VERTEX_AI_SERVICE_ACCOUNT_JSON` - Runtime-only credential override for a provider row named `vertexai`
+  - `VERTEX_AI_ACCESS_TOKEN` - Short-lived runtime-only token override for development
+  - Project ID and location belong in the provider record's `config`; see `docs/providers.md`
 
 - **AWS Bedrock** - For AWS hosted models
   - `AWS_ACCESS_KEY_ID` - AWS access key
@@ -102,7 +103,7 @@ Enable background worker to drain logs from Redis to S3:
 ## How It Works
 
 1. When the gateway starts, it reads environment variables from the `.env` file
-2. Provider API keys found in the environment (for example `OPENAI_API_KEY`) are runtime-only overrides. They take precedence in memory, are reapplied on registry reload, and are never written to PostgreSQL.
+2. Provider credentials found in supported environment overrides (`OPENAI_API_KEY`, `VERTEX_AI_ACCESS_TOKEN`, and `VERTEX_AI_SERVICE_ACCOUNT_JSON`) are runtime-only. They take precedence in memory, are reapplied on registry reload, and are never written to PostgreSQL. Google ADC is read directly by the Vertex AI OAuth client.
 3. Startup fails distinctly if an override targets a provider row that is missing or disabled. Storage failures remain database errors rather than being treated as “not found.”
 4. Audit events include only provider name, credential field names, and source—never credential values. Rotate an environment credential by updating the deployment secret and restarting the process.
 

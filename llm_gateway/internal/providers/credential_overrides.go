@@ -8,6 +8,8 @@ func CredentialOverridesFromEnvironment() map[string]map[string]string {
 	mappings := []struct{ env, provider, key string }{
 		{"OPENAI_API_KEY", "openai", "api_key"},
 		{"ANTHROPIC_API_KEY", "anthropic", "api_key"},
+		{"VERTEX_AI_ACCESS_TOKEN", "vertexai", "access_token"},
+		{"VERTEX_AI_SERVICE_ACCOUNT_JSON", "vertexai", "service_account_json"},
 	}
 	overrides := make(map[string]map[string]string)
 	for _, mapping := range mappings {
