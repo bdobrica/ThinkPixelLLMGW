@@ -61,7 +61,9 @@ If you plan to use additional providers:
 - **AWS Bedrock** - For AWS hosted models
   - `AWS_ACCESS_KEY_ID` - AWS access key
   - `AWS_SECRET_ACCESS_KEY` - AWS secret key
+  - `AWS_SESSION_TOKEN` - Session token when using temporary credentials
   - `AWS_REGION` - AWS region (e.g., `us-east-1`)
+  - Prefer web identity, ECS/EC2 roles, or another AWS SDK default-chain source in production; see `docs/providers.md`
 
 ### S3 Logging Configuration (Optional)
 

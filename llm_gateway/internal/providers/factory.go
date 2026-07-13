@@ -2,6 +2,7 @@ package providers
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -62,5 +63,6 @@ func (f *ProviderFactory) SupportedTypes() []string {
 	for t := range f.creators {
 		types = append(types, t)
 	}
+	slices.Sort(types)
 	return types
 }

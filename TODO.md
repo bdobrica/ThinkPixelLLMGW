@@ -24,7 +24,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [x] Implement the paginated, searchable Web UI models page with capabilities, limits, pricing, and frontend/BFF coverage.
 - [x] Add bounded gateway billing/usage admin endpoints and implement the Web UI billing page.
 - [x] Add bounded dashboard statistics for keys, models, providers, usage, errors, latency, rankings, and monthly cost.
-- [ ] Complete AWS Bedrock provider support; Vertex AI chat, streaming, OAuth, usage, validation, and cancellation support is implemented.
+- [x] Implement Vertex AI and AWS Bedrock chat providers with authentication, translation, streaming, usage, validation, cancellation, and error mapping.
 - [ ] Add embeddings and other desired OpenAI-compatible endpoints.
 - [ ] Add model-catalog/pricing synchronization with validation and rollback.
 - [ ] Add provider health checks, fallback routing, and circuit breaking.

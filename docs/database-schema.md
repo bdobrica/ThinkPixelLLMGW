@@ -155,6 +155,8 @@ erDiagram
 
 Stores LLM provider configurations (OpenAI, Google VertexAI, AWS Bedrock, etc.).
 
+The implemented runtime provider types are `openai`, `vertexai`, and `bedrock`. Their encrypted credential keys and non-secret configuration fields are documented in [provider configuration](providers.md).
+
 **Key Features**:
 - Encrypted credentials stored in `encrypted_credentials` JSONB column
 - Provider-specific config in `config` JSONB for flexibility
