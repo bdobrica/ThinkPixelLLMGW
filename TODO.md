@@ -23,7 +23,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 
 - [x] Implement the paginated, searchable Web UI models page with capabilities, limits, pricing, and frontend/BFF coverage.
 - [x] Add bounded gateway billing/usage admin endpoints and implement the Web UI billing page.
-- [ ] Add dashboard statistics.
+- [x] Add bounded dashboard statistics for keys, models, providers, usage, errors, latency, rankings, and monthly cost.
 - [ ] Implement Vertex AI and Bedrock providers or remove them from advertised provider support until ready.
 - [ ] Add embeddings and other desired OpenAI-compatible endpoints.
 - [ ] Add model-catalog/pricing synchronization with validation and rollback.

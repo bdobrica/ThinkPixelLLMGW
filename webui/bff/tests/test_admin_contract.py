@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.auth import CurrentAdminResponse, me
-from app.admin import list_models, list_monthly_billing, list_usage
+from app.admin import get_dashboard, list_models, list_monthly_billing, list_usage
 
 
 @pytest.mark.anyio
@@ -66,3 +66,11 @@ async def test_usage_and_billing_use_real_gateway_contracts() -> None:
         "method": "GET", "path": "/admin/billing/monthly", "jwt_token": "jwt",
         "params": {"page": 1, "page_size": 20, "year": 2026, "month": 7},
     }
+
+
+@pytest.mark.anyio
+async def test_dashboard_forwards_bounded_window() -> None:
+    request = AsyncMock(return_value=(200, {"range": {"hours": 168}}))
+    with patch("app.admin.gateway_request", new=request):
+        await get_dashboard(jwt_token="jwt", hours=168)
+    request.assert_awaited_once_with(method="GET", path="/admin/dashboard", jwt_token="jwt", params={"hours": 168})

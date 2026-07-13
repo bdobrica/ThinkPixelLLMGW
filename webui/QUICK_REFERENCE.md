@@ -88,8 +88,11 @@ For production use `ENVIRONMENT=production`, `COOKIE_SECURE=true`, HTTPS, and a 
 - `GET /admin/models`
 - `GET /admin/usage`
 - `GET /admin/billing/monthly`
+- `GET /admin/dashboard`
 
 The Models page is a searchable, paginated, read-only catalog. Billing provides month selection, per-key costs/token totals, and recent usage; displayed costs are USD and request timestamps are UTC.
+
+The dashboard defaults to the last 24 hours (selectable up to seven days), while its cost card explicitly covers the current UTC month. Rankings are capped at five models and five API keys.
 
 `GET /auth/me` proxies the stable gateway `GET /admin/me` identity contract. The former production `/admin/test` route has been removed.
 

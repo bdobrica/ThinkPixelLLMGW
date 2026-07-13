@@ -68,6 +68,40 @@ type AdminMonthlyResult struct {
 
 type AdminUsageRepository struct{ db *DB }
 
+type DashboardSummary struct {
+	APIKeys                 int            `db:"api_keys" json:"api_keys"`
+	Models                  int            `db:"models" json:"models"`
+	Providers               int            `db:"providers" json:"providers"`
+	Requests                int            `db:"requests" json:"requests"`
+	Errors                  int            `db:"errors" json:"errors"`
+	Tokens                  int            `db:"tokens" json:"tokens"`
+	AverageLatencyMS        float64        `db:"average_latency_ms" json:"average_latency_ms"`
+	CurrentMonthCostNanoUSD models.NanoUSD `db:"current_month_cost_nano_usd" json:"-"`
+}
+type DashboardRanking struct {
+	Name     string `db:"name" json:"name"`
+	Requests int    `db:"requests" json:"requests"`
+	Errors   int    `db:"errors" json:"errors"`
+	Tokens   int    `db:"tokens" json:"tokens"`
+}
+
+func (r *AdminUsageRepository) Dashboard(ctx context.Context, start, end time.Time) (*DashboardSummary, []DashboardRanking, []DashboardRanking, error) {
+	var summary DashboardSummary
+	query := `SELECT (SELECT COUNT(*) FROM api_keys WHERE enabled=true) api_keys,(SELECT COUNT(*) FROM models WHERE is_deprecated=false) models,(SELECT COUNT(*) FROM providers WHERE enabled=true) providers,COUNT(u.id) requests,COUNT(u.id) FILTER(WHERE u.status_code>=400) errors,COALESCE(SUM(u.input_tokens+u.output_tokens+u.cached_tokens+u.reasoning_tokens),0) tokens,COALESCE(AVG(u.response_time_ms),0) average_latency_ms,(SELECT COALESCE(SUM(total_cost_nano_usd),0) FROM monthly_usage_summary WHERE year=EXTRACT(YEAR FROM $2::timestamptz) AND month=EXTRACT(MONTH FROM $2::timestamptz)) current_month_cost_nano_usd FROM usage_records u WHERE u.created_at >= $1 AND u.created_at < $2`
+	if err := r.db.conn.GetContext(ctx, &summary, query, start, end); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to load dashboard summary: %w", err)
+	}
+	modelsRank := []DashboardRanking{}
+	if err := r.db.conn.SelectContext(ctx, &modelsRank, `SELECT model_name name,COUNT(*) requests,COUNT(*) FILTER(WHERE status_code>=400) errors,COALESCE(SUM(input_tokens+output_tokens+cached_tokens+reasoning_tokens),0) tokens FROM usage_records WHERE created_at >= $1 AND created_at < $2 GROUP BY model_name ORDER BY requests DESC,name LIMIT 5`, start, end); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to rank dashboard models: %w", err)
+	}
+	keysRank := []DashboardRanking{}
+	if err := r.db.conn.SelectContext(ctx, &keysRank, `SELECT k.name,COUNT(*) requests,COUNT(*) FILTER(WHERE u.status_code>=400) errors,COALESCE(SUM(u.input_tokens+u.output_tokens+u.cached_tokens+u.reasoning_tokens),0) tokens FROM usage_records u JOIN api_keys k ON k.id=u.api_key_id WHERE u.created_at >= $1 AND u.created_at < $2 GROUP BY k.id,k.name ORDER BY requests DESC,k.name LIMIT 5`, start, end); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to rank dashboard keys: %w", err)
+	}
+	return &summary, modelsRank, keysRank, nil
+}
+
 func NewAdminUsageRepository(db *DB) *AdminUsageRepository { return &AdminUsageRepository{db: db} }
 
 func (r *AdminUsageRepository) List(ctx context.Context, f AdminUsageFilters) (*AdminUsageResult, error) {

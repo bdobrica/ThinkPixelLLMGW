@@ -76,7 +76,7 @@ src/
 │   └── ProtectedRoute.tsx # Auth guard for routes
 ├── pages/
 │   ├── Login.tsx         # Login page
-│   ├── Dashboard.tsx     # Dashboard
+│   ├── Dashboard.tsx     # Bounded gateway statistics
 │   ├── ApiKeys.tsx       # API keys management
 │   ├── Models.tsx        # Read-only model catalog
 │   └── Billing.tsx       # Monthly billing and usage

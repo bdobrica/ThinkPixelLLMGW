@@ -112,6 +112,14 @@ export interface BillingResponse {
   items: MonthlyBilling[]; total_count: number; page: number; page_size: number; year: number; month: number
   page_totals: { requests: number; tokens: number; cost_usd: number; currency: string }
 }
+export interface DashboardRanking { name: string; requests: number; errors: number; tokens: number }
+export interface DashboardResponse {
+  range: { start: string; end: string; hours: number }
+  counts: { api_keys: number; models: number; providers: number }
+  usage: { requests: number; errors: number; error_rate: number; tokens: number; average_latency_ms: number }
+  current_month: { cost_usd: number; currency: string }
+  top_models: DashboardRanking[]; top_api_keys: DashboardRanking[]
+}
 
 /**
  * Generic fetch wrapper that throws on non-ok responses.
@@ -202,5 +210,9 @@ export const adminAPI = {
     if (year) params.set('year', String(year))
     if (month) params.set('month', String(month))
     return fetchJSON(`${API_BASE}/admin/billing/monthly?${params}`)
+  },
+
+  async dashboard(hours = 24): Promise<DashboardResponse> {
+    return fetchJSON(`${API_BASE}/admin/dashboard?hours=${hours}`)
   },
 }

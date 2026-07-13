@@ -180,3 +180,14 @@ async def list_monthly_billing(
     if status != 200:
         raise proxy_error(status, data, "Failed to list monthly billing")
     return data
+
+
+@router.get("/dashboard")
+async def get_dashboard(
+    jwt_token: Annotated[str, Depends(get_current_admin_token)],
+    hours: int = Query(24, ge=1, le=168),
+):
+    status, data = await gateway_request(method="GET", path="/admin/dashboard", jwt_token=jwt_token, params={"hours": hours})
+    if status != 200:
+        raise proxy_error(status, data, "Failed to load dashboard")
+    return data

@@ -30,7 +30,7 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 
 - React Router protected/public route structure
 - Login and logout flow
-- Dashboard showing current JWT claims
+- Dashboard with current identity, bounded resource/usage/error/latency statistics, current-month USD cost, and top-five rankings
 - API-key management, including the one-time plaintext-key response
 - Searchable, paginated read-only model catalog with lifecycle, capability, limit, and pricing hierarchy
 - Monthly billing summaries and recent usage view with explicit UTC/USD semantics
@@ -51,10 +51,10 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 | `GET /admin/models` | `GET /admin/models` |
 | `GET /admin/usage` | `GET /admin/usage` |
 | `GET /admin/billing/monthly` | `GET /admin/billing/monthly` |
+| `GET /admin/dashboard` | `GET /admin/dashboard` |
 
 ## Known gaps
 
-- Dashboard-statistics UI is unfinished.
 - Model create/edit/delete is intentionally API-only in this release; the UI is read-only for viewers and administrators.
 - BFF cookie/configuration and model proxy tests are present, along with model-page component tests.
 - Cross-site cookies are deliberately disallowed until a CSRF token mechanism exists; strict/lax same-site cookies are supported.

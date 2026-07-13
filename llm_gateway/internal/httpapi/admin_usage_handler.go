@@ -149,3 +149,32 @@ func (h *AdminUsageHandler) Monthly(w http.ResponseWriter, r *http.Request) {
 	}
 	utils.RespondWithJSON(w, http.StatusOK, map[string]interface{}{"items": items, "total_count": result.TotalCount, "page": result.Page, "page_size": result.PageSize, "year": year, "month": month, "page_totals": map[string]interface{}{"requests": totalRequests, "tokens": totalTokens, "cost_usd": float64(totalCost) / 1e9, "currency": "USD"}})
 }
+
+func (h *AdminUsageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		utils.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	hours := 24
+	if value := r.URL.Query().Get("hours"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 168 {
+			utils.RespondWithError(w, http.StatusBadRequest, "hours must be between 1 and 168")
+			return
+		}
+		hours = parsed
+	}
+	end := time.Now().UTC()
+	start := end.Add(-time.Duration(hours) * time.Hour)
+	summary, topModels, topKeys, err := h.repository.Dashboard(r.Context(), start, end)
+	if err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, "Failed to load dashboard")
+		return
+	}
+	errorRate := 0.0
+	if summary.Requests > 0 {
+		errorRate = float64(summary.Errors) / float64(summary.Requests)
+	}
+	utils.RespondWithJSON(w, http.StatusOK, map[string]interface{}{"range": map[string]interface{}{"start": start, "end": end, "hours": hours}, "counts": map[string]int{"api_keys": summary.APIKeys, "models": summary.Models, "providers": summary.Providers}, "usage": map[string]interface{}{"requests": summary.Requests, "errors": summary.Errors, "error_rate": errorRate, "tokens": summary.Tokens, "average_latency_ms": summary.AverageLatencyMS}, "current_month": map[string]interface{}{"cost_usd": summary.CurrentMonthCostNanoUSD.Float64(), "currency": "USD"}, "top_models": topModels, "top_api_keys": topKeys})
+}

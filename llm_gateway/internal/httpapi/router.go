@@ -454,6 +454,7 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 	adminUsageHandler := NewAdminUsageHandler(deps.DB)
 	mux.Handle("/admin/usage", viewerMiddleware(http.HandlerFunc(adminUsageHandler.List)))
 	mux.Handle("/admin/billing/monthly", viewerMiddleware(http.HandlerFunc(adminUsageHandler.Monthly)))
+	mux.Handle("/admin/dashboard", viewerMiddleware(http.HandlerFunc(adminUsageHandler.Dashboard)))
 	mux.Handle("/admin/models", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
