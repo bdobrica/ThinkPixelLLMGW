@@ -3,6 +3,11 @@
   "private": true,
   "version": "1.0.0",
   "packageManager": "pnpm@10.24.0",
+  "pnpm": {
+    "overrides": {
+      "@remix-run/router": "1.23.2"
+    }
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

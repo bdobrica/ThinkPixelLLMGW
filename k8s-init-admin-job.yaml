@@ -42,6 +42,11 @@ spec:
         component: init-admin
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       
       # Use the same service account as the gateway (if applicable)
       # serviceAccountName: llm-gateway
@@ -103,78 +108,3 @@ spec:
           capabilities:
             drop:
             - ALL
-
----
-# Example: How to reference this job in your gateway deployment
-# You can use initContainers or a separate job dependency mechanism
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: llm-gateway
-  namespace: default  # Change to your namespace
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: llm-gateway
-  template:
-    metadata:
-      labels:
-        app: llm-gateway
-    spec:
-      # Ensure the init job completes before starting gateway pods
-      # This is just an example - you might use Helm hooks or ArgoCD sync waves
-      
-      containers:
-      - name: gateway
-        image: your-registry/llm-gateway:latest
-        command: ["/app/gateway"]
-        # ... rest of your gateway configuration
-        
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: llm-gateway-db
-              key: url
-        # ... other env vars
-
----
-# Alternative: Using an initContainer to wait for the job
-# This approach ensures pods wait for the init job to complete
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: llm-gateway-with-init
-  namespace: default
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: llm-gateway
-  template:
-    metadata:
-      labels:
-        app: llm-gateway
-    spec:
-      initContainers:
-      # This container waits for the init-admin job to complete
-      - name: wait-for-admin-init
-        image: busybox:latest
-        command: 
-        - sh
-        - -c
-        - |
-          echo "Waiting for admin initialization..."
-          until kubectl wait --for=condition=complete --timeout=5m job/llm-gateway-init-admin 2>/dev/null; do
-            echo "Waiting for init-admin job to complete..."
-            sleep 5
-          done
-          echo "Admin initialization complete!"
-        # Note: This requires RBAC permissions for the pod to access jobs
-      
-      containers:
-      - name: gateway
-        image: your-registry/llm-gateway:latest
-        command: ["/app/gateway"]
-        # ... rest of configuration

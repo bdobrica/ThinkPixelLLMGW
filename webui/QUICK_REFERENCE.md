@@ -116,6 +116,8 @@ The dashboard defaults to the last 24 hours (selectable up to seven days), while
 
 **Models fail to load:** confirm the gateway migrations are current and the signed-in identity has at least the `viewer` role.
 
+Before a release, run `pnpm run lint`, `pnpm run test`, and `pnpm run build`; then complete the repository [release qualification checklist](../docs/release-qualification.md).
+
 **Billing totals lag recent requests:** check billing/usage worker readiness and dead-letter queues; the page reports persisted acknowledged records.
 
 See [README.md](README.md), [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md), and [../CODE_REVIEW.md](../CODE_REVIEW.md).

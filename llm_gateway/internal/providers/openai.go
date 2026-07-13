@@ -276,9 +276,15 @@ func extractUsageFromResponse(body []byte) *UsageInfo {
 			InputTokensDetails struct {
 				CachedTokens int `json:"cached_tokens"`
 			} `json:"input_tokens_details"`
+			PromptTokensDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"prompt_tokens_details"`
 			OutputTokensDetails struct {
 				ReasoningTokens int `json:"reasoning_tokens"`
 			} `json:"output_tokens_details"`
+			CompletionTokensDetails struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
 		} `json:"usage"`
 	}
 
@@ -300,6 +306,12 @@ func extractUsageFromResponse(body []byte) *UsageInfo {
 	}
 	if usage.OutputTokens == 0 && response.Usage.CompletionTokens > 0 {
 		usage.OutputTokens = response.Usage.CompletionTokens
+	}
+	if usage.CachedTokens == 0 {
+		usage.CachedTokens = response.Usage.PromptTokensDetails.CachedTokens
+	}
+	if usage.ReasoningTokens == 0 {
+		usage.ReasoningTokens = response.Usage.CompletionTokensDetails.ReasoningTokens
 	}
 
 	return usage

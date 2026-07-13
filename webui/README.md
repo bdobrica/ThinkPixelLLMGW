@@ -16,6 +16,8 @@ The Web UI is a React 19/Vite single-page application backed by a small FastAPI 
 
 Authentication cookies, gateway proxying, and the artifact-only production launcher are production-aware. Model mutation stays in the gateway admin API for this release; both viewer and admin roles may use the read-only catalog, billing views, and dashboard, while gateway mutations still require the admin role.
 
+Release and operational sign-off for the UI and BFF is part of the repository-wide [release qualification checklist](../docs/release-qualification.md) and [operations runbook](../docs/operations-runbook.md).
+
 ## Development
 
 Prerequisites: a gateway at `http://localhost:8080`, Python 3.10+, Node.js 18+, and pnpm.

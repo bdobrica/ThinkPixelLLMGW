@@ -1,6 +1,6 @@
 # ThinkPixelLLMGW backlog
 
-Last reconciled with the code review on July 12, 2026. Completed historical work has been removed so this file remains an actionable backlog. Findings are explained in [CODE_REVIEW.md](CODE_REVIEW.md).
+Last reconciled with the code review and release qualification on July 13, 2026. Completed historical work has been removed so this file remains an actionable backlog. Findings are explained in [CODE_REVIEW.md](CODE_REVIEW.md).
 
 ## P0 — release blockers
 
@@ -13,7 +13,7 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [x] Add separate process liveness and dependency/worker readiness endpoints with transition metrics.
 - [x] Honor the configured BFF `COOKIE_NAME` consistently for writing, reading, and deleting the authentication cookie.
 - [x] Protect `/metrics` with a dedicated strong bearer token and document Prometheus authentication.
-- [ ] Define fail-open versus fail-closed policy for Redis failures in rate limiting and billing, and add operational metrics/alerts.
+- [ ] Add dedicated operational metrics/alerts for Redis failures. The current policy is documented: rate-limit errors reject the request, while budget reads fail open and require reconciliation.
 - [x] Use exact integer nano-USD for persisted and accumulated currency values, with half-away-from-zero rounding and legacy Redis dual reads.
 - [x] Add request timeouts/body limits to all BFF calls and translate gateway/network failures into stable `502/504` responses.
 - [x] Apply provider API keys from environment variables as auditable runtime-only overrides without mutating PostgreSQL.
@@ -35,13 +35,13 @@ Last reconciled with the code review on July 12, 2026. Completed historical work
 - [ ] Add frontend component/end-to-end tests for API-key lifecycle and authentication expiry.
 - [ ] Add a streaming test covering a response longer than 30 seconds and verifying usage/cost persistence.
 - [ ] Add provider-billing reconciliation for streams whose terminal usage is unavailable.
-- [ ] Add race, fuzz, and load tests; establish measured latency/throughput targets rather than advertising unverified numbers.
-- [ ] Add CI for Go formatting/tests, frontend build/lint, Python tests, container build, and migration up/down checks.
+- [ ] Add fuzz targets and full-stack staging load profiles; the race suite and in-process response/accounting load/soak regression benchmark are implemented, but no production throughput target is claimed.
+- [x] Add CI for Go formatting/tests, frontend lint/component tests/build, Python tests, container build, and migration up/down checks.
 - [x] Pin third-party Docker Compose images instead of using floating `latest` tags.
-- [ ] Add Kubernetes deployment resources and an operations/runbook only after the release blockers are resolved.
+- [ ] Add hardened Kubernetes workload/service/ingress resources; the operations and release-qualification runbooks are now available.
 
 ## Documentation follow-up
 
-- [ ] Reconcile the detailed files under `docs/` with current environment-variable names and routes.
-- [ ] Add an actual root `.env.example` or remove instructions that reference it from older guides.
+- [x] Reconcile the detailed files under `docs/` with current environment-variable names, routes, providers, and operational behavior.
+- [x] Add an actual tracked root `.env.example` and keep quick-start instructions aligned with it.
 - [x] Document and enforce audit body modes, sampling, redaction, size limits, file permissions, Redis lifecycle, and encrypted S3 retention responsibilities.

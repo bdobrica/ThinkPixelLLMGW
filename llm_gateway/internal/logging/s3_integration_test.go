@@ -536,6 +536,7 @@ func createTestS3Sink(t *testing.T, config S3SinkConfig, writer *S3Writer) *S3Si
 		flushSize:     config.FlushSize,
 		flushInterval: config.FlushInterval,
 		logger:        NewTestLogger(),
+		privacy:       DefaultPrivacyPolicy(),
 		stopChan:      make(chan struct{}),
 		stoppedChan:   make(chan struct{}),
 	}

@@ -465,7 +465,7 @@ ORDER BY mus.year DESC, mus.month DESC;
 1. **Configure Providers:** Add your OpenAI, Vertex AI, or Bedrock credentials
 2. **Create API Keys:** Generate production API keys with proper budgets
 3. **Set Up Monitoring:** Add Prometheus metrics endpoint
-4. **Enable S3 Upload:** Implement S3 writer to drain Redis log buffer
+4. **Enable S3 Upload:** Configure and verify the implemented Redis-to-S3 log sink, including encryption and lifecycle retention
 5. **Add Admin API:** Implement JWT-protected admin endpoints
 
 For complete testing instructions, see [Testing Guide](testing-guide.md).

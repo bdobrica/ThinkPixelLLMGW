@@ -36,6 +36,15 @@ make ci-test
 
 This enables the race detector and writes `coverage.out`.
 
+The release regression benchmark exercises the parallel in-process non-streaming response/accounting path. It deliberately excludes providers, networks, PostgreSQL, Redis, S3, authentication, and TLS and is not a production-capacity claim:
+
+```bash
+make test-load LOAD_DURATION=30s
+make test-soak SOAK_DURATION=10m
+```
+
+Record hardware, duration, `ns/op`, allocations, and any CPU/memory growth. Production capacity tests must use the staging workload described in the [release qualification checklist](release-qualification.md).
+
 ## 2. Go integration tests
 
 Prerequisite: Docker with Compose. Integration targets use isolated host ports by default: PostgreSQL 15432, Redis 16379, MinIO API 19000, and MinIO console 19001. Override the corresponding `INTEGRATION_*_PORT` Make variables when necessary.
@@ -121,17 +130,21 @@ make test-e2e-teardown
 ```bash
 cd webui/frontend
 pnpm install
+pnpm run lint
+pnpm run test
 pnpm run build
 
 cd ../bff
 python3 -m compileall -q app
 ```
 
-Automated BFF and frontend tests are still tracked in `TODO.md`.
+The BFF pytest suite and frontend component tests run in CI.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs the commands above on pushes to `main` and on pull requests. It also checks Go formatting/vet, runs unit tests with the race detector, validates the frontend and BFF, builds the Docker image, and performs a complete migration round trip. These checks do not use an OpenAI key or make provider requests.
+
+The broader release matrix, live-provider qualification, security scans, resilience exercises, and restore/reconciliation evidence are documented in [Release qualification](release-qualification.md).
 
 ## Troubleshooting
 

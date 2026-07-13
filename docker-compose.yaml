@@ -50,6 +50,9 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      # Development/test-only static KMS key so SSE-S3 integration tests can
+      # exercise AES-256 uploads. Production must use an external KMS.
+      MINIO_KMS_SECRET_KEY: "integration-test-key:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     ports:
       - "127.0.0.1:${MINIO_API_HOST_PORT:-9000}:9000"  # API
       - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Console

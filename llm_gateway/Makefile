@@ -4,9 +4,9 @@ INTEGRATION_POSTGRES_PORT ?= 15432
 INTEGRATION_REDIS_PORT ?= 16379
 INTEGRATION_MINIO_API_PORT ?= 19000
 INTEGRATION_MINIO_CONSOLE_PORT ?= 19001
-INTEGRATION_COMPOSE_ENV = POSTGRES_HOST_PORT=$(INTEGRATION_POSTGRES_PORT) REDIS_HOST_PORT=$(INTEGRATION_REDIS_PORT) MINIO_API_HOST_PORT=$(INTEGRATION_MINIO_API_PORT) MINIO_CONSOLE_HOST_PORT=$(INTEGRATION_MINIO_CONSOLE_PORT)
+INTEGRATION_COMPOSE_ENV = POSTGRES_HOST_PORT=$(INTEGRATION_POSTGRES_PORT) REDIS_HOST_PORT=$(INTEGRATION_REDIS_PORT) MINIO_API_HOST_PORT=$(INTEGRATION_MINIO_API_PORT) MINIO_CONSOLE_HOST_PORT=$(INTEGRATION_MINIO_CONSOLE_PORT) JWT_SECRET=integration-only-jwt-secret-000000000 METRICS_AUTH_TOKEN=integration-only-metrics-token-000000 ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 
-.PHONY: help test test-unit test-integration test-integration-all test-integration-setup test-integration-teardown test-migrations test-httpapi test-aliases test-e2e test-e2e-setup test-e2e-run test-e2e-teardown test-e2e-logs test-rate-limit test-init-admin build run clean
+.PHONY: help test test-unit test-integration test-integration-all test-integration-setup test-integration-teardown test-migrations test-httpapi test-aliases test-e2e test-e2e-setup test-e2e-run test-e2e-teardown test-e2e-logs test-rate-limit test-init-admin test-load test-soak build run clean
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -18,6 +18,15 @@ test: test-unit ## Run the hermetic unit-test suite
 
 test-unit: ## Run hermetic unit tests (no external services)
 	go test -short ./...
+
+LOAD_DURATION ?= 15s
+SOAK_DURATION ?= 10m
+
+test-load: ## Measure the parallel in-process response/accounting baseline
+	go test -run '^$$' -bench '^BenchmarkNonStreamingResponse$$' -benchmem -benchtime=$(LOAD_DURATION) ./internal/httpapi
+
+test-soak: ## Run the response/accounting baseline for an extended duration
+	go test -run '^$$' -bench '^BenchmarkNonStreamingResponse$$' -benchmem -benchtime=$(SOAK_DURATION) ./internal/httpapi
 
 test-integration-setup: ## Start integration test services (Postgres, Minio, Redis)
 	@echo "Starting integration test services..."
@@ -51,16 +60,16 @@ test-integration-all: test-integration-setup ## Setup, run, and always tear down
 
 test-migrations: test-integration-setup ## Validate all migrations down and back up on a clean database
 	@status=0; ( cd .. && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000005_admin_usage_indexes.down.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.down.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.down.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.down.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.down.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.up.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.up.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.up.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.up.sql && \
-		docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000005_admin_usage_indexes.up.sql \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000005_admin_usage_indexes.down.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.down.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.down.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.down.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.down.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000001_initial_schema.up.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20251125000002_seed_data.up.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260429000003_add_monthly_usage_summary.up.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000004_exact_currency.up.sql && \
+		$(INTEGRATION_COMPOSE_ENV) docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gateway -d gateway < llm_gateway/migrations/20260712000005_admin_usage_indexes.up.sql \
 	) || status=$$?; $(MAKE) test-integration-teardown; exit $$status
 
 test-httpapi: ## Run HTTP API integration tests (requires postgres to be running)

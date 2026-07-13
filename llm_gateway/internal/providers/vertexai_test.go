@@ -102,7 +102,10 @@ func TestVertexAIValidationAndCancellation(t *testing.T) {
 
 	t.Run("cancellation", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			<-r.Context().Done()
+			select {
+			case <-r.Context().Done():
+			case <-time.After(time.Second):
+			}
 		}))
 		defer server.Close()
 		provider := newTestVertexProvider(t, server.URL, map[string]any{"request_timeout": "5s"})

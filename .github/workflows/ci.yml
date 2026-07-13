@@ -89,6 +89,7 @@ jobs:
           cache-dependency-path: webui/frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
+      - run: pnpm run test
       - run: pnpm run build
 
   bff:

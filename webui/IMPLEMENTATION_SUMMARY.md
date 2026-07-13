@@ -37,6 +37,7 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 - Same-origin fetch client with `credentials: include`
 - Vite development proxy for `/auth` and `/admin`
 - Production launcher with distinct `8080` gateway, `8000` BFF, and `8081` UI defaults
+- CI lint, component-test, and production-build gates, with repository release/runbook procedures
 - One configurable nginx template with SPA fallback, BFF proxying, and immutable static caching
 - Pre-built artifact enforcement, nginx preflight validation, readiness gating, child-failure propagation, and signal cleanup
 
