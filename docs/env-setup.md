@@ -1,255 +1,78 @@
-# Environment Variables Setup
+# Environment setup
 
-This guide explains how to configure environment variables for ThinkPixelLLMGW.
+This page is the practical `.env` workflow for the repository’s Docker Compose stack. The authoritative variable reference is [Environment variables](env-variables.md).
 
-## Quick Start
+## Create the file
 
-1. **Copy the example file:**
-   ```bash
-   cp .env.example .env
-   ```
+From the repository root:
 
-2. **Edit `.env` and add your API keys:**
-   ```bash
-   nano .env  # or use your preferred editor
-   ```
-
-3. **Add your OpenAI API key:**
-   ```env
-   OPENAI_API_KEY=sk-your-actual-openai-api-key-here
-   ```
-
-4. **Start the services:**
-   ```bash
-   docker-compose up --build
-   ```
-
-## Required Environment Variables
-
-### Database & Core Services
-
-- **`DATABASE_URL`** - PostgreSQL connection string
-  - Example: `postgres://postgres:password@localhost:5432/llmgateway?sslmode=disable`
-  - Required for all operations
-
-- **`REDIS_ADDRESS`** - Redis server address
-  - Example: `localhost:6379`
-  - Required for rate limiting, billing cache, and log buffering
-
-### Provider API Keys
-
-The gateway needs at least one provider API key to function:
-
-- **`OPENAI_API_KEY`** - Your OpenAI API key
-  - Get it from: https://platform.openai.com/api-keys
-  - Format: `sk-...`
-
-### Optional Provider Keys
-
-If you plan to use additional providers:
-
-- **`ANTHROPIC_API_KEY`** - For Claude models
-  - Get it from: https://console.anthropic.com/
-  - Format: `sk-ant-...`
-
-- **Google Vertex AI** - For Gemini models
-  - `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON
-  - `VERTEX_AI_SERVICE_ACCOUNT_JSON` - Runtime-only credential override for a provider row named `vertexai`
-  - `VERTEX_AI_ACCESS_TOKEN` - Short-lived runtime-only token override for development
-  - Project ID and location belong in the provider record's `config`; see `docs/providers.md`
-
-- **AWS Bedrock** - For AWS hosted models
-  - `AWS_ACCESS_KEY_ID` - AWS access key
-  - `AWS_SECRET_ACCESS_KEY` - AWS secret key
-  - `AWS_SESSION_TOKEN` - Session token when using temporary credentials
-  - `AWS_REGION` - AWS region (e.g., `us-east-1`)
-  - Prefer web identity, ECS/EC2 roles, or another AWS SDK default-chain source in production; see `docs/providers.md`
-
-### S3 Logging Configuration (Optional)
-
-Enable background worker to drain logs from Redis to S3:
-
-- **`LOGGING_SINK_ENABLED`** - Enable S3 logging (`true` or `false`)
-  - Default: `false`
-  - Set to `true` to enable automatic log archival
-
-- **`LOGGING_SINK_S3_BUCKET`** - S3 bucket name for logs
-  - Example: `my-llm-gateway-logs`
-  - Must be created before enabling
-
-- **`LOGGING_SINK_S3_REGION`** - AWS region for S3 bucket
-  - Example: `us-east-1`
-  - Default: `us-east-1`
-
-- **`LOGGING_SINK_S3_PREFIX`** - Prefix for log files in S3
-  - Example: `logs/` or `production/logs/`
-  - Default: `logs/`
-
-- **`LOGGING_SINK_FLUSH_SIZE`** - Number of records before flushing to S3
-  - Example: `1000`
-  - Default: `1000`
-  - Lower values = more frequent uploads, higher S3 costs
-  - Higher values = less frequent uploads, more memory usage
-
-- **`LOGGING_SINK_FLUSH_INTERVAL`** - Time duration before flushing to S3
-  - Example: `5m`, `10m`, `1h`
-  - Default: `5m`
-  - Uses Go duration format: `s` (seconds), `m` (minutes), `h` (hours)
-
-- **`POD_NAME`** - Pod/instance identifier for multi-instance deployments
-  - Example: `gateway-0`, `gateway-1`
-  - Default: `gateway-0`
-  - Used in S3 file naming to prevent conflicts
-  - In Kubernetes, set from `metadata.name` via fieldRef
-
-## How It Works
-
-1. When the gateway starts, it reads environment variables from the `.env` file
-2. Provider credentials found in supported environment overrides (`OPENAI_API_KEY`, `VERTEX_AI_ACCESS_TOKEN`, and `VERTEX_AI_SERVICE_ACCOUNT_JSON`) are runtime-only. They take precedence in memory, are reapplied on registry reload, and are never written to PostgreSQL. Google ADC is read directly by the Vertex AI OAuth client.
-3. Startup fails distinctly if an override targets a provider row that is missing or disabled. Storage failures remain database errors rather than being treated as “not found.”
-4. Audit events include only provider name, credential field names, and source—never credential values. Rotate an environment credential by updating the deployment secret and restarting the process.
-
-## Security Notes
-
-⚠️ **Important Security Considerations:**
-
-- **Never commit `.env` to version control** - It's already in `.gitignore`
-- Keep `AUDIT_BODY_MODE=hash` or `none` unless prompt/response retention has an approved privacy and lifecycle policy; see `docs/logging-privacy.md`.
-- **Always use strong random secrets** for `ENCRYPTION_KEY` and `JWT_SECRET`
-- **Use secure key generation:**
-  ```bash
-  ./llm_gateway/scripts/generate-encryption-key.sh
-  ```
-- **Rotate API keys regularly**
-- **Use environment-specific `.env` files** for different deployments
-
-## Configuration Priority
-
-Environment variables can be set in multiple ways with this priority (highest to lowest):
-
-1. Docker Compose `environment` section (overrides)
-2. `.env` file (loaded by docker-compose)
-3. Default values in `docker-compose.yaml`
-
-## Example .env File
-
-```env
-# Database & Redis (Required)
-DATABASE_URL=postgres://postgres:password@localhost:5432/llmgateway?sslmode=disable
-REDIS_ADDRESS=localhost:6379
-
-# Provider API Keys
-OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxx
-
-# Security
-ENCRYPTION_KEY=generate-this-with-the-script
-JWT_SECRET=your-secure-jwt-secret
-
-# S3 Logging (Optional)
-LOGGING_SINK_ENABLED=true
-LOGGING_SINK_S3_BUCKET=my-llm-logs
-LOGGING_SINK_S3_REGION=us-east-1
-LOGGING_SINK_S3_PREFIX=logs/
-LOGGING_SINK_FLUSH_SIZE=1000
-LOGGING_SINK_FLUSH_INTERVAL=5m
-POD_NAME=gateway-0
-
-# Optional: Override defaults
-GATEWAY_HTTP_PORT=8080
-```
-
-## Troubleshooting
-
-### Error: "api_key is required for OpenAI provider"
-
-**Cause:** The `OPENAI_API_KEY` is not set or is empty.
-
-**Solution:**
-1. Ensure `.env` file exists in the project root
-2. Verify `OPENAI_API_KEY=sk-...` is set correctly
-3. Restart the services: `docker-compose down && docker-compose up`
-
-### API Key Not Being Used
-
-**Symptoms:** A provider environment credential is not active.
-
-**Solutions:**
-1. Check that the provider exists in the database (seeded by migrations)
-2. Verify the provider is enabled and restart after changing its environment credential
-3. Check container logs: `docker-compose logs gateway`
-
-### Changes Not Reflected
-
-After updating `.env`:
 ```bash
-docker-compose down
-docker-compose up --build
+cp .env.example .env
+./llm_gateway/scripts/generate-encryption-key.sh
 ```
 
-## S3 Logging Features
+Edit `.env` and uncomment or add:
 
-When S3 logging is enabled, the gateway:
-
-1. **Buffers logs in Redis**: All request/response logs are buffered in Redis for fast writes
-2. **Background worker**: Drains Redis buffer to S3 periodically
-3. **Gzip compression**: Reduces storage costs by ~80%
-4. **Structured file naming**: `logs/YYYY/MM/DD/pod-timestamp-nano.jsonl.gz`
-5. **JSON Lines format**: One JSON object per line for easy parsing
-6. **Graceful shutdown**: Flushes remaining logs before exit
-
-**Storage costs**: With 1000 requests/day at ~2KB/request:
-- Uncompressed: ~60MB/month = ~$0.0014/month in S3 Standard
-- Gzip compressed: ~12MB/month = ~$0.0003/month in S3 Standard
-
-**IAM permissions needed**:
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject",
-        "s3:PutObjectAcl"
-      ],
-      "Resource": "arn:aws:s3:::my-llm-logs/logs/*"
-    }
-  ]
-}
+```dotenv
+OPENAI_API_KEY=sk-...
+JWT_SECRET=generate-at-least-32-random-characters
+METRICS_AUTH_TOKEN=generate-a-different-32-character-token
+ENCRYPTION_KEY=paste-the-generated-64-hex-character-value
 ```
 
-## Development vs Production
+`OPENAI_API_KEY` is needed for real requests through the seeded OpenAI provider, but not merely to start the gateway. The three security values are required at startup. Do not use the placeholder text literally.
 
-### Development (.env)
-```env
-DATABASE_URL=postgres://postgres:password@localhost:5432/llmgateway?sslmode=disable
-REDIS_ADDRESS=localhost:6379
-OPENAI_API_KEY=sk-dev-key
-ENCRYPTION_KEY=dev-random-64-hex-character-key
-JWT_SECRET=dev-random-secret
+Compose reads `.env` for interpolation and passes configured values into the gateway container. A gateway process started directly with `go run` does not parse `.env`; export its variables in the shell or use another environment loader.
 
-# Use MinIO for local S3 testing
+## Start and verify
+
+```bash
+docker compose up -d --build
+docker compose ps
+curl --fail http://localhost:8080/ready
+```
+
+If interpolation reports a missing security value, confirm that it is uncommented in the repository-root `.env`. If the gateway exits, inspect:
+
+```bash
+docker compose logs gateway
+```
+
+Common validation failures include a JWT or metrics token shorter than 32 characters, a non-hexadecimal encryption key, or an enabled logging sink without a bucket.
+
+## Provider credentials
+
+Runtime overrides are applied only to enabled provider rows with the expected name:
+
+- `OPENAI_API_KEY` → `openai`
+- `VERTEX_AI_ACCESS_TOKEN` or `VERTEX_AI_SERVICE_ACCOUNT_JSON` → `vertexai`
+- AWS SDK environment/workload credentials → `bedrock`
+
+Provider credentials stored through `/admin/providers` are encrypted. Runtime overrides are never persisted. Vertex project/location and Bedrock region/model settings are provider configuration, not global gateway environment variables. See [Provider configuration](providers.md).
+
+The gateway does not currently register a standalone Anthropic provider. Use OpenAI, Vertex AI, or Bedrock; Bedrock can route supported Anthropic model IDs.
+
+## Local MinIO logging
+
+Compose already configures the gateway container for its MinIO service and creates the `llm-logs` bucket. To disable archival while keeping local rotating audit files:
+
+```dotenv
+LOGGING_SINK_ENABLED=false
+```
+
+To run the gateway on the host with MinIO enabled, set:
+
+```dotenv
 LOGGING_SINK_ENABLED=true
-LOGGING_SINK_S3_BUCKET=test-logs
+LOGGING_SINK_S3_BUCKET=llm-logs
 LOGGING_SINK_S3_REGION=us-east-1
 AWS_ENDPOINT_URL_S3=http://localhost:9000
 AWS_ACCESS_KEY_ID=minioadmin
 AWS_SECRET_ACCESS_KEY=minioadmin
 ```
 
-### Production
-- Use a secrets management system (AWS Secrets Manager, HashiCorp Vault, etc.)
-- Generate strong encryption keys
-- Rotate credentials regularly
-- Enable S3 logging for audit compliance
-- Use least-privilege API keys and IAM roles
-- Configure S3 lifecycle policies (e.g., move to Glacier after 90 days)
-- Set up S3 bucket encryption and versioning
-- Monitor S3 upload metrics in CloudWatch
+The MinIO credentials and static test KMS key in Compose are development-only. Production S3 requires a least-privilege workload identity, bucket encryption/lifecycle policy, private networking where applicable, and tested deletion/retention procedures.
 
-## Additional Resources
+## Rotation
 
-- [OpenAI API Keys](https://platform.openai.com/api-keys)
-- [Anthropic Console](https://console.anthropic.com/)
-- [Google Cloud Setup](https://cloud.google.com/vertex-ai/docs/start/cloud-environment)
-- [AWS Bedrock Setup](https://aws.amazon.com/bedrock/)
+Provider, JWT, metrics, BFF, and encryption secrets have different rotation effects. Follow the coordinated procedures in the [Operations runbook](operations-runbook.md), especially before changing `ENCRYPTION_KEY`.

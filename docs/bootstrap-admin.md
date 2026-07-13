@@ -1,313 +1,135 @@
-# Bootstrap Admin Setup Guide
+# Bootstrap administrator
 
-This guide explains how to create the initial admin user for the LLM Gateway's admin API.
+The `init-admin` command creates the first human administrator directly in PostgreSQL. Run it once before exposing the Admin API.
 
-## Overview
+## Behavior and limitations
 
-The LLM Gateway uses admin users (stored in `admin_users` table) and service accounts (stored in `admin_tokens` table) for administrative access. These use Argon2 password hashing and JWT authentication.
+- The command creates one enabled user with the `admin` role and an Argon2id password hash.
+- It is idempotent only in the bootstrap sense: if any administrator already exists, it exits successfully without creating or changing a user.
+- It never prints or stores the plaintext password.
+- The current Admin API has no `/admin/users` or `/admin/tokens` management endpoints. Additional administrators, password changes, disablement, and service-token provisioning are not currently self-service operations.
 
-Before you can use the admin API endpoints, you need to create at least one bootstrap admin user. This guide provides a secure method for doing so in Kubernetes deployments.
+Because the command uses the gateway’s shared configuration loader, it currently requires all four gateway secrets/configuration values even though it only connects to PostgreSQL:
 
-## Method: Kubernetes Init Job (Recommended)
+| Variable | Requirement |
+|---|---|
+| `ADMIN_BOOTSTRAP_EMAIL` | Initial administrator email |
+| `ADMIN_BOOTSTRAP_PASSWORD` | Password of at least 8 characters; use 12 or more in practice |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | At least 32 characters |
+| `METRICS_AUTH_TOKEN` | At least 32 characters |
+| `ENCRYPTION_KEY` | Exactly 64 hexadecimal characters |
 
-This method uses a one-time Kubernetes Job that runs before the gateway pods start. This approach:
+## Docker Compose
 
-- ✅ Prevents race conditions in multi-pod deployments
-- ✅ Keeps credentials isolated from long-running gateway pods
-- ✅ Follows standard Kubernetes initialization patterns
-- ✅ Is idempotent (can be safely re-run)
+First configure and start the stack as described in [Quick start](quickstart.md). Then run:
 
-### Prerequisites
+```bash
+docker compose run --rm \
+  -e ADMIN_BOOTSTRAP_EMAIL=admin@example.com \
+  -e ADMIN_BOOTSTRAP_PASSWORD='replace-with-a-strong-password' \
+  --entrypoint /app/init-admin \
+  gateway
+```
 
-- Kubernetes cluster with `kubectl` configured
-- Docker image built with both `gateway` and `init-admin` binaries
-- Database accessible from Kubernetes cluster
-- Namespace created (we'll use `default` in examples)
+The gateway service already receives `DATABASE_URL`, `JWT_SECRET`, `METRICS_AUTH_TOKEN`, and `ENCRYPTION_KEY` from Compose and `.env`.
 
-### Step 1: Create Bootstrap Credentials Secret
+Verify login:
 
-Create a Kubernetes Secret containing the bootstrap admin credentials:
+```bash
+curl --fail-with-body http://localhost:8080/admin/auth/login \
+  -H 'Content-Type: application/json' \
+  --data '{"email":"admin@example.com","password":"replace-with-a-strong-password"}'
+```
+
+The response contains an admin JWT in `token`. Validate it with:
+
+```bash
+curl --fail-with-body http://localhost:8080/admin/me \
+  -H 'Authorization: Bearer <token>'
+```
+
+## Run locally
+
+With PostgreSQL and all migrations already available:
+
+```bash
+cd llm_gateway
+go build -o bin/init-admin ./cmd/init-admin
+
+export ADMIN_BOOTSTRAP_EMAIL='admin@example.com'
+export ADMIN_BOOTSTRAP_PASSWORD='replace-with-a-strong-password'
+export DATABASE_URL='postgres://gateway:password@localhost:5432/gateway?sslmode=disable'
+export JWT_SECRET='0123456789abcdef0123456789abcdef'
+export METRICS_AUTH_TOKEN='abcdef0123456789abcdef0123456789'
+export ENCRYPTION_KEY='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+
+./bin/init-admin
+```
+
+Generate unique secrets rather than using these deterministic examples.
+
+## Kubernetes Job
+
+The repository-root `k8s-init-admin-job.yaml` is a hardened Job example. It expects three existing Secrets:
 
 ```bash
 kubectl create secret generic llm-gateway-bootstrap \
   --from-literal=email=admin@example.com \
-  --from-literal=password=your-secure-password \
-  --namespace=default
+  --from-literal=password='replace-with-a-strong-password'
+
+kubectl create secret generic llm-gateway-db \
+  --from-literal=url='postgres://gateway:password@postgres.default.svc.cluster.local:5432/gateway?sslmode=require'
+
+kubectl create secret generic llm-gateway-secrets \
+  --from-literal=jwt-secret='generate-at-least-32-random-characters' \
+  --from-literal=metrics-auth-token='generate-a-different-32-character-token' \
+  --from-literal=encryption-key='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 ```
 
-**Security Notes:**
-- Use a strong password (minimum 8 characters)
-- Store the password in a secure password manager
-- You can delete this secret after the bootstrap user is created
+Replace every example value. Prefer your cluster’s approved external secret manager instead of literal shell arguments, which may be retained in shell history.
 
-### Step 2: Deploy the Init Job
-
-Apply the init job configuration:
+Pin the Job image to the qualified immutable digest, set the namespace, and apply it:
 
 ```bash
 kubectl apply -f k8s-init-admin-job.yaml
+kubectl wait --for=condition=complete --timeout=120s job/llm-gateway-init-admin
+kubectl logs job/llm-gateway-init-admin
 ```
 
-The job will:
-1. Connect to the database
-2. Check if any admin users already exist
-3. If none exist, create the bootstrap admin user
-4. Exit successfully
+Deploy gateway workloads only after successful completion. The repository does not provide a production gateway Deployment, Service, or Ingress.
 
-### Step 3: Verify Job Completion
-
-Check the job status:
+After verifying login, delete the short-lived bootstrap credential and completed Job:
 
 ```bash
-kubectl get jobs llm-gateway-init-admin -n default
+kubectl delete secret llm-gateway-bootstrap
+kubectl delete job llm-gateway-init-admin
 ```
 
-View the job logs:
+Retain the database and gateway application secrets. The Job has `automountServiceAccountToken: false`, runs as a non-root user, drops Linux capabilities, uses a read-only root filesystem, and sets the default seccomp profile. Adapt resource limits and policy labels to the target cluster.
 
-```bash
-kubectl logs job/llm-gateway-init-admin -n default
-```
+## Re-running and recovery
 
-Expected output on first run:
-```
-LLM Gateway - Bootstrap Admin Initialization
-================================================
-Connecting to database...
-Database connection established
-Checking for existing admin users...
-Creating bootstrap admin user: admin@example.com
+To run the Job again, delete the completed Job object and reapply the manifest. If an administrator row already exists—including a disabled one—the command intentionally creates nothing.
 
-==================================================
-SUCCESS: Bootstrap admin user created successfully!
-==================================================
-Email: admin@example.com
-ID: 12345678-1234-1234-1234-123456789abc
-Roles: [admin]
-Created: 2025-12-15T10:30:00Z
-
-You can now log in to the admin panel with these credentials.
-```
-
-If admin users already exist:
-```
-INFO: Found 1 existing admin user(s). Bootstrap not needed.
-Existing users:
-  - admin@example.com (enabled) - Roles: [admin]
-
-Exiting successfully (no action taken)
-```
-
-### Step 4: Deploy Gateway Pods
-
-Once the init job completes successfully, deploy your gateway:
-
-```bash
-kubectl apply -f gateway-deployment.yaml
-```
-
-### Step 5: Log In and Create Additional Admins
-
-1. Use the bootstrap credentials to authenticate:
-
-```bash
-curl -X POST http://gateway-service/admin/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@example.com",
-    "password": "your-secure-password"
-  }'
-```
-
-2. Save the returned JWT token
-
-3. Create additional admin users through the API:
-
-```bash
-curl -X POST http://gateway-service/admin/users \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "another-admin@example.com",
-    "password": "another-secure-password",
-    "roles": ["admin"]
-  }'
-```
-
-### Step 6: Security Cleanup (Optional)
-
-After creating additional admin users, enhance security:
-
-1. **Delete the bootstrap secret:**
-```bash
-kubectl delete secret llm-gateway-bootstrap -n default
-```
-
-2. **Consider rotating the bootstrap admin:**
-   - Create a new admin with a different email
-   - Log in with the new admin
-   - Disable or delete the original bootstrap admin through the API
-
-3. **Delete the completed job:**
-```bash
-kubectl delete job llm-gateway-init-admin -n default
-```
-
-## Kubernetes Configuration Reference
-
-### Full k8s-init-admin-job.yaml
-
-See the provided `k8s-init-admin-job.yaml` file in the repository root for a complete example including:
-
-- Secret definition (with base64-encoded example values)
-- Job definition with proper security context
-- Example Deployment configurations
-- Optional initContainer for job synchronization
-
-### Required Environment Variables
-
-The init-admin tool requires:
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `ADMIN_BOOTSTRAP_EMAIL` | Email for bootstrap admin | Yes |
-| `ADMIN_BOOTSTRAP_PASSWORD` | Password for bootstrap admin (min 8 chars) | Yes |
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `JWT_SECRET` | JWT signing secret (required by shared config loader) | Yes |
-
-### Database Connection String Format
-
-```
-postgres://username:password@host:port/database?sslmode=disable
-```
-
-Example for Cloud SQL:
-```
-postgres://gateway:password@10.0.0.5:5432/llmgateway?sslmode=require
-```
-
-## Re-running the Init Job
-
-The init job is **idempotent**. It's safe to run multiple times:
-
-- If admin users exist, it exits successfully without making changes
-- If the specific email already exists, it skips creation
-- You can use it to bootstrap different environments (dev, staging, prod)
-
-To re-run:
-
-```bash
-kubectl delete job llm-gateway-init-admin -n default
-kubectl apply -f k8s-init-admin-job.yaml
-```
+If bootstrap credentials are lost after creation, do not delete production database rows casually or inject a known hash. Restore access through an approved, audited database-administration procedure or implement the missing administrator-management capability. Record the action and rotate affected credentials.
 
 ## Troubleshooting
 
-### Job Fails to Connect to Database
+### Configuration validation fails
 
-Check database connectivity:
-```bash
-kubectl run -it --rm debug --image=postgres:15-alpine --restart=Never -- \
-  psql "$DATABASE_URL"
-```
+Errors naming `JWT_SECRET`, `METRICS_AUTH_TOKEN`, or `ENCRYPTION_KEY` occur before the database connection. Confirm the referenced Secret keys exist and meet the length/format rules.
 
-Verify the `DATABASE_URL` secret is correct:
-```bash
-kubectl get secret llm-gateway-db -n default -o yaml
-```
+### Database connection fails
 
-### "Invalid Credentials" Error
+Check DNS, network policy, TLS parameters, credentials, and that all migrations have run. Inspect only Secret metadata during routine diagnosis; avoid printing decoded secrets into terminals or tickets.
 
-Verify secret values:
-```bash
-kubectl get secret llm-gateway-bootstrap -n default -o jsonpath='{.data.email}' | base64 -d
-```
+### No administrator is created
 
-### Job Completes but No Admin Created
+Read the Job output. A successful message reporting existing users means bootstrap was skipped by design. Query `admin_users` through a restricted database identity if ownership/status must be confirmed.
 
-Check job logs for details:
-```bash
-kubectl logs job/llm-gateway-init-admin -n default
-```
+### Workload starts before bootstrap
 
-Common issues:
-- Database connection failed
-- Email format invalid
-- Password too short (< 8 characters)
-- Admin users already exist
+A standalone Job does not automatically order a Deployment. Gate rollout in CI/CD or Helm on Job success. Do not add a long-running init container that repeatedly handles the bootstrap password.
 
-### Pod Starts Before Init Job Completes
-
-Use an initContainer or Helm hooks to ensure proper ordering. See the example in `k8s-init-admin-job.yaml`.
-
-## Local Development / Docker Compose
-
-For local development, you can run the init-admin tool directly:
-
-```bash
-# Build the binary
-cd llm_gateway
-go build -o init-admin ./cmd/init-admin
-
-# Set environment variables
-export ADMIN_BOOTSTRAP_EMAIL="admin@localhost"
-export ADMIN_BOOTSTRAP_PASSWORD="devpassword123"
-export DATABASE_URL="postgres://llmgateway:llmgateway_dev_password@localhost:5432/llmgateway?sslmode=disable"
-export JWT_SECRET="dev-secret"
-
-# Run the tool
-./init-admin
-```
-
-Or using Docker Compose:
-
-```yaml
-services:
-  init-admin:
-    image: your-registry/llm-gateway:latest
-    command: ["/app/init-admin"]
-    environment:
-      ADMIN_BOOTSTRAP_EMAIL: admin@localhost
-      ADMIN_BOOTSTRAP_PASSWORD: devpassword123
-      DATABASE_URL: postgres://llmgateway:llmgateway_dev_password@postgres:5432/llmgateway?sslmode=disable
-      JWT_SECRET: dev-secret
-    depends_on:
-      - postgres
-```
-
-Run once:
-```bash
-docker-compose run --rm init-admin
-```
-
-## Security Best Practices
-
-1. **Strong Passwords**: Use passwords with at least 12 characters, including mixed case, numbers, and symbols
-
-2. **Secret Management**: Consider using external secret managers:
-   - AWS Secrets Manager
-   - Azure Key Vault
-   - HashiCorp Vault
-   - Sealed Secrets for Kubernetes
-
-3. **Rotate Credentials**: Change the bootstrap admin password after initial setup
-
-4. **Principle of Least Privilege**: Create service accounts with limited roles for automated tools
-
-5. **Audit Logging**: Monitor admin API access through your gateway logs
-
-6. **Delete Bootstrap Resources**: Remove the bootstrap secret and job after successful initialization
-
-## Next Steps
-
-After creating your bootstrap admin:
-
-1. **Access the Admin API**: See `API_DOCUMENTATION.md` for available endpoints
-2. **Create API Keys**: Use `/admin/keys` endpoints to create client API keys
-3. **Configure Providers**: Set up LLM provider credentials via `/admin/providers`
-4. **Set Up Models**: Configure model aliases and routing via `/admin/models`
-5. **Create Service Accounts**: For automated tools, create admin tokens via `/admin/tokens`
-
-For more information, see:
-- `DATABASE_SCHEMA.md` - Database schema including admin tables
-- `ENV_VARIABLES.md` - All available environment variables
-- `QUICKSTART.md` - General gateway setup guide
+For API-key, provider, model, and alias administration after login, see the endpoint table in the root [README](../README.md) and [Provider configuration](providers.md).

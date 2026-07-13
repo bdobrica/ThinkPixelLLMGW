@@ -91,7 +91,7 @@ Encrypt backups, restrict access, test point-in-time recovery if enabled, and re
 For a UTC interval and API key/model/provider grouping:
 
 1. Export provider usage/invoice data and freeze its currency/time-zone/version metadata.
-2. Query `usage_records` and `monthly_usage_summaries`; isolate records with errors, interrupted streams, or missing terminal usage.
+2. Query `usage_records` and `monthly_usage_summary`; isolate records with errors, interrupted streams, or missing terminal usage.
 3. Recompute expected cost with the model pricing components effective for that interval. Pricing history is not versioned automatically, so preserve catalog revisions with the release evidence.
 4. Compare durable usage, Redis monthly totals, summaries, and provider data in integer nano-USD. Do not compare rounded UI dollars.
 5. Investigate duplicates by request ID and gaps by provider request ID/time window. Record an approved adjustment rather than editing raw usage silently.

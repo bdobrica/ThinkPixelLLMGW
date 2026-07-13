@@ -97,7 +97,7 @@ MINIO_ENDPOINT=http://localhost:19000 \
 
 ## 3. End-to-end tests
 
-The Python tests exercise the running Docker Compose stack and may make real OpenAI requests. Create the root `.env` file first and set `OPENAI_API_KEY`, `JWT_SECRET`, and `ENCRYPTION_KEY`.
+The Python tests exercise the running Docker Compose stack and may make real OpenAI requests. Create the root `.env` file first and set `OPENAI_API_KEY`, `JWT_SECRET`, `METRICS_AUTH_TOKEN`, and `ENCRYPTION_KEY`. The JWT and metrics values must each contain at least 32 characters, and the encryption key must contain exactly 64 hexadecimal characters.
 
 Install dependencies into any active Python environment; the Makefile does not assume a developer-specific virtual-environment path:
 

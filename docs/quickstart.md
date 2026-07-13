@@ -1,452 +1,148 @@
-# Quick Start Guide - ThinkPixelLLMGW
+# Quick start
 
-## Overview
-
-This guide will help you get started with development on ThinkPixelLLMGW.
-
-**Current Status (November 25, 2025):**
-- ✅ **Core gateway functional** - Proxy endpoint fully implemented with OpenAI provider
-- ✅ **Database layer complete** - PostgreSQL with migrations, repositories, and LRU caching
-- ✅ **Redis integration ready** - Rate limiting, billing, and log buffering operational
-- ✅ **Provider system live** - OpenAI provider working with streaming support
-- 🔨 **Next up** - S3 writer, Admin API endpoints, JWT authentication
+This guide starts the development stack, creates the first administrator, and sends a real OpenAI-compatible request. The Compose stack is for development and release qualification, not production.
 
 ## Prerequisites
 
-- **Go**: 1.23 or higher ([install](https://go.dev/dl/))
-- **Docker**: For running PostgreSQL, Redis, MinIO ([install](https://docs.docker.com/get-docker/))
-- **Git**: For version control
-- **IDE**: VS Code, GoLand, or your preferred editor
+- Docker with the Compose v2 plugin
+- Git
+- An OpenAI API key for the seeded OpenAI provider
 
-## Quick Setup (5 minutes)
+Go 1.26.5 or newer is needed only when running the gateway or its tests outside Docker.
 
-### 1. Clone the Repository
+## 1. Configure secrets
 
-```bash
-git clone https://github.com/bdobrica/ThinkPixelLLMGW.git
-cd ThinkPixelLLMGW/llm-gateway
-```
-
-### 2. Install Go Dependencies
+From the repository root:
 
 ```bash
-go mod download
+cp .env.example .env
+./llm_gateway/scripts/generate-encryption-key.sh
 ```
 
-### 3. Start Infrastructure (Docker Compose)
+Edit `.env` and replace the examples with real values:
 
-Create `docker-compose.yml` in the project root:
-
-```yaml
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: llmgateway
-      POSTGRES_USER: llmgateway
-      POSTGRES_PASSWORD: llmgateway_dev_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+```dotenv
+OPENAI_API_KEY=sk-...
+JWT_SECRET=generate-at-least-32-random-characters
+METRICS_AUTH_TOKEN=generate-a-different-32-character-token
+ENCRYPTION_KEY=paste-the-64-hex-character-generated-value
 ```
 
-Start services:
+`JWT_SECRET` and `METRICS_AUTH_TOKEN` must each be at least 32 characters. `ENCRYPTION_KEY` must be exactly 64 hexadecimal characters. Do not commit `.env`.
+
+## 2. Start the stack
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
+docker compose ps
 ```
 
-Verify services are running:
+Compose starts PostgreSQL, Redis, MinIO, the bucket initializer, and the gateway. The database migrations and development seed data are applied automatically to a new PostgreSQL volume.
+
+Check liveness and dependency readiness:
 
 ```bash
-docker-compose ps
+curl --fail http://localhost:8080/health
+curl --fail http://localhost:8080/ready
 ```
 
-### 4. Configure Environment
+`/health` reports process liveness. `/ready` returns success only when PostgreSQL, Redis, the provider registry, and asynchronous workers are available.
 
-Create `.env` file in `llm-gateway/`:
+## 3. Bootstrap an administrator
+
+Choose a strong password and run the one-time initializer using the gateway image and configuration:
 
 ```bash
-# HTTP Server
-GATEWAY_HTTP_PORT=8080
-
-# Database
-DATABASE_URL=postgres://llmgateway:llmgateway_dev_password@localhost:5432/llmgateway?sslmode=disable
-
-# Redis
-REDIS_URL=redis://localhost:6379/0
-
-# S3 / MinIO
-S3_ENDPOINT=http://localhost:9000
-S3_BUCKET=llm-logs
-S3_REGION=us-east-1
-S3_ACCESS_KEY=minioadmin
-S3_SECRET_KEY=minioadmin
-
-# JWT (for admin API)
-JWT_SECRET=replace-with-a-long-random-secret
-
-# Encryption (32 bytes hex for AES-256)
-ENCRYPTION_KEY=replace-with-64-hex-characters
+docker compose run --rm \
+  -e ADMIN_BOOTSTRAP_EMAIL=admin@example.com \
+  -e ADMIN_BOOTSTRAP_PASSWORD='replace-with-a-strong-password' \
+  --entrypoint /app/init-admin \
+  gateway
 ```
 
-Generate a secure encryption key:
+The command is idempotent: if any administrator already exists, it exits successfully without creating another. See [Bootstrap admin](bootstrap-admin.md) for Kubernetes and troubleshooting instructions.
+
+Log in and save the returned JWT:
 
 ```bash
-openssl rand -hex 32
+curl --fail-with-body http://localhost:8080/admin/auth/login \
+  -H 'Content-Type: application/json' \
+  --data '{"email":"admin@example.com","password":"replace-with-a-strong-password"}'
 ```
 
-### 5. Run the Gateway
+The response contains a `token`. Use it as `Authorization: Bearer <token>` for Admin API requests.
+
+## 4. Use the seeded development API key
+
+The development migration creates the plaintext test key `demo-key-12345`, the OpenAI provider row named `openai`, and several model records. `OPENAI_API_KEY` is applied to that provider in memory and is never written to PostgreSQL.
+
+Send a non-streaming request:
 
 ```bash
-go run cmd/gateway/main.go
-```
-
-You should see:
-
-```
-llm-gateway listening on :8080
-```
-
-### 6. Test the Proxy Endpoint
-
-```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer demo-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "Hello!"}]
+curl --fail-with-body http://localhost:8080/v1/chat/completions \
+  -H 'Authorization: Bearer demo-key-12345' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Reply with hello."}]
   }'
 ```
 
-**Note**: This currently uses placeholder implementations. You'll get a stubbed response.
+For streaming, add `"stream": true`. Real provider requests can incur charges.
 
----
+The seeded key is development-only. Create a replacement through `POST /admin/keys`, store the returned plaintext key immediately, and remove or disable the seeded key before using a persistent environment.
 
-## Development Workflow
-
-### Running Tests
+## 5. Inspect the services
 
 ```bash
-# All tests
-go test ./...
-
-# With coverage
-go test -cover ./...
-
-# Specific package
-go test ./internal/auth/...
-
-# Verbose output
-go test -v ./...
+docker compose logs -f gateway
+docker compose exec postgres psql -U gateway -d gateway
+docker compose exec redis redis-cli
 ```
 
-### Code Style
-
-Format code before committing:
+MinIO is available at `http://localhost:9001` with the development credentials `minioadmin` / `minioadmin`. Prometheus metrics require their dedicated token:
 
 ```bash
-go fmt ./...
+curl --fail http://localhost:8080/metrics \
+  -H "Authorization: Bearer $METRICS_AUTH_TOKEN"
 ```
 
-Run linter (install golangci-lint first):
+## Local Go development
+
+Start only the dependencies from the repository root:
 
 ```bash
-golangci-lint run
+docker compose up -d postgres redis minio minio-create-bucket
 ```
 
-### Database Migrations (Once Implemented)
+When running the gateway on the host, export host-facing values rather than Compose service names:
 
 ```bash
-# Run migrations
-go run cmd/migrate/main.go up
+export DATABASE_URL='postgres://gateway:password@localhost:5432/gateway?sslmode=disable'
+export REDIS_ADDRESS='localhost:6379'
+export JWT_SECRET='generate-at-least-32-random-characters'
+export METRICS_AUTH_TOKEN='generate-a-different-32-character-token'
+export ENCRYPTION_KEY='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+export LOGGING_SINK_ENABLED=false
 
-# Rollback
-go run cmd/migrate/main.go down
-
-# Create new migration
-go run cmd/migrate/main.go create add_users_table
+cd llm_gateway
+go run ./cmd/gateway
 ```
 
-### Debugging
+Run the hermetic test suite with `make test`; use [Testing guide](testing-guide.md) for integration, end-to-end, load, and release checks.
 
-**With VS Code**:
+## Stop or reset
 
-Create `.vscode/launch.json`:
-
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Launch Gateway",
-      "type": "go",
-      "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/llm-gateway/cmd/gateway",
-      "env": {
-        "GATEWAY_HTTP_PORT": "8080"
-      }
-    }
-  ]
-}
-```
-
-Press F5 to start debugging.
-
-**With GoLand**:
-
-Right-click `cmd/gateway/main.go` → Debug 'go build'
-
----
-
-## Next Steps for Development
-
-Based on `TODO.md` and `DEVELOPMENT_PLAN.md`, the immediate priorities are:
-
-### Week 1-2: Foundation
-
-1. **Database Schema** (Start Here!)
-   - Create `internal/storage/migrations/001_initial_schema.sql`
-   - Define tables: api_keys, providers, model_aliases, usage_history
-   - Implement repository interfaces
-
-2. **Redis Integration**
-   - Rate limiter using Redis
-   - Billing cache with atomic increments
-   - Log buffer with Redis lists
-
-3. **Configuration**
-   - Expand `internal/config/config.go` with all settings
-   - Add validation
-
-**Task Breakdown in TODO.md** - See Phase 1 for detailed subtasks.
-
-### Suggested First Pull Request
-
-**Title**: "Add PostgreSQL schema and migrations"
-
-**Changes**:
-- `internal/storage/migrations/001_initial_schema.sql`
-- `internal/storage/db.go` (connection setup)
-- `internal/storage/repositories.go` (basic CRUD)
-- Update `go.mod` with database driver
-- Tests for repositories
-
-This gives you a solid foundation to build on.
-
----
-
-## Useful Commands
-
-### Docker Compose
+Stop containers while retaining data:
 
 ```bash
-# Start services
-docker-compose up -d
-
-# Stop services
-docker-compose stop
-
-# View logs
-docker-compose logs -f postgres
-docker-compose logs -f redis
-
-# Remove everything (fresh start)
-docker-compose down -v
+docker compose down
 ```
 
-### PostgreSQL Access
+Delete all development PostgreSQL, Redis, MinIO, and request-log volumes:
 
 ```bash
-# Connect to database
-docker exec -it <postgres-container-name> psql -U llmgateway -d llmgateway
-
-# Inside psql
-\dt          # List tables
-\d api_keys  # Describe api_keys table
-SELECT * FROM api_keys;
-\q           # Quit
+docker compose down -v
 ```
 
-### Redis Access
-
-```bash
-# Connect to Redis CLI
-docker exec -it <redis-container-name> redis-cli
-
-# Inside redis-cli
-KEYS *                           # List all keys
-GET cost:api-key-123:2024-01    # Get billing data
-LRANGE log_buffer 0 10          # View log buffer
-```
-
-### MinIO Access
-
-Open browser: http://localhost:9001
-- Username: `minioadmin`
-- Password: `minioadmin`
-
-Create bucket `llm-logs` in the UI.
-
----
-
-## Common Issues
-
-### Port Already in Use
-
-If you get "port already in use" errors:
-
-```bash
-# Find process using port 8080
-lsof -i :8080  # macOS/Linux
-netstat -ano | findstr :8080  # Windows
-
-# Kill the process or change port in .env
-```
-
-### Database Connection Failed
-
-Check PostgreSQL is running:
-
-```bash
-docker-compose ps
-```
-
-Test connection:
-
-```bash
-docker exec -it <postgres-container-name> psql -U llmgateway -d llmgateway -c "SELECT 1;"
-```
-
-### Redis Connection Failed
-
-Verify Redis is accessible:
-
-```bash
-docker exec -it <redis-container-name> redis-cli PING
-# Should return: PONG
-```
-
----
-
-## Project Structure Reference
-
-```
-llm-gateway/
-├── cmd/
-│   └── gateway/
-│       └── main.go              # Application entry point
-├── internal/
-│   ├── auth/                    # Authentication & authorization
-│   │   ├── api_key.go          # API key lookup
-│   │   ├── jwt.go              # JWT handling
-│   │   └── hash.go             # Hashing utilities
-│   ├── billing/                 # Cost tracking & budgets
-│   │   └── billing.go
-│   ├── config/                  # Configuration management
-│   │   └── config.go
-│   ├── httpapi/                 # HTTP handlers
-│   │   ├── router.go           # Route setup
-│   │   ├── proxy_handler.go    # Proxy endpoint
-│   │   ├── admin_handler.go    # Admin API
-│   │   └── jwt_middleware.go   # JWT middleware
-│   ├── logging/                 # Logging pipeline
-│   │   ├── sink.go
-│   │   ├── redis_buffer.go
-│   │   └── s3_writer.go
-│   ├── metrics/                 # Metrics (Prometheus)
-│   │   └── metrics.go
-│   ├── models/                  # Data models
-│   │   ├── api_key.go
-│   │   ├── provider.go
-│   │   ├── alias.go
-│   │   └── errors.go
-│   ├── providers/               # LLM provider implementations
-│   │   ├── provider.go         # Interface
-│   │   ├── registry.go         # Provider registry
-│   │   ├── openai.go
-│   │   ├── vertexai.go
-│   │   └── bedrock.go
-│   ├── ratelimit/              # Rate limiting
-│   │   └── ratelimiter.go
-│   └── storage/                # Database & encryption
-│       ├── db.go
-│       ├── encryption.go
-│       └── migrations/
-├── go.mod
-└── go.sum
-```
-
----
-
-## Learning Resources
-
-### Go
-- [Official Go Tutorial](https://go.dev/tour/)
-- [Effective Go](https://go.dev/doc/effective_go)
-- [Go by Example](https://gobyexample.com/)
-
-### PostgreSQL with Go
-- [pgx driver documentation](https://github.com/jackc/pgx)
-- [sqlx tutorial](http://jmoiron.github.io/sqlx/)
-
-### Redis with Go
-- [go-redis documentation](https://redis.uptrace.dev/)
-- [Redis commands reference](https://redis.io/commands/)
-
-### Testing in Go
-- [Testing package docs](https://pkg.go.dev/testing)
-- [Advanced Go testing](https://quii.gitbook.io/learn-go-with-tests/)
-
----
-
-## Getting Help
-
-- **Documentation**: See `README.md`, `TODO.md`, `DEVELOPMENT_PLAN.md`
-- **Code Comments**: Most files have TODO comments explaining what needs to be implemented
-- **Issues**: Check GitHub Issues (or create your own tracking system)
-
----
-
-## Next: Your First Contribution
-
-Ready to start coding? Pick a task from `TODO.md` Phase 1 and:
-
-1. Create a feature branch: `git checkout -b feature/database-schema`
-2. Implement the feature with tests
-3. Run tests: `go test ./...`
-4. Commit changes: `git commit -m "Add PostgreSQL schema and migrations"`
-5. Push and create PR (if working with a team)
-
-**Recommended Starting Point**: Database schema (see TODO.md section 1.1)
-
-Good luck building ThinkPixelLLMGW! 🚀
+The second command is destructive. For configuration details, continue with [Environment variables](env-variables.md), [Provider configuration](providers.md), and [Docker setup](docker-setup.md).

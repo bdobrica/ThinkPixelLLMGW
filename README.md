@@ -63,7 +63,11 @@ Start the stack and bootstrap an administrator:
 
 ```bash
 docker compose up -d --build
-docker compose run --rm gateway /app/init-admin
+docker compose run --rm \
+  -e ADMIN_BOOTSTRAP_EMAIL=admin@example.com \
+  -e ADMIN_BOOTSTRAP_PASSWORD='replace-with-a-strong-password' \
+  --entrypoint /app/init-admin \
+  gateway
 ```
 
 The gateway listens on `http://localhost:8080`. See [docs/quickstart.md](docs/quickstart.md) and [docs/bootstrap-admin.md](docs/bootstrap-admin.md) for the full workflow.

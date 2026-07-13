@@ -23,7 +23,9 @@ Before you can use the admin API endpoints, you need at least one admin user. Th
 | `ADMIN_BOOTSTRAP_EMAIL` | Email for bootstrap admin | Yes | `admin@example.com` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password (min 8 chars) | Yes | `SecurePass123!` |
 | `DATABASE_URL` | PostgreSQL connection string | Yes | `postgres://user:pass@host:5432/db` |
-| `JWT_SECRET` | JWT signing secret (required by shared config loader) | Yes | `secret` |
+| `JWT_SECRET` | JWT signing secret required by the shared config loader (min 32 chars) | Yes | generated secret |
+| `METRICS_AUTH_TOKEN` | Metrics bearer token required by the shared config loader (min 32 chars) | Yes | generated token |
+| `ENCRYPTION_KEY` | AES key required by the shared config loader (64 hexadecimal chars) | Yes | generated key |
 
 ### Running Locally
 
@@ -35,6 +37,9 @@ go build -o init-admin ./cmd/init-admin
 export ADMIN_BOOTSTRAP_EMAIL="admin@localhost"
 export ADMIN_BOOTSTRAP_PASSWORD="devpassword123"
 export DATABASE_URL="postgres://llmgateway:password@localhost:5432/llmgateway?sslmode=disable"
+export JWT_SECRET="0123456789abcdef0123456789abcdef"
+export METRICS_AUTH_TOKEN="abcdef0123456789abcdef0123456789"
+export ENCRYPTION_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 # Run the tool
 ./init-admin
@@ -47,28 +52,16 @@ docker run --rm \
   -e ADMIN_BOOTSTRAP_EMAIL=admin@example.com \
   -e ADMIN_BOOTSTRAP_PASSWORD=your-secure-password \
   -e DATABASE_URL=postgres://user:pass@host:5432/db \
+  -e JWT_SECRET=0123456789abcdef0123456789abcdef \
+  -e METRICS_AUTH_TOKEN=abcdef0123456789abcdef0123456789 \
+  -e ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   your-registry/llm-gateway:latest \
   /app/init-admin
 ```
 
 ### Running in Kubernetes
 
-See `k8s-init-admin-job.yaml` in the repository root for a complete example.
-
-Quick start:
-
-```bash
-# Create secret
-kubectl create secret generic llm-gateway-bootstrap \
-  --from-literal=email=admin@example.com \
-  --from-literal=password=your-secure-password
-
-# Apply job
-kubectl apply -f k8s-init-admin-job.yaml
-
-# Check logs
-kubectl logs job/llm-gateway-init-admin
-```
+See [`docs/bootstrap-admin.md`](../../../docs/bootstrap-admin.md) for the required bootstrap, database, and gateway Secrets and the repository-root `k8s-init-admin-job.yaml` example.
 
 ## Behavior
 
@@ -91,12 +84,12 @@ Roles: [admin]
 Created: 2025-12-15T10:30:00Z
 
 You can now log in to the admin panel with these credentials.
-IMPORTANT: Store these credentials securely and consider changing the password after first login.
+IMPORTANT: Store these credentials securely; self-service password changes are not implemented.
 
 For security, you should now:
 1. Remove ADMIN_BOOTSTRAP_EMAIL and ADMIN_BOOTSTRAP_PASSWORD from your environment
-2. Create additional admin users through the API if needed
-3. Consider disabling or rotating this initial admin account
+2. Verify login and restrict the Admin API to trusted networks
+3. Use an approved, audited database procedure if bootstrap access must be recovered
 ```
 
 ### Subsequent Runs (Admins Already Exist)
@@ -146,8 +139,8 @@ After running this tool:
 
 1. **Start the gateway**: The gateway pods can now start normally
 2. **Login via API**: Use `/admin/auth/login` with bootstrap credentials
-3. **Create more admins**: Use `/admin/users` endpoint to create additional users
-4. **Rotate credentials**: Change or disable the bootstrap admin after setup
+3. **Manage gateway resources**: Use the implemented key, provider, model, and alias endpoints
+4. **Plan administrator lifecycle**: User/service-token management endpoints are not implemented; use an approved audited recovery procedure if bootstrap access is lost
 
 ## Development
 
@@ -176,7 +169,9 @@ docker run --rm -d \
 export ADMIN_BOOTSTRAP_EMAIL="test@example.com"
 export ADMIN_BOOTSTRAP_PASSWORD="testpass123"
 export DATABASE_URL="postgres://test:test@localhost:5433/testdb?sslmode=disable"
-export JWT_SECRET="test-secret"
+export JWT_SECRET="0123456789abcdef0123456789abcdef"
+export METRICS_AUTH_TOKEN="abcdef0123456789abcdef0123456789"
+export ENCRYPTION_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 ./init-admin
 

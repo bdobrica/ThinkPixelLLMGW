@@ -140,11 +140,11 @@ func main() {
 	fmt.Printf("Roles: %v\n", adminUser.Roles)
 	fmt.Printf("Created: %s\n", adminUser.CreatedAt.Format(time.RFC3339))
 	fmt.Println("\nYou can now log in to the admin panel with these credentials.")
-	fmt.Println("IMPORTANT: Store these credentials securely and consider changing the password after first login.")
+	fmt.Println("IMPORTANT: Store these credentials securely; self-service password changes are not implemented.")
 	fmt.Println("\nFor security, you should now:")
 	fmt.Println("1. Remove ADMIN_BOOTSTRAP_EMAIL and ADMIN_BOOTSTRAP_PASSWORD from your environment")
-	fmt.Println("2. Create additional admin users through the API if needed")
-	fmt.Println("3. Consider disabling or rotating this initial admin account")
+	fmt.Println("2. Verify login and restrict the Admin API to trusted networks")
+	fmt.Println("3. Use an approved, audited database procedure if bootstrap access must be recovered")
 }
 
 // isValidEmail performs a basic email validation

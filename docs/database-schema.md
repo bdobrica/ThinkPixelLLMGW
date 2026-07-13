@@ -1,731 +1,229 @@
-# Database Schema Documentation
+# Database schema
 
-This document describes the PostgreSQL database schema for ThinkPixelLLMGW.
+This document describes the schema produced by the committed PostgreSQL migrations in `llm_gateway/migrations`. The latest migration is `20260712000005_admin_usage_indexes`.
 
-## Entity Relationship Diagram
+## Relationships
 
 ```mermaid
 erDiagram
-    providers ||--o{ models : "litellm_provider"
-    providers ||--o{ model_aliases : "provider_id"
-    models ||--o{ model_aliases : "target_model_id"
-    model_aliases ||--o{ model_alias_tags : "model_alias_id"
-    api_keys ||--o{ api_key_tags : "api_key_id"
-    api_keys ||--o{ usage_records : "api_key_id"
-    models ||--o{ usage_records : "model_id"
-    providers ||--o{ usage_records : "provider_id"
-    api_keys ||--o{ monthly_usage_summary : "api_key_id"
-
-    providers {
-        uuid id PK
-        string name UK
-        string display_name
-        string provider_type
-        jsonb encrypted_credentials
-        jsonb config
-        boolean enabled
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    models {
-        uuid id PK
-        string model_name UK
-        string litellm_provider
-        numeric input_cost_per_token
-        numeric output_cost_per_token
-        int max_input_tokens
-        int max_output_tokens
-        int max_tokens
-        string mode
-        boolean supports_streaming
-        boolean supports_function_calling
-        jsonb metadata
-        string sync_source
-        string sync_version
-        timestamp last_synced_at
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    model_aliases {
-        uuid id PK
-        string alias UK
-        uuid target_model_id FK
-        uuid provider_id FK
-        jsonb custom_config
-        boolean enabled
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    model_alias_tags {
-        uuid id PK
-        uuid model_alias_id FK
-        string key
-        string value
-        timestamp created_at
-    }
-
-    admin_users {
-        uuid id PK
-        string email UK
-        string password_hash
-        text_arr roles
-        boolean enabled
-        timestamp last_login_at
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    admin_tokens {
-        uuid id PK
-        string service_name UK
-        string token_hash UK
-        text_arr roles
-        boolean enabled
-        timestamp expires_at
-        timestamp last_used_at
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    api_keys {
-        uuid id PK
-        string name
-        string key_hash UK
-        text_arr allowed_models
-        int rate_limit_per_min
-        bigint monthly_budget_nano_usd
-        boolean enabled
-        timestamp expires_at
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    api_key_tags {
-        uuid id PK
-        uuid api_key_id FK
-        string key
-        string value
-        timestamp created_at
-    }
-
-    usage_records {
-        uuid id PK
-        uuid api_key_id FK
-        uuid model_id FK
-        uuid provider_id FK
-        uuid request_id
-        string model_name
-        string endpoint
-        int input_tokens
-        int output_tokens
-        int cached_tokens
-        int reasoning_tokens
-        numeric input_cost_usd
-        numeric output_cost_usd
-        numeric cache_cost_usd
-        bigint total_cost_nano_usd
-        int response_time_ms
-        int status_code
-        string error_message
-        jsonb metadata
-        timestamp created_at
-    }
-
-    monthly_usage_summary {
-        uuid id PK
-        uuid api_key_id FK
-        int year
-        int month
-        int total_requests
-        int total_input_tokens
-        int total_output_tokens
-        numeric total_cost_usd
-        timestamp last_request_at
-        timestamp created_at
-        timestamp updated_at
-    }
+    providers ||--o{ model_aliases : provider_id
+    models ||--o{ pricing_components : model_id
+    models ||--o{ model_aliases : target_model_id
+    model_aliases ||--o{ model_alias_tags : model_alias_id
+    api_keys ||--o{ api_key_tags : api_key_id
+    api_keys ||--o{ usage_records : api_key_id
+    api_keys ||--o{ monthly_usage_summary : api_key_id
+    models o|--o{ usage_records : model_id
+    providers o|--o{ usage_records : provider_id
 ```
 
-## Table Descriptions
+`models.provider_id` is a provider catalog identifier stored as `VARCHAR`, not a foreign key to `providers.id`. Runtime routing matches it to an enabled provider type. `model_aliases.provider_id` and `usage_records.provider_id` are UUID foreign keys to `providers`.
 
-### providers
+## Tables
 
-Stores LLM provider configurations (OpenAI, Google VertexAI, AWS Bedrock, etc.).
+### `providers`
 
-The implemented runtime provider types are `openai`, `vertexai`, and `bedrock`. Their encrypted credential keys and non-secret configuration fields are documented in [provider configuration](providers.md).
+Stores runtime provider instances.
 
-**Key Features**:
-- Encrypted credentials stored in `encrypted_credentials` JSONB column
-- Provider-specific config in `config` JSONB for flexibility
-- Can be enabled/disabled without deletion
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `name` | VARCHAR(100) | Unique runtime name; environment overrides expect `openai` or `vertexai` |
+| `display_name` | VARCHAR(255) | UI label |
+| `provider_type` | VARCHAR(50) | Implemented: `openai`, `vertexai`, `bedrock` |
+| `encrypted_credentials` | JSONB | Per-field AES-GCM ciphertext; nullable |
+| `config` | JSONB | Non-secret provider configuration |
+| `enabled` | BOOLEAN | Soft enable/disable flag |
+| `created_at`, `updated_at` | TIMESTAMPTZ | `updated_at` maintained by trigger |
 
-**Example Data**:
-```sql
-{
-    "name": "openai",
-    "display_name": "OpenAI",
-    "provider_type": "openai",
-    "encrypted_credentials": {
-        "api_key": "encrypted_blob_here"
-    },
-    "config": {
-        "base_url": "https://api.openai.com/v1",
-        "timeout_seconds": 30
-    },
-    "enabled": true
-}
-```
+Credential/config keys are documented in [Provider configuration](providers.md). Never write plaintext directly into `encrypted_credentials`; use `/admin/providers`.
 
-### models
+### `models`
 
-Master catalog of all available LLM models, synced from BerriAI/LiteLLM repository.
+Stores the model catalog. `model_name` is globally unique. Fields fall into these groups:
 
-**Key Features**:
-- Comprehensive pricing data (input/output costs, cache costs, audio costs, etc.)
-- Tiered pricing for different context window sizes
-- Feature flags for capabilities (function calling, vision, audio, etc.)
-- Full BerriAI metadata preserved in `metadata` JSONB
-- Sync tracking (`sync_source`, `sync_version`, `last_synced_at`)
+- Identity: `id`, `model_name`, `provider_id`, `source`, `version`, deprecation fields.
+- Regions and resolutions: `supported_regions`, `supported_resolutions`.
+- Capabilities: explicit booleans for text, image, audio, video, PDF, tools, reasoning, caching, streaming, batching, JSON, reranking, embeddings, web search, and related features.
+- Limits: request/token throughput, context/input/output limits, document chunks, vector size, media counts/durations, batch and concurrency limits.
+- Commercial/operational metadata: `currency`, pricing/metadata schema versions, latency, availability, SLA fields, and free-form `metadata` JSONB.
+- Timestamps: `created_at`, `updated_at`.
 
-**Example Data**:
-```sql
-{
-    "model_name": "gpt-5",
-    "litellm_provider": "openai",
-    "input_cost_per_token": 0.00000125,
-    "output_cost_per_token": 0.00001,
-    "max_input_tokens": 272000,
-    "max_output_tokens": 128000,
-    "supports_function_calling": true,
-    "supports_vision": true,
-    "metadata": {
-        "supported_endpoints": ["/v1/chat/completions", "/v1/batch"],
-        "supported_modalities": ["text", "image"]
-    }
-}
-```
+Pricing is normalized into `pricing_components`; there are no `input_cost_per_token`, `output_cost_per_token`, `mode`, or `litellm_provider` columns.
 
-### model_aliases
+### `pricing_components`
 
-User-friendly aliases for models (e.g., "gpt5" → "gpt-5", "my-custom-gpt" → "gpt-5").
+Each row defines one price for a model:
 
-**Key Features**:
-- One alias maps to one model
-- Optional provider override
-- Custom configuration per alias
-- Can be enabled/disabled
+| Column | Type | Notes |
+|---|---|---|
+| `model_id` | UUID | References `models`, cascades on delete |
+| `code` | VARCHAR(100) | Component identifier, unique with `model_id` |
+| `direction` | VARCHAR(50) | For example `input` or `output` |
+| `modality` | VARCHAR(50) | For example `text` |
+| `unit` | VARCHAR(50) | For example `token` |
+| `tier`, `scope` | VARCHAR(50) | Optional qualifiers |
+| `price` | NUMERIC(30,12) | USD price per unit |
+| `metadata_schema_version`, `metadata` | mixed | Optional extension metadata |
 
-**Example Use Cases**:
-- Short names: `gpt5` instead of `gpt-5`
-- Version pinning: `gpt-latest` always points to newest GPT
-- Custom routing: `cheap-model` points to lowest-cost option
+Cost lookup uses each component's `direction`, `modality`, and optional tier. The `code` remains the unique catalog identifier for that model.
 
-### model_alias_tags
+### `model_aliases` and `model_alias_tags`
 
-Flexible tagging system for model aliases (categories, use cases, custom labels).
+`model_aliases` maps a unique client-facing `alias` to `target_model_id`. It can optionally pin a UUID `provider_id`, add `custom_config`, and be disabled. `model_alias_tags` stores unique key/value metadata per alias. Both child relationships cascade on parent deletion; provider deletion sets an alias provider override to null.
 
-**Why Separate Table?**:
-- ✅ Add new tags without schema changes
-- ✅ Efficient queries: "Find all aliases with category X"
-- ✅ Multiple tags per alias
-- ✅ Better organization and filtering
+### `admin_users` and `admin_tokens`
 
-**Example Queries**:
-```sql
--- Get all cost-effective aliases
-SELECT ma.* FROM model_aliases ma
-JOIN model_alias_tags mat ON ma.id = mat.model_alias_id
-WHERE mat.key = 'category' AND mat.value = 'cost-effective';
+`admin_users` stores unique email addresses, Argon2id password hashes, role arrays, enabled state, last login, and timestamps. `admin_tokens` stores unique service names and Argon2id token hashes with roles, enabled state, optional expiration, last use, and timestamps.
 
--- Get all tags for an alias
-SELECT key, value 
-FROM model_alias_tags
-WHERE model_alias_id = '77777777-7777-7777-7777-777777777777';
-```
+The implemented roles are `admin` for mutations and `viewer` for reads. The tables support service identities, but CRUD endpoints for administrator users and service tokens are not currently implemented.
 
-**Common Tag Keys**:
-- `category`: Classification (premium, cost-effective, advanced)
-- `use_case`: Purpose (general, high-volume, complex-reasoning)
-- `tier`: Service tier (standard, enterprise)
-- `region`: Geographic preference
+### `api_keys` and `api_key_tags`
 
-### admin_users
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `name` | VARCHAR(255) | Display name |
+| `key_hash` | VARCHAR(64) | Unique SHA-256 hex digest; plaintext is never stored |
+| `allowed_models` | TEXT[] | Null/empty policy is handled by the API-key model |
+| `rate_limit_per_minute` | INTEGER | Defaults to 60 |
+| `monthly_budget_nano_usd` | BIGINT | Nullable exact budget; `1 USD = 1,000,000,000` nano-USD |
+| `enabled` | BOOLEAN | Revocation/enable state |
+| `expires_at` | TIMESTAMPTZ | Optional expiration |
+| `created_at`, `updated_at` | TIMESTAMPTZ | `updated_at` maintained by trigger |
 
-Human accounts for management API access with email/password authentication.
+`api_key_tags` holds one value per `(api_key_id, key)` and cascades when the API key is deleted.
 
-**Key Features**:
-- Email-based authentication
-- Argon2 password hashing (secure, memory-hard algorithm)
-- Role-based access control (e.g., admin, editor, viewer)
-- Can be enabled/disabled without deletion
-- Last login tracking for security auditing
+The Admin API accepts and returns dollar values at its JSON boundary for compatibility, but storage and billing arithmetic use integer nano-USD.
 
-**Security**:
-```go
-// Always use Argon2 for password hashing
-hash := argon2.IDKey(password, salt, 1, 64*1024, 4, 32)
-// Store the hash in the database
-```
+### `usage_records`
 
-**Common Roles**:
-- `admin`: Full access to all management API endpoints
-- `editor`: Can create/update resources but not delete
-- `viewer`: Read-only access to management API
+One durable row is written asynchronously for each accounted proxy request:
 
-**Example Data**:
-```sql
-{
-    "email": "admin@example.com",
-    "password_hash": "$argon2id$v=19$m=65536,t=1,p=4$...",
-    "roles": ["admin", "viewer"],
-    "enabled": true
-}
-```
+| Column group | Fields |
+|---|---|
+| Identity | `id`, `request_id`, `api_key_id`, nullable `model_id`, nullable `provider_id` |
+| Request | `model_name`, `endpoint` |
+| Usage | `input_tokens`, `output_tokens`, `cached_tokens`, `reasoning_tokens` |
+| Outcome | `response_time_ms`, `status_code`, nullable `error_message` |
+| Time | `created_at` |
 
-### admin_tokens
+There is no per-row cost column in the current table. Durable monthly cost is stored in `monthly_usage_summary`; pricing components and provider evidence are needed for detailed reconciliation.
 
-Service accounts for management API access with token-based authentication.
+### `monthly_usage_summary`
 
-**Key Features**:
-- Token-based authentication for automated systems
-- Argon2 token hashing for secure storage
-- Role-based access control (same as admin_users)
-- Optional expiration support
-- Last used tracking for monitoring
-- Can be enabled/disabled without deletion
+Stores one aggregate row per API key, UTC year, and month:
 
-**Security**:
-```go
-// Generate a secure random token
-token := generateSecureToken() // e.g., 32 bytes random
-// Hash with Argon2 before storing
-hash := argon2.IDKey([]byte(token), salt, 1, 64*1024, 4, 32)
-// Store hash in database, return token to user ONCE
-```
+- Total requests and input/output/cached/reasoning tokens.
+- Exact `total_cost_nano_usd` as `BIGINT`.
+- Created/updated timestamps.
 
-**Use Cases**:
-- CI/CD pipelines: Automate provider/model management
-- Monitoring tools: Read-only access to usage statistics
-- Integration services: Programmatic API key creation
-
-**Example Data**:
-```sql
-{
-    "service_name": "ci-pipeline",
-    "token_hash": "$argon2id$v=19$m=65536,t=1,p=4$...",
-    "roles": ["editor"],
-    "enabled": true,
-    "expires_at": "2026-01-01T00:00:00Z"
-}
-```
-
-### api_keys
-
-Client API keys with rate limiting and budget controls.
-
-**Why Separate Table?**:
-- ✅ Add new tags without schema changes
-- ✅ Efficient queries: "Find all aliases with category X"
-- ✅ Multiple tags per alias
-- ✅ Better organization and filtering
-
-**Example Queries**:
-```sql
--- Get all cost-effective aliases
-SELECT ma.* FROM model_aliases ma
-JOIN model_alias_tags mat ON ma.id = mat.model_alias_id
-WHERE mat.key = 'category' AND mat.value = 'cost-effective';
-
--- Get all tags for an alias
-SELECT key, value 
-FROM model_alias_tags
-WHERE model_alias_id = '77777777-7777-7777-7777-777777777777';
-```
-
-**Common Tag Keys**:
-- `category`: Classification (premium, cost-effective, advanced)
-- `use_case`: Purpose (general, high-volume, complex-reasoning)
-- `tier`: Service tier (standard, enterprise)
-- `region`: Geographic preference
-
-### api_keys
-
-Client API keys with rate limiting and budget controls.
-
-**Key Features**:
-- SHA-256 hashed keys (never store plaintext)
-- Per-key allowed models list
-- Rate limiting (per minute)
-- Monthly budget caps (USD)
-- Expiration support
-- Enable/disable without deletion
-
-**Security**:
-```go
-// Never store the actual key
-actualKey := "sk-abc123..."
-hash := sha256.Sum256([]byte(actualKey))
-keyHash := hex.EncodeToString(hash[:])
-// Store keyHash in database
-```
-
-### api_key_tags
-
-Flexible tagging system for API keys (environment, ownership, custom metadata).
-
-**Why Separate Table?**:
-- ✅ Add new tags without schema changes
-- ✅ Efficient queries: "Find all keys with tag X"
-- ✅ Multiple tags per API key
-- ✅ Better reporting and analytics
-
-**Example Queries**:
-```sql
--- Get all production keys
-SELECT ak.* FROM api_keys ak
-JOIN api_key_tags akt ON ak.id = akt.api_key_id
-WHERE akt.key = 'environment' AND akt.value = 'production';
-
--- Get all tags for a key
-SELECT key, value 
-FROM api_key_tags
-WHERE api_key_id = '66666666-6666-6666-6666-666666666666';
-```
-
-**Common Tag Keys**:
-- `environment`: Environment (development, staging, production)
-- `team`: Team ownership (engineering, sales, support)
-- `owner`: Owner email or username
-- `project`: Project name
-- `purpose`: Purpose or description
-
-### usage_records
-
-Audit log of all API requests for billing, analytics, and debugging.
-
-**Key Features**:
-- Full token usage breakdown (input, output, cached, reasoning)
-- Precise cost calculation per request
-- Response metadata (latency, status code, errors)
-- Request correlation via `request_id`
-- Flexible `metadata` JSONB for additional context
-- Admin queries are time-bounded to 90 days and use created-time plus API-key, model, and status indexes; result sets are capped at 100 rows per page.
-
-**Partitioning Strategy**:
-For large-scale deployments, partition by month:
-```sql
--- Partition by created_at month for efficient archiving
-CREATE TABLE usage_records_2025_01 PARTITION OF usage_records
-FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
-```
-
-**Cost Calculation**:
-```sql
--- Example cost calculation
-total_cost_usd = 
-    (input_tokens * model.input_cost_per_token) +
-    (output_tokens * model.output_cost_per_token) +
-    (cached_tokens * model.cache_read_input_token_cost) +
-    (reasoning_tokens * model.output_cost_per_reasoning_token)
-```
-
-### monthly_usage_summary
-
-Pre-aggregated monthly usage statistics for fast budget checks.
-
-**Why Pre-Aggregate?**:
-- ✅ Fast budget checks: No need to SUM millions of rows
-- ✅ Dashboard queries: Instant monthly reports
-- ✅ Redis cache seed: Use for distributed rate limiting
-
-**Update Strategy**: the asynchronous billing worker persists the latest exact nano-USD cost while the usage worker increments token/request counters. The admin API reads these acknowledged monthly rows; page totals are not estimates of queued work.
-
-**Example Query**:
-```sql
--- Check if key is over budget
-SELECT 
-    monthly_budget_usd,
-    total_cost_usd,
-    (total_cost_usd / NULLIF(monthly_budget_usd, 0) * 100) AS budget_used_percent
-FROM api_keys ak
-JOIN monthly_usage_summary mus ON ak.id = mus.api_key_id
-WHERE ak.id = '<key-id>'
-  AND mus.year = EXTRACT(YEAR FROM NOW())
-  AND mus.month = EXTRACT(MONTH FROM NOW());
-```
+The unique constraint on `(api_key_id, year, month)` supports idempotent upserts. Billing and usage workers update different aggregate fields asynchronously, so operators should include queue state when reconciling a very recent interval.
 
 ## Indexes
 
-### Performance-Critical Indexes
+The committed schema includes:
+
+- Enabled/type indexes for providers.
+- Provider, name, active/deprecation, and JSONB metadata indexes for models.
+- Model, direction, and modality indexes for pricing components.
+- Target/provider/enabled indexes for aliases.
+- Email/service-name/hash/enabled/expiry indexes for administrator identities.
+- Hash/enabled/expiry indexes for API keys and lookup indexes for both tag tables.
+- API-key/time, model/time, creation time, request ID, status/time, and model-name/time indexes for usage records.
+- API-key/year/month index for monthly summaries.
+
+Do not assume indexes shown in design discussions exist. In particular, there is no trigram model-name index, usage metadata index, or full-text search index in the committed migrations.
+
+## Valid query examples
+
+### Models and pricing
 
 ```sql
--- api_keys: Fast lookup by hash (authentication)
-CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
-
--- usage_records: Fast queries by key and time range
-CREATE INDEX idx_usage_records_api_key_created 
-ON usage_records(api_key_id, created_at DESC);
-
--- models: Fast model name searches (fuzzy matching)
-CREATE INDEX idx_models_name_pattern 
-ON models USING GIN (model_name gin_trgm_ops);
-
--- api_key_tags: Fast tag/label queries
-CREATE INDEX idx_api_key_tags_api_key ON api_key_tags(api_key_id);
-CREATE INDEX idx_api_key_tags_key ON api_key_tags(key);
-
--- model_alias_tags: Fast tag/label queries
-CREATE INDEX idx_model_alias_tags_alias ON model_alias_tags(model_alias_id);
-CREATE INDEX idx_model_alias_tags_key ON model_alias_tags(key);
-
--- admin_users: Fast email lookups and enabled status
-CREATE INDEX idx_admin_users_email ON admin_users(email);
-CREATE INDEX idx_admin_users_enabled ON admin_users(enabled) WHERE enabled = true;
-
--- admin_tokens: Fast token lookups and service name queries
-CREATE INDEX idx_admin_tokens_service_name ON admin_tokens(service_name);
-CREATE INDEX idx_admin_tokens_token_hash ON admin_tokens(token_hash);
-CREATE INDEX idx_admin_tokens_enabled ON admin_tokens(enabled) WHERE enabled = true;
-CREATE INDEX idx_admin_tokens_expiry ON admin_tokens(expires_at) WHERE expires_at IS NOT NULL;
-
--- monthly_usage_summary: Fast monthly lookups
-CREATE INDEX idx_monthly_summary_api_key_period 
-ON monthly_usage_summary(api_key_id, year DESC, month DESC);
+SELECT
+    m.model_name,
+    m.provider_id,
+    pc.code,
+    pc.price,
+    pc.unit
+FROM models m
+JOIN pricing_components pc ON pc.model_id = m.id
+WHERE m.is_deprecated = false
+ORDER BY m.model_name, pc.code;
 ```
 
-### Full-Text Search Indexes
+### Monthly budget utilization
 
 ```sql
--- models: Search by name, provider, mode
-CREATE INDEX idx_models_features 
-ON models USING GIN (
-    to_tsvector('english', 
-        COALESCE(model_name, '') || ' ' ||
-        COALESCE(litellm_provider, '') || ' ' ||
-        COALESCE(mode, '')
-    )
-);
-
--- usage_records: Search metadata
-CREATE INDEX idx_usage_records_metadata 
-ON usage_records USING GIN (metadata);
-```
-
-## Data Flow
-
-### Request Processing
-
-```
-1. Client → Gateway (with API key)
-   ↓
-2. Gateway → api_keys (lookup by key_hash)
-   ↓
-3. Gateway → key_metadata (get tags/metadata)
-   ↓
-4. Gateway → monthly_usage_summary (check budget)
-   ↓
-5. Gateway → models (get pricing for requested model)
-   ↓
-6. Gateway → providers (get credentials)
-   ↓
-7. Gateway → LLM Provider (forward request)
-   ↓
-8. Gateway ← LLM Provider (response)
-   ↓
-9. Gateway → usage_records (INSERT usage log)
-   ↓
-10. Gateway → monthly_usage_summary (UPDATE aggregates)
-```
-
-### Model Sync
-
-```
-1. Cron/Scheduled Job → BerriAI GitHub
-   ↓
-2. Download model_prices_and_context_window_backup.json
-   ↓
-3. Parse JSON
-   ↓
-4. For each model:
-   - Check if exists (by model_name)
-   - INSERT if new
-   - UPDATE if changed
-   - Track sync_version and last_synced_at
-   ↓
-5. Log sync results
-```
-
-## Query Examples
-
-### Find Cheapest Model for Chat
-
-```sql
-SELECT 
-    model_name,
-    litellm_provider,
-    input_cost_per_token,
-    output_cost_per_token,
-    (input_cost_per_token + output_cost_per_token) AS total_cost
-FROM models
-WHERE mode = 'chat'
-  AND supports_function_calling = true
-ORDER BY total_cost ASC
-LIMIT 10;
-```
-
-### Get Key Usage by Month
-
-```sql
-SELECT 
+SELECT
     ak.name,
     mus.year,
     mus.month,
     mus.total_requests,
-    mus.total_cost_usd,
-    ak.monthly_budget_usd,
-    ROUND((mus.total_cost_usd / NULLIF(ak.monthly_budget_usd, 0) * 100)::numeric, 2) AS budget_used_percent
+    mus.total_cost_nano_usd,
+    ak.monthly_budget_nano_usd,
+    ROUND(
+      100.0 * mus.total_cost_nano_usd /
+      NULLIF(ak.monthly_budget_nano_usd, 0),
+      2
+    ) AS budget_used_percent
+FROM monthly_usage_summary mus
+JOIN api_keys ak ON ak.id = mus.api_key_id
+ORDER BY mus.year DESC, mus.month DESC, mus.total_cost_nano_usd DESC;
+```
+
+### Recent errors
+
+```sql
+SELECT created_at, request_id, model_name, status_code, error_message
+FROM usage_records
+WHERE status_code >= 400
+  AND created_at >= NOW() - INTERVAL '24 hours'
+ORDER BY created_at DESC
+LIMIT 100;
+```
+
+### Tags
+
+```sql
+SELECT ak.name, akt.key, akt.value
 FROM api_keys ak
-LEFT JOIN monthly_usage_summary mus ON ak.id = mus.api_key_id
-WHERE ak.id = '<key-id>'
-ORDER BY mus.year DESC, mus.month DESC;
+JOIN api_key_tags akt ON akt.api_key_id = ak.id
+WHERE akt.key = 'environment' AND akt.value = 'production';
 ```
 
-### Top 10 Most Expensive Requests
+## Request data flow
 
-```sql
-SELECT 
-    ur.created_at,
-    ak.name AS api_key_name,
-    ur.model_name,
-    ur.input_tokens,
-    ur.output_tokens,
-    ur.total_cost_usd,
-    ur.response_time_ms
-FROM usage_records ur
-JOIN api_keys ak ON ur.api_key_id = ak.id
-ORDER BY ur.total_cost_usd DESC
-LIMIT 10;
-```
+1. Hash the client bearer key and resolve `api_keys`, including allowed models and expiry.
+2. Enforce the Redis rate limit and read budget state.
+3. Resolve a model or alias and its runtime provider.
+4. Proxy the request and collect provider-reported token usage.
+5. Enqueue usage persistence and exact billing updates.
+6. Workers write `usage_records` and upsert `monthly_usage_summary`; failures enter Redis dead-letter queues.
 
-### Keys Approaching Budget Limit
+Interrupted streams or streams without terminal usage are recorded with unknown accounting semantics and require provider reconciliation; they are not silently treated as zero-cost successes.
 
-```sql
-SELECT 
-    ak.name,
-    ak.monthly_budget_usd,
-    mus.total_cost_usd,
-    ROUND((mus.total_cost_usd / NULLIF(ak.monthly_budget_usd, 0) * 100)::numeric, 2) AS budget_used_percent
-FROM api_keys ak
-JOIN monthly_usage_summary mus ON ak.id = mus.api_key_id
-WHERE mus.year = EXTRACT(YEAR FROM NOW())
-  AND mus.month = EXTRACT(MONTH FROM NOW())
-  AND ak.monthly_budget_usd IS NOT NULL
-  AND (mus.total_cost_usd / NULLIF(ak.monthly_budget_usd, 0)) > 0.8
-ORDER BY budget_used_percent DESC;
-```
+## Migrations
 
-### Find Models by Feature
+Migrations are paired `.up.sql` and `.down.sql` files:
 
-```sql
--- All models that support vision and function calling
-SELECT 
-    model_name,
-    litellm_provider,
-    max_input_tokens,
-    input_cost_per_token,
-    output_cost_per_token
-FROM models
-WHERE supports_vision = true
-  AND supports_function_calling = true
-ORDER BY input_cost_per_token ASC;
-```
+1. `20251125000001_initial_schema`
+2. `20251125000002_seed_data`
+3. `20260429000003_add_monthly_usage_summary`
+4. `20260712000004_exact_currency`
+5. `20260712000005_admin_usage_indexes`
 
-### Get Tag Summary
+Compose mounts the up migrations into PostgreSQL initialization and therefore applies them only to a new volume. Production operators should execute up files in timestamp order with `psql -v ON_ERROR_STOP=1` under a migration identity and record the applied revision. The repository does not maintain a runtime schema-version table.
 
-```sql
--- Count API keys by tag
-SELECT 
-    key,
-    value,
-    COUNT(*) AS key_count
-FROM api_key_tags
-GROUP BY key, value
-ORDER BY key, key_count DESC;
-
--- Count model aliases by tag
-SELECT 
-    key,
-    value,
-    COUNT(*) AS alias_count
-FROM model_alias_tags
-GROUP BY key, value
-ORDER BY key, alias_count DESC;
-```
-
-## Backup and Maintenance
-
-### Daily Backups
+Validate a complete down/up round trip on a disposable database with:
 
 ```bash
-# Full database backup
-pg_dump -Fc $DATABASE_URL > backup_$(date +%Y%m%d).dump
-
-# Compressed backup
-pg_dump $DATABASE_URL | gzip > backup_$(date +%Y%m%d).sql.gz
+cd llm_gateway
+make test-migrations
 ```
 
-### Partitioning Strategy
+The exact-currency down migration is structurally reversible but converts already-rounded nano-USD values back to floating-point dollars. Review every down migration for data-loss implications before rollback.
 
-For `usage_records` table with high volume:
+## Backup, retention, and scaling
 
-```sql
--- Create parent table as partitioned
-CREATE TABLE usage_records_partitioned (
-    LIKE usage_records INCLUDING ALL
-) PARTITION BY RANGE (created_at);
-
--- Create monthly partitions
-CREATE TABLE usage_records_2025_01 
-PARTITION OF usage_records_partitioned
-FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
-
-CREATE TABLE usage_records_2025_02 
-PARTITION OF usage_records_partitioned
-FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
-```
-
-### Archiving Old Data
-
-```sql
--- Archive usage_records older than 90 days to separate table
-INSERT INTO usage_records_archive
-SELECT * FROM usage_records
-WHERE created_at < NOW() - INTERVAL '90 days';
-
-DELETE FROM usage_records
-WHERE created_at < NOW() - INTERVAL '90 days';
-
--- Or use partitioning and detach old partitions
-ALTER TABLE usage_records_partitioned 
-DETACH PARTITION usage_records_2024_12;
-```
-
-## Schema Versioning
-
-All schema changes are tracked via sqlx migrations in `migrations/`.
-
-Current schema version: **20250123000002** (seed_data)
-
-To check current version:
-```bash
-sqlx migrate info
-```
-
-## References
-
-- [PostgreSQL JSONB](https://www.postgresql.org/docs/current/datatype-json.html)
-- [PostgreSQL Partitioning](https://www.postgresql.org/docs/current/ddl-partitioning.html)
-- [BerriAI LiteLLM Models](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
+Use the tested backup/restore procedure in the [Operations runbook](operations-runbook.md). `usage_records` is not partitioned and no archive table is created by migrations. If volume requires partitioning or retention deletion, introduce it through reviewed migrations and update repositories, backups, and reconciliation procedures rather than running the illustrative DDL from old design documents.
