@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -17,6 +19,53 @@ type fakeStateStore struct {
 	correlation string
 	terminal    TerminalUpdate
 }
+
+func TestRetrieveReconstructsStoredResponseAndOpaqueReasoning(t *testing.T) {
+	now := time.Unix(1700000000, 0).UTC()
+	completed := now.Add(time.Second)
+	previous := "resp_previous"
+	store := &fakeStateStore{
+		predecessor: &Record{ID: "resp_test", Status: StatusCompleted, Stored: true, Model: "gpt-test",
+			PreviousResponseID: &previous, CreatedAt: now, CompletedAt: &completed,
+			Request: json.RawMessage(`{"model":"gpt-test","input":"hello","tools":[],"include":["reasoning.encrypted_content"],"metadata":{"trace":"safe"}}`),
+			Usage:   json.RawMessage(`{"input_tokens":1,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":3}`)},
+		items: []Item{
+			{Direction: "input", Payload: json.RawMessage(`{"type":"message","role":"user"}`)},
+			{Direction: "output", Payload: json.RawMessage(`{"type":"reasoning","id":"rs_test","status":"completed","summary":[]}`), EncryptedPayload: ptr("sealed:opaque")},
+			{Direction: "output", Payload: json.RawMessage(`{"type":"message","id":"msg_test","status":"completed","role":"assistant","content":[]}`)},
+		},
+	}
+	result, err := (&Orchestrator{Store: store}).Retrieve(context.Background(), uuid.New(), "resp_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != "resp_test" || result.Object != "response" || result.CompletedAt == nil || *result.CompletedAt != completed.Unix() {
+		t.Fatalf("unexpected envelope: %#v", result)
+	}
+	if len(result.Output) != 2 || result.Output[0].EncryptedContent != "opaque" || result.Output[1].ID != "msg_test" {
+		t.Fatalf("unexpected ordered output: %#v", result.Output)
+	}
+	if result.PreviousResponseID == nil || *result.PreviousResponseID != previous || result.Usage == nil || result.Usage.TotalTokens != 3 {
+		t.Fatalf("stored fields not reconstructed: %#v", result)
+	}
+}
+
+func TestDeleteReturnsOpenAIResourceAndMakesRepeatNotFound(t *testing.T) {
+	store := &fakeStateStore{predecessor: &Record{ID: "resp_test"}}
+	orchestrator := &Orchestrator{Store: store}
+	result, err := orchestrator.Delete(context.Background(), uuid.New(), "resp_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != "resp_test" || result.Object != "response.deleted" || !result.Deleted {
+		t.Fatalf("unexpected deletion response: %#v", result)
+	}
+	if _, err := orchestrator.Delete(context.Background(), uuid.New(), "resp_test"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("repeat delete got %v", err)
+	}
+}
+
+func ptr(value string) *string { return &value }
 
 func (s *fakeStateStore) LoadChain(context.Context, uuid.UUID, string) ([]Record, []Item, error) {
 	if s.predecessor == nil {
@@ -35,6 +84,16 @@ func (s *fakeStateStore) Get(context.Context, uuid.UUID, string) (*Record, error
 	}
 	return s.predecessor, nil
 }
+func (s *fakeStateStore) GetItems(context.Context, uuid.UUID, string) ([]Item, error) {
+	return s.items, nil
+}
+func (s *fakeStateStore) Delete(context.Context, uuid.UUID, string) error {
+	if s.predecessor == nil {
+		return ErrNotFound
+	}
+	s.predecessor = nil
+	return nil
+}
 func (s *fakeStateStore) MarkInProgress(context.Context, uuid.UUID, string) error { return nil }
 func (s *fakeStateStore) SetProviderCorrelationID(_ context.Context, _ uuid.UUID, _ string, value string) error {
 	s.correlation = value
@@ -47,6 +106,9 @@ func (s *fakeStateStore) Complete(_ context.Context, _ uuid.UUID, _ string, upda
 func (s *fakeStateStore) EncryptOpaquePayload(value []byte) (*string, error) {
 	sealed := "sealed:" + string(value)
 	return &sealed, nil
+}
+func (s *fakeStateStore) DecryptOpaquePayload(value string) ([]byte, error) {
+	return []byte(strings.TrimPrefix(value, "sealed:")), nil
 }
 
 type fakeNativeTransport struct {

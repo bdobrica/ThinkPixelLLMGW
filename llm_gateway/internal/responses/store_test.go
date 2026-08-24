@@ -44,6 +44,43 @@ func TestStoreGetUsesOwnerAndNonDisclosure(t *testing.T) {
 	}
 }
 
+func TestStoreGetItemsUsesOwnerAndStableOrdering(t *testing.T) {
+	store, mock := testStore(t)
+	owner := uuid.New()
+	id := "resp_test"
+	rows := sqlmock.NewRows([]string{"response_id", "ordinal", "direction", "item_id", "item_type", "status", "call_id", "token_count", "payload", "encrypted_payload", "created_at", "updated_at"}).
+		AddRow(id, 0, "input", "item_input", "message", "", nil, 1, []byte(`{"type":"message"}`), nil, store.now(), store.now()).
+		AddRow(id, 0, "output", "item_output", "message", "completed", nil, 2, []byte(`{"type":"message"}`), nil, store.now(), store.now())
+	mock.ExpectQuery("FROM response_items i JOIN responses r").WithArgs(id, owner, store.now()).WillReturnRows(rows)
+	items, err := store.GetItems(context.Background(), owner, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Direction != "input" || items[1].Direction != "output" {
+		t.Fatalf("unexpected items: %#v", items)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStoreDeleteIsTenantScopedSoftDelete(t *testing.T) {
+	store, mock := testStore(t)
+	owner := uuid.New()
+	id := "resp_test"
+	mock.ExpectExec("UPDATE responses SET deleted_at=").WithArgs(store.now(), id, owner).WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.Delete(context.Background(), owner, id); err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectExec("UPDATE responses SET deleted_at=").WithArgs(store.now(), id, owner).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := store.Delete(context.Background(), owner, id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("repeat delete got %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStoreCompleteRollsBackItemsWhenTerminalUpdateFails(t *testing.T) {
 	store, mock := testStore(t)
 	owner := uuid.New()

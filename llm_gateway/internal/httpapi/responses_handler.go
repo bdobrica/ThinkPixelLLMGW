@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,66 @@ func (t nativeResponsesTransport) CreateResponse(ctx context.Context, payload []
 		return nil, err
 	}
 	return &responses.TransportResponse{StatusCode: result.StatusCode, Body: result.Body}, nil
+}
+
+func (d *Dependencies) handleResponseResource(w http.ResponseWriter, r *http.Request) {
+	apiKey, ok := middleware.GetAPIKeyRecord(r.Context())
+	if !ok {
+		writeResponsesError(w, http.StatusInternalServerError, nil, "server_error", "missing API key context")
+		return
+	}
+	owner, err := uuid.Parse(apiKey.ID)
+	if err != nil {
+		writeResponsesError(w, http.StatusInternalServerError, nil, "server_error", "invalid API key identity")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/v1/responses/")
+	if id == "" || strings.Contains(id, "/") || !strings.HasPrefix(id, "resp_") {
+		writeResponsesError(w, http.StatusNotFound, nil, "not_found", "response not found")
+		return
+	}
+	if d.Responses == nil {
+		writeResponsesError(w, http.StatusServiceUnavailable, nil, "server_error", "Responses service unavailable")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if len(r.URL.Query()) != 0 {
+			param := "include"
+			writeResponsesError(w, http.StatusBadRequest, &param, "unsupported_parameter", "response retrieval options are not enabled")
+			return
+		}
+		result, err := d.Responses.Retrieve(r.Context(), owner, id)
+		if err != nil {
+			writeResponseResourceError(w, err)
+			return
+		}
+		writeResponsesJSON(w, http.StatusOK, result)
+	case http.MethodDelete:
+		result, err := d.Responses.Delete(r.Context(), owner, id)
+		if err != nil {
+			writeResponseResourceError(w, err)
+			return
+		}
+		writeResponsesJSON(w, http.StatusOK, result)
+	default:
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodDelete)
+		writeResponsesError(w, http.StatusMethodNotAllowed, nil, "method_not_allowed", "method not allowed")
+	}
+}
+
+func writeResponseResourceError(w http.ResponseWriter, err error) {
+	if errors.Is(err, responses.ErrNotFound) {
+		writeResponsesError(w, http.StatusNotFound, nil, "not_found", "response not found")
+		return
+	}
+	writeResponsesError(w, http.StatusInternalServerError, nil, "server_error", "response state unavailable")
+}
+
+func writeResponsesJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func (d *Dependencies) handleResponses(w http.ResponseWriter, r *http.Request) {

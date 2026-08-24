@@ -174,6 +174,19 @@ func (s *Store) Get(ctx context.Context, owner uuid.UUID, id string) (*Record, e
 	return &result, nil
 }
 
+func (s *Store) GetItems(ctx context.Context, owner uuid.UUID, id string) ([]Item, error) {
+	var items []Item
+	err := s.db.SelectContext(ctx, &items, `SELECT i.response_id, i.ordinal, i.direction, i.item_id, i.item_type, i.status,
+		i.call_id, i.token_count, i.payload, i.encrypted_payload, i.created_at, i.updated_at
+		FROM response_items i JOIN responses r ON r.id=i.response_id
+		WHERE r.id=$1 AND r.api_key_id=$2 AND r.stored=true AND r.deleted_at IS NULL AND r.expires_at>$3
+		ORDER BY CASE i.direction WHEN 'input' THEN 0 ELSE 1 END, i.ordinal`, id, owner, s.now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("retrieve response items: %w", err)
+	}
+	return items, nil
+}
+
 func (s *Store) AppendItem(ctx context.Context, owner uuid.UUID, item *Item) error {
 	if item.EncryptedPayload != nil && s.cipher == nil {
 		return errors.New("encrypted payload requires configured cipher")

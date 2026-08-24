@@ -24,11 +24,14 @@ type TransportResponse struct {
 type StateStore interface {
 	Create(context.Context, CreateRecord, []Item) error
 	Get(context.Context, uuid.UUID, string) (*Record, error)
+	GetItems(context.Context, uuid.UUID, string) ([]Item, error)
+	Delete(context.Context, uuid.UUID, string) error
 	LoadChain(context.Context, uuid.UUID, string) ([]Record, []Item, error)
 	MarkInProgress(context.Context, uuid.UUID, string) error
 	SetProviderCorrelationID(context.Context, uuid.UUID, string, string) error
 	Complete(context.Context, uuid.UUID, string, TerminalUpdate) error
 	EncryptOpaquePayload([]byte) (*string, error)
+	DecryptOpaquePayload(string) ([]byte, error)
 }
 
 type Orchestrator struct {
@@ -39,6 +42,99 @@ type CreateOptions struct {
 	Owner         uuid.UUID
 	ProviderModel string
 	Transport     NativeTransport
+}
+
+// Retrieve reconstructs the public response from tenant-scoped durable state.
+// Provider correlation IDs and input items never cross this boundary.
+func (o *Orchestrator) Retrieve(ctx context.Context, owner uuid.UUID, id string) (*Response, error) {
+	if o == nil || o.Store == nil || owner == uuid.Nil || id == "" {
+		return nil, errors.New("invalid Responses retrieval configuration")
+	}
+	record, err := o.Store.Get(ctx, owner, id)
+	if err != nil {
+		return nil, err
+	}
+	items, err := o.Store.GetItems(ctx, owner, id)
+	if err != nil {
+		return nil, err
+	}
+	var request CreateRequest
+	if err := json.Unmarshal(record.Request, &request); err != nil {
+		return nil, fmt.Errorf("decode stored response request: %w", err)
+	}
+	applyDefaults(&request)
+	result := &Response{
+		ID: id, Object: "response", CreatedAt: record.CreatedAt.Unix(), Status: record.Status,
+		Model: record.Model, Instructions: request.Instructions, Tools: request.Tools,
+		ToolChoice: request.ToolChoice, ParallelToolCalls: *request.ParallelToolCalls,
+		Truncation: request.Truncation, Reasoning: request.Reasoning, Text: request.Text,
+		Metadata: request.Metadata, Store: record.Stored, Background: request.Background,
+		MaxOutputTokens: request.MaxOutputTokens, MaxToolCalls: request.MaxToolCalls,
+	}
+	if result.Metadata == nil {
+		result.Metadata = map[string]string{}
+	}
+	if record.PreviousResponseID != nil {
+		previous := *record.PreviousResponseID
+		result.PreviousResponseID = &previous
+	}
+	if record.Status == StatusCompleted && record.CompletedAt != nil {
+		completed := record.CompletedAt.Unix()
+		result.CompletedAt = &completed
+	}
+	if len(record.Usage) > 0 {
+		if err := json.Unmarshal(record.Usage, &result.Usage); err != nil {
+			return nil, fmt.Errorf("decode stored response usage: %w", err)
+		}
+	}
+	if len(record.Error) > 0 {
+		if err := json.Unmarshal(record.Error, &result.Error); err != nil {
+			return nil, fmt.Errorf("decode stored response error: %w", err)
+		}
+	}
+	if len(record.IncompleteDetails) > 0 {
+		if err := json.Unmarshal(record.IncompleteDetails, &result.IncompleteDetails); err != nil {
+			return nil, fmt.Errorf("decode stored response incomplete details: %w", err)
+		}
+	}
+	result.Output = make([]OutputItem, 0)
+	for _, item := range items {
+		if item.Direction != "output" {
+			continue
+		}
+		var output OutputItem
+		if err := json.Unmarshal(item.Payload, &output); err != nil {
+			return nil, fmt.Errorf("decode stored response item: %w", err)
+		}
+		if item.EncryptedPayload != nil && includes(request.Include, IncludeEncryptedReasoning) {
+			plaintext, err := o.Store.DecryptOpaquePayload(*item.EncryptedPayload)
+			if err != nil {
+				return nil, err
+			}
+			output.EncryptedContent = string(plaintext)
+		}
+		result.Output = append(result.Output, output)
+	}
+	return result, nil
+}
+
+func includes(values []Include, target Include) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (o *Orchestrator) Delete(ctx context.Context, owner uuid.UUID, id string) (*DeletedResponse, error) {
+	if o == nil || o.Store == nil || owner == uuid.Nil || id == "" {
+		return nil, errors.New("invalid Responses deletion configuration")
+	}
+	if err := o.Store.Delete(ctx, owner, id); err != nil {
+		return nil, err
+	}
+	return &DeletedResponse{ID: id, Object: "response.deleted", Deleted: true}, nil
 }
 
 // CreateNative creates a gateway-owned response envelope while delegating
@@ -174,6 +270,12 @@ func applyDefaults(request *CreateRequest) {
 	if request.ParallelToolCalls == nil {
 		value := true
 		request.ParallelToolCalls = &value
+	}
+	if request.Tools == nil {
+		request.Tools = []Tool{}
+	}
+	if len(request.ToolChoice) == 0 {
+		request.ToolChoice = json.RawMessage(`"auto"`)
 	}
 }
 
