@@ -27,6 +27,7 @@ Last reconciled with the code review, release qualification, and Responses API p
 - [x] Implement Vertex AI and AWS Bedrock chat providers with authentication, translation, streaming, usage, validation, cancellation, and error mapping.
 - [ ] Add embeddings and other desired OpenAI-compatible endpoints.
 - [ ] Implement the OpenAI-compatible Responses API as a first-class, item-oriented protocol (detailed execution plan: `PLAN.md`, Steps 20–27).
+  - Step 25 has a typed SSE encoder/state-machine foundation with gateway-owned sequence numbers, lifecycle/index ordering, terminal-only usage, canonical named frames, and prompt flushing; native provider translation and HTTP streaming remain pending.
   - [x] Freeze a dated OpenAI contract snapshot and capability matrix; add typed discriminated schemas for requests, response envelopes, content parts, output items, statuses, usage, errors, and supported SSE events.
   - [ ] Add `POST /v1/responses` plus authenticated `GET`/`DELETE /v1/responses/{response_id}` and cancellation/background resource operations; generate stable `resp_` and item/call IDs.
   - [x] Persist tenant-owned response state, ordered items, predecessor links, lifecycle transitions, usage, tool executions, retention, opaque-payload encryption, cleanup, and orphan recovery. Event journals remain part of the streaming/background step.

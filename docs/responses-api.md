@@ -35,7 +35,7 @@ The contract requires `model` and `input` for this gateway. `truncation` accepts
 | Reasoning items | Native enabled when the model catalog permits | Unavailable until a lossless mapping exists | Unavailable until a lossless mapping exists |
 | Function tools | Native enabled when the model catalog permits | Translation planned | Unavailable until native tool translation exists |
 | Parallel function calls | Native enabled when the model catalog permits | Translation planned | Unavailable |
-| Responses SSE events | Deferred to Step 25 | Gateway translation planned | Gateway translation planned |
+| Responses SSE events | Typed encoder/state machine implemented; route wiring pending | Gateway translation planned | Gateway translation planned |
 | Web search | Disabled pending hosted-tool framework | Disabled | Disabled |
 | File search | Disabled pending hosted-tool framework | Disabled | Disabled |
 | Code interpreter | Disabled pending hardened sandbox | Disabled | Disabled |
@@ -58,7 +58,7 @@ For future translated routes, the gateway context assembler replays ordered stor
 
 ## Explicitly deferred
 
-Streaming and background creation are explicitly rejected until the Responses SSE state machine and durable background execution are installed. `GET`, `DELETE`, and cancellation resource operations, translated providers, conversations, prompts, MCP, computer use, image generation, remote shell, and newer item/tool variants remain deferred. They must be added with typed schemas, validation, capability gates, fixtures, and documentation before being accepted.
+Streaming and background creation are explicitly rejected until provider-stream translation and the HTTP streaming path (and, for background work, durable execution) are installed. `GET`, `DELETE`, and cancellation resource operations, translated providers, conversations, prompts, MCP, computer use, image generation, remote shell, and newer item/tool variants remain deferred. They must be added with typed schemas, validation, capability gates, fixtures, and documentation before being accepted.
 
 Custom function tools are client-executed: the gateway returns an ordered `function_call`, and the client submits the matching `function_call_output`, normally in a new request linked with the gateway `previous_response_id`. The gateway does not execute that function. It validates function names, bounded object JSON Schemas, strict-schema requirements, named/required/auto/none/allowed tool choices, and JSON arguments before provider work. Submitted outputs must match an unresolved `call_id` in the same tenant-owned predecessor chain; unknown and duplicate outputs are rejected. Native parallel calls preserve provider order and receive gateway-owned item IDs.
 
@@ -71,6 +71,12 @@ Step 24 has begun with a provider-neutral executor boundary. Installed executors
 Registration is not authorization. Hosted tools remain default-disabled and a call must be explicitly allowed at all three scopes: deployment, selected model, and authenticated API key. Executor health is checked before execution. Lifecycle events contain response/call/tool identifiers, safe status messages, and final usage; they do not contain tool arguments, outputs, credentials, or raw backend errors.
 
 No production executor is registered or wired into response orchestration yet, so the capability matrix still correctly reports web search, file search, and code interpreter as unavailable. The web-search backend and egress policy, tenant-owned file/vector lifecycle, hardened code sandbox, durable execution records, metrics/circuit breakers, and model-resumption loop remain required before any hosted tool can be enabled.
+
+## Streaming foundation
+
+Step 25 begins with a gateway-owned SSE encoder/state machine. It emits one named `event:` line and one JSON `data:` line per frame, assigns every event a monotonically increasing `sequence_number`, and flushes after each complete frame. It rejects deltas before their item/content add events, mismatched indices, duplicate items, events after item or response completion, and usage on non-terminal response snapshots. JSON framing preserves valid UTF-8 and escapes embedded newlines without leaking provider-specific frames or Chat Completions `[DONE]` markers.
+
+This foundation is not yet connected to `POST /v1/responses`; `stream: true` continues to fail explicitly. Native provider frame parsing and ID rewriting, translated-provider event production, request-cancellation propagation, terminal persistence/billing, hosted-tool events, journal replay, and HTTP/SDK compatibility tests remain required before streaming is enabled.
 
 ## Testing
 
