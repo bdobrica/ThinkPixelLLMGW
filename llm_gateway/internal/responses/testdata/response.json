@@ -1,0 +1,55 @@
+{
+  "id": "resp_contract_1",
+  "object": "response",
+  "created_at": 1787529600,
+  "completed_at": 1787529601,
+  "status": "completed",
+  "error": null,
+  "incomplete_details": null,
+  "model": "gpt-5.1",
+  "previous_response_id": "resp_previous",
+  "instructions": "Answer concisely.",
+  "output": [
+    {
+      "id": "rs_contract_1",
+      "type": "reasoning",
+      "status": "completed",
+      "summary": [{"type": "summary_text", "text": "Used supplied weather data."}],
+      "encrypted_content": "opaque-provider-content"
+    },
+    {
+      "id": "msg_contract_1",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {"type": "output_text", "text": "It is 21°C.", "annotations": []}
+      ]
+    },
+    {
+      "id": "fc_contract_1",
+      "type": "function_call",
+      "status": "completed",
+      "call_id": "call_weather_2",
+      "name": "get_forecast",
+      "arguments": "{\"city\":\"Bucharest\"}"
+    }
+  ],
+  "tools": [],
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "truncation": "disabled",
+  "reasoning": {"effort": "medium", "summary": "auto"},
+  "text": {"format": {"type": "text"}},
+  "usage": {
+    "input_tokens": 37,
+    "input_tokens_details": {"cached_tokens": 5},
+    "output_tokens": 18,
+    "output_tokens_details": {"reasoning_tokens": 7},
+    "total_tokens": 55
+  },
+  "metadata": {"trace": "contract-test"},
+  "store": true,
+  "background": false,
+  "max_output_tokens": 1024
+}

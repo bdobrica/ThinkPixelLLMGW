@@ -1,6 +1,6 @@
 # ThinkPixelLLMGW backlog
 
-Last reconciled with the code review and release qualification on July 13, 2026. Completed historical work has been removed so this file remains an actionable backlog. Findings are explained in [CODE_REVIEW.md](CODE_REVIEW.md).
+Last reconciled with the code review, release qualification, and Responses API plan on August 24, 2026. Completed historical work has been removed so this file remains an actionable backlog. Findings are explained in [CODE_REVIEW.md](CODE_REVIEW.md).
 
 ## P0 — release blockers
 
@@ -26,6 +26,22 @@ Last reconciled with the code review and release qualification on July 13, 2026.
 - [x] Add bounded dashboard statistics for keys, models, providers, usage, errors, latency, rankings, and monthly cost.
 - [x] Implement Vertex AI and AWS Bedrock chat providers with authentication, translation, streaming, usage, validation, cancellation, and error mapping.
 - [ ] Add embeddings and other desired OpenAI-compatible endpoints.
+- [ ] Implement the OpenAI-compatible Responses API as a first-class, item-oriented protocol (detailed execution plan: `PLAN.md`, Steps 20–27).
+  - [x] Freeze a dated OpenAI contract snapshot and capability matrix; add typed discriminated schemas for requests, response envelopes, content parts, output items, statuses, usage, errors, and supported SSE events.
+  - [ ] Add `POST /v1/responses` plus authenticated `GET`/`DELETE /v1/responses/{response_id}` and cancellation/background resource operations; generate stable `resp_` and item/call IDs.
+  - [ ] Persist tenant-owned response state, ordered items, predecessor links, lifecycle transitions, usage, tool executions, and event journals with migrations, retention, encryption/redaction, cleanup, and orphan recovery.
+  - [ ] Implement `previous_response_id` continuation without implicitly inheriting prior instructions; reject missing, expired, deleted, non-stored, or cross-tenant predecessors safely.
+  - [ ] Implement context limits with `truncation: "disabled"` as the default error behavior and deterministic `"auto"` removal of oldest eligible items while preserving instructions, current input, and tool call/output pairs.
+  - [ ] Track provider-supplied reasoning items/summaries/encrypted content separately from visible text, never synthesize or log hidden chain-of-thought, and account for reasoning tokens without double counting.
+  - [ ] Support standard client-executed function tools, tool choice, strict JSON schemas, parallel calls, streamed arguments, and correlated `function_call_output`; enforce orchestration round/call/time/token limits.
+  - [ ] Add a default-disabled hosted-tool executor framework with per-key/model allowlists, cancellation, quotas, cost reporting, audit controls, health metrics, and idempotent execution.
+    - [ ] Web search: configured/native backend, SSRF and redirect protection, domain/result limits, citations, and separate tool charging.
+    - [ ] File search: tenant-owned ingestion/vector stores, filters/ranking, citations, malware/size checks, bounded retrieval, deletion, and retention.
+    - [ ] Code interpreter: ephemeral hardened sandbox, no host secrets/mounts, default-deny network, strict CPU/memory/process/time/disk/output limits, artifact ownership, and guaranteed cleanup; remain disabled until isolation is proven.
+  - [ ] Implement a Responses-specific SSE state machine with named events, monotonic sequence numbers, correct item/content indices, text/reasoning/tool deltas, exactly one terminal event, final usage, cancellation, backpressure, and optional persisted replay for background work; do not emit Chat Completions `[DONE]`.
+  - [ ] Reuse gateway auth, model authorization, rate limiting, budgets, exact billing, usage queues, audit privacy, timeouts, shutdown, and readiness while recording `/v1/responses` and terminal status exactly once across multi-round/tool flows.
+  - [ ] Add golden event/item fixtures, migration/repository tests, state and tenant-isolation tests, provider conformance, hosted-tool security tests, long-stream/recovery/load tests, and official OpenAI SDK smoke tests.
+  - [ ] Publish a dated field/event/provider/tool compatibility matrix and SDK examples; gate rollout by feature flag and do not advertise deferred fields, background mode, provider translations, or hosted tools before their suites pass.
 - [ ] Add model-catalog/pricing synchronization with validation and rollback.
 - [ ] Add provider health checks, fallback routing, and circuit breaking.
 

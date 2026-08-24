@@ -23,6 +23,8 @@ Release qualification is deployment-specific. Use the [release checklist](docs/r
 
 OpenAI, Google Vertex AI, and AWS Bedrock perform non-streaming and streaming chat-completion requests. Vertex AI uses its OpenAI-compatible endpoint with Google OAuth refresh; Bedrock uses the native model-independent Converse API with the AWS SDK credential chain and SigV4 signing. See [provider configuration](docs/providers.md) for credentials, capabilities, and provider-specific limits.
 
+The OpenAI Responses API is under active development. Its dated typed contract, validation rules, golden fixtures, and provider capability matrix are implemented, but `/v1/responses` is not registered yet. See [Responses API compatibility](docs/responses-api.md); use `/v1/chat/completions` until the orchestration phase is complete.
+
 ## Architecture
 
 ```text
@@ -140,6 +142,7 @@ Read operations require the `viewer` role; mutations require `admin`. There is n
 - [Quick start](docs/quickstart.md)
 - [Environment variables](docs/env-variables.md)
 - [Provider configuration](docs/providers.md)
+- [Responses API compatibility](docs/responses-api.md)
 - [Database schema](docs/database-schema.md)
 - [Metrics](docs/metrics.md)
 - [Testing guide](docs/testing-guide.md)

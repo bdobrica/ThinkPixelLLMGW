@@ -1,0 +1,43 @@
+{
+  "model": "gpt-5.1",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {"type": "input_text", "text": "Check the weather."}
+      ]
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_weather_1",
+      "output": "{\"temperature\":21}"
+    }
+  ],
+  "instructions": "Answer concisely.",
+  "previous_response_id": "resp_previous",
+  "store": true,
+  "stream": false,
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_weather",
+      "description": "Get current weather",
+      "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "max_output_tokens": 1024,
+  "reasoning": {"effort": "medium", "summary": "auto"},
+  "text": {"format": {"type": "text"}},
+  "include": ["reasoning.encrypted_content"],
+  "metadata": {"trace": "contract-test"},
+  "truncation": "disabled"
+}

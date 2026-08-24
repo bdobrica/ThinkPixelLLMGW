@@ -2,6 +2,8 @@
 
 Provider records are managed through `/admin/providers`. Credentials are encrypted at rest; configuration fields are non-secret JSON. A model routes to a provider when its catalog `provider_id` matches that provider type.
 
+The provider-specific Responses API transport and tool decisions are tracked separately in the [Responses compatibility matrix](responses-api.md). Those entries describe planned native or translated paths; none enables the `/v1/responses` route by itself.
+
 ## OpenAI
 
 - Type: `openai`
