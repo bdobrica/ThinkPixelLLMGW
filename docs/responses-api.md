@@ -64,6 +64,14 @@ Custom function tools are client-executed: the gateway returns an ordered `funct
 
 Streamed function arguments and gateway orchestration round/call/time/token limits remain part of Step 23. Web search, file search, and code interpreter are server-managed and remain disabled until their security and ownership requirements are implemented.
 
+## Hosted-tool framework
+
+Step 24 has begun with a provider-neutral executor boundary. Installed executors expose a typed descriptor, argument validation, cancellable execution, progress updates, JSON results, and separate byte/call/nano-USD usage. A per-response runner applies bounded input/output sizes, call count, concurrency, and wall time. Call IDs are idempotent within a response: an identical retry reuses the first result, while reuse with different input is rejected.
+
+Registration is not authorization. Hosted tools remain default-disabled and a call must be explicitly allowed at all three scopes: deployment, selected model, and authenticated API key. Executor health is checked before execution. Lifecycle events contain response/call/tool identifiers, safe status messages, and final usage; they do not contain tool arguments, outputs, credentials, or raw backend errors.
+
+No production executor is registered or wired into response orchestration yet, so the capability matrix still correctly reports web search, file search, and code interpreter as unavailable. The web-search backend and egress policy, tenant-owned file/vector lifecycle, hardened code sandbox, durable execution records, metrics/circuit breakers, and model-resumption loop remain required before any hosted tool can be enabled.
+
 ## Testing
 
 Run the contract suite with:
