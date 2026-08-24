@@ -211,6 +211,42 @@ func (p *OpenAIProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 	}, nil
 }
 
+// CreateResponse forwards a native Responses request. The gateway orchestrator
+// owns public IDs and rewrites previous_response_id to the upstream correlation
+// ID before this method is called.
+func (p *OpenAIProvider) CreateResponse(ctx context.Context, req ResponsesRequest) (*ResponsesResponse, error) {
+	start := time.Now()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/responses", bytes.NewReader(req.Payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Responses request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	authCtx, err := p.auth.Authenticate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+	if err := authCtx.ApplyToRequest(ctx, httpReq); err != nil {
+		return nil, fmt.Errorf("failed to apply auth: %w", err)
+	}
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("Responses request failed: %w", err)
+	}
+	latency := time.Since(start)
+	if req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return &ResponsesResponse{StatusCode: resp.StatusCode, Stream: resp.Body, ProviderLatency: latency}, nil
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Responses response: %w", err)
+	}
+	usage := extractUsageFromResponse(body)
+	return &ResponsesResponse{StatusCode: resp.StatusCode, Body: body, ProviderLatency: latency,
+		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CachedTokens: usage.CachedTokens,
+		ReasoningTokens: usage.ReasoningTokens}, nil
+}
+
 // ValidateCredentials validates the provider credentials
 func (p *OpenAIProvider) ValidateCredentials(ctx context.Context) error {
 	// Make a simple API call to validate credentials

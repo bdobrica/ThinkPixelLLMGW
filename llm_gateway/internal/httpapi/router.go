@@ -23,6 +23,7 @@ import (
 	"llm_gateway/internal/providers"
 	"llm_gateway/internal/queue"
 	"llm_gateway/internal/ratelimit"
+	"llm_gateway/internal/responses"
 	"llm_gateway/internal/storage"
 	"llm_gateway/internal/utils"
 )
@@ -43,17 +44,19 @@ type Dependencies struct {
 	// Database and encryption for admin handlers
 	DB         *storage.DB
 	Encryption *storage.Encryption
+	Responses  *responses.Orchestrator
 
-	redisClient   *storage.RedisClient
-	billingQueue  queue.Queue
-	billingDLQ    queue.DeadLetterQueue
-	usageQueue    queue.Queue
-	usageDLQ      queue.DeadLetterQueue
-	billingWorker *billing.BillingQueueWorker
-	usageWorker   *storage.UsageQueueWorker
-	workerCancel  context.CancelFunc
-	closeOnce     sync.Once
-	closeErr      error
+	redisClient              *storage.RedisClient
+	billingQueue             queue.Queue
+	billingDLQ               queue.DeadLetterQueue
+	usageQueue               queue.Queue
+	usageDLQ                 queue.DeadLetterQueue
+	billingWorker            *billing.BillingQueueWorker
+	usageWorker              *storage.UsageQueueWorker
+	workerCancel             context.CancelFunc
+	responsesMaintenanceDone chan struct{}
+	closeOnce                sync.Once
+	closeErr                 error
 }
 
 // Close stops background producers and workers, flushes buffered state, and
@@ -63,6 +66,13 @@ func (d *Dependencies) Close(ctx context.Context) error {
 		var errs []error
 		if d.workerCancel != nil {
 			d.workerCancel()
+		}
+		if d.responsesMaintenanceDone != nil {
+			select {
+			case <-d.responsesMaintenanceDone:
+			case <-ctx.Done():
+				errs = append(errs, fmt.Errorf("stop Responses maintenance: %w", ctx.Err()))
+			}
 		}
 		if d.billingWorker != nil {
 			errs = appendCloseError(errs, "billing worker", d.billingWorker.StopContext(ctx))
@@ -332,6 +342,18 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 	deps.BillingWorker = billingWorker
 	deps.UsageWorker = usageWorker
 	deps.Encryption = encryption
+	responseStore, err := responses.NewStore(db.SQLX(), encryption, responses.StoreConfig{
+		Retention: cfg.Responses.Retention, TransientRetention: cfg.Responses.TransientRetention,
+		OrphanedAfter: cfg.Responses.OrphanedAfter, MaxChainDepth: cfg.Responses.MaxChainDepth,
+		MaxChainItems: cfg.Responses.MaxChainItems, MaxChainBytes: cfg.Responses.MaxChainBytes,
+		MaxChainTokens: cfg.Responses.MaxChainTokens,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize Responses state: %w", err)
+	}
+	deps.Responses = &responses.Orchestrator{Store: responseStore}
+	deps.responsesMaintenanceDone = make(chan struct{})
+	go runResponsesMaintenance(workerCtx, responseStore, deps.responsesMaintenanceDone)
 	deps.billingWorker = billingWorker
 	deps.usageWorker = usageWorker
 	// Create router
@@ -341,10 +363,30 @@ func NewRouter(cfg *config.Config) (_ *http.ServeMux, deps *Dependencies, err er
 	return mux, deps, nil
 }
 
+func runResponsesMaintenance(ctx context.Context, store *responses.Store, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if _, err := store.ReconcileOrphans(ctx, 100); err != nil && !errors.Is(err, context.Canceled) {
+			utils.NewLogger("responses-maintenance", utils.Info).Warn("failed to reconcile orphaned responses", "error", err)
+		}
+		if _, err := store.CleanupExpired(ctx, 100); err != nil && !errors.Is(err, context.Canceled) {
+			utils.NewLogger("responses-maintenance", utils.Info).Warn("failed to clean expired responses", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) {
 	// OpenAI-compatible proxy endpoint - protected with API key middleware
 	apiKeyMiddleware := middleware.APIKeyMiddleware(deps.APIKeys)
 	mux.Handle("/v1/chat/completions", apiKeyMiddleware(http.HandlerFunc(deps.handleChat)))
+	mux.Handle("/v1/responses", apiKeyMiddleware(http.HandlerFunc(deps.handleResponses)))
 
 	// Health check endpoint - public
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

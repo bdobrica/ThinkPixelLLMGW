@@ -167,11 +167,6 @@ func TestProviderCapabilityMatrix(t *testing.T) {
 	}
 
 	model := ResolveModelCapabilities(openAI, true, true, true, true, true)
-	if model.Responses || model.Reasoning || model.FunctionTools || model.ParallelFunctionCalls || model.Streaming {
-		t.Fatalf("Step 20 must not enable an unregistered endpoint: %#v", model)
-	}
-	openAI.ResponsesEnabled = true
-	model = ResolveModelCapabilities(openAI, true, true, true, true, true)
 	if !model.Responses || !model.Reasoning || !model.FunctionTools || !model.ParallelFunctionCalls || !model.Streaming {
 		t.Fatalf("unexpected resolved model capabilities: %#v", model)
 	}

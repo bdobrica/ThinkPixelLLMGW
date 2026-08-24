@@ -19,6 +19,10 @@ type DB struct {
 	modelCache  *LRUCache
 }
 
+// SQLX exposes the shared connection to repositories owned by other internal
+// packages. Callers must not close it; DB retains lifecycle ownership.
+func (db *DB) SQLX() *sqlx.DB { return db.conn }
+
 // DBConfig holds database configuration
 type DBConfig struct {
 	// Connection settings (use either DSN or individual fields)

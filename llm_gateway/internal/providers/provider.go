@@ -27,6 +27,31 @@ type ChatResponse struct {
 	ReasoningTokens int
 }
 
+// ResponsesRequest is intentionally separate from ChatRequest. Providers that
+// implement the native Responses protocol receive the validated wire payload
+// without forcing Responses semantics through Provider.Chat.
+type ResponsesRequest struct {
+	Payload []byte
+	Stream  bool
+}
+
+type ResponsesResponse struct {
+	StatusCode      int
+	Body            []byte
+	Stream          io.ReadCloser
+	ProviderLatency time.Duration
+	InputTokens     int
+	OutputTokens    int
+	CachedTokens    int
+	ReasoningTokens int
+}
+
+// ResponsesProvider is an optional capability implemented only by providers
+// with a native OpenAI-compatible Responses endpoint.
+type ResponsesProvider interface {
+	CreateResponse(context.Context, ResponsesRequest) (*ResponsesResponse, error)
+}
+
 // StreamEvent represents a single event in a streaming response
 type StreamEvent struct {
 	Data  []byte

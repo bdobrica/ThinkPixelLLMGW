@@ -216,6 +216,23 @@ func (s *Store) MarkInProgress(ctx context.Context, owner uuid.UUID, id string) 
 	return s.transition(ctx, owner, id, []Status{StatusQueued}, StatusInProgress)
 }
 
+func (s *Store) SetProviderCorrelationID(ctx context.Context, owner uuid.UUID, id, correlationID string) error {
+	if correlationID == "" {
+		return errors.New("provider correlation id is required")
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE responses SET provider_correlation_id=$1, updated_at=$2
+		WHERE id=$3 AND api_key_id=$4 AND deleted_at IS NULL AND expires_at>$2 AND status IN ('queued','in_progress')`,
+		correlationID, s.now().UTC(), id, owner)
+	if err != nil {
+		return fmt.Errorf("set response provider correlation id: %w", err)
+	}
+	count, _ := result.RowsAffected()
+	if count != 1 {
+		return ErrInvalidState
+	}
+	return nil
+}
+
 func (s *Store) Complete(ctx context.Context, owner uuid.UUID, id string, update TerminalUpdate) error {
 	if !isTerminal(update.Status) {
 		return ErrInvalidState

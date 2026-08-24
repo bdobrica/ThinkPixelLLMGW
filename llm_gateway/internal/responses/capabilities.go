@@ -29,7 +29,7 @@ type Capabilities struct {
 
 var providerCapabilities = map[string]Capabilities{
 	"openai": {
-		Provider: "openai", ResponsesTransport: SupportNative, StateStorage: SupportGateway,
+		Provider: "openai", ResponsesEnabled: true, ResponsesTransport: SupportNative, StateStorage: SupportNative,
 		ReasoningItems: SupportNative, FunctionTools: SupportNative, ParallelFunctionCalls: SupportNative,
 		WebSearch: SupportUnavailable, FileSearch: SupportUnavailable, CodeInterpreter: SupportUnavailable,
 		StreamingEvents: SupportNative,
