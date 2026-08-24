@@ -5,14 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 )
 
 const (
-	maxMetadataEntries  = 16
-	maxMetadataKeyLen   = 64
-	maxMetadataValueLen = 512
+	maxMetadataEntries        = 16
+	maxMetadataKeyLen         = 64
+	maxMetadataValueLen       = 512
+	maxFunctionDescriptionLen = 1024
+	maxFunctionSchemaBytes    = 64 << 10
+	maxFunctionSchemaDepth    = 16
 )
+
+var functionNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 type ValidationError struct {
 	Param   string
@@ -114,6 +120,12 @@ func (r CreateRequest) Validate() error {
 			return err
 		}
 	}
+	if err := validateUniqueFunctionNames(r.Tools); err != nil {
+		return err
+	}
+	if err := validateToolChoice(r.ToolChoice, r.Tools); err != nil {
+		return err
+	}
 	for index, include := range r.Include {
 		if !validInclude(include) {
 			return invalid(fmt.Sprintf("include[%d]", index), "invalid_value", "unsupported include value %q", include)
@@ -139,9 +151,18 @@ func validateInputItem(index int, item InputItem) error {
 		if item.CallID == "" || item.Name == "" || item.Arguments == "" {
 			return invalid(param, "missing_required_parameter", "function_call requires call_id, name, and arguments")
 		}
+		if !functionNamePattern.MatchString(item.Name) {
+			return invalid(param+".name", "invalid_value", "function name must contain only letters, numbers, underscores, or hyphens and be at most 64 characters")
+		}
+		if !json.Valid([]byte(item.Arguments)) {
+			return invalid(param+".arguments", "invalid_json", "function_call arguments must be valid JSON")
+		}
 	case "function_call_output":
 		if item.CallID == "" || len(item.Output) == 0 {
 			return invalid(param, "missing_required_parameter", "function_call_output requires call_id and output")
+		}
+		if !json.Valid(item.Output) || bytes.Equal(bytes.TrimSpace(item.Output), []byte("null")) {
+			return invalid(param+".output", "invalid_value", "function_call_output output must be a JSON string or structured JSON value")
 		}
 	case "reasoning":
 		// Summary/encrypted content can both be omitted for provider-managed state.
@@ -194,8 +215,29 @@ func validateTool(index int, tool Tool) error {
 		if strings.TrimSpace(tool.Name) == "" {
 			return invalid(param+".name", "missing_required_parameter", "function tool name is required")
 		}
+		if !functionNamePattern.MatchString(tool.Name) {
+			return invalid(param+".name", "invalid_value", "function name must contain only letters, numbers, underscores, or hyphens and be at most 64 characters")
+		}
+		if len(tool.Description) > maxFunctionDescriptionLen {
+			return invalid(param+".description", "invalid_value", "function description may contain at most %d characters", maxFunctionDescriptionLen)
+		}
 		if tool.Parameters == nil {
 			return invalid(param+".parameters", "missing_required_parameter", "function tool parameters are required")
+		}
+		encoded, err := json.Marshal(tool.Parameters)
+		if err != nil || len(encoded) > maxFunctionSchemaBytes {
+			return invalid(param+".parameters", "invalid_value", "function parameters must be valid JSON Schema no larger than %d bytes", maxFunctionSchemaBytes)
+		}
+		if schemaDepth(tool.Parameters) > maxFunctionSchemaDepth {
+			return invalid(param+".parameters", "invalid_value", "function parameters may be nested at most %d levels", maxFunctionSchemaDepth)
+		}
+		if schemaType, ok := tool.Parameters["type"].(string); !ok || schemaType != "object" {
+			return invalid(param+".parameters.type", "invalid_value", "function parameters must use a top-level object schema")
+		}
+		if tool.Strict != nil && *tool.Strict {
+			if err := validateStrictSchema(tool.Parameters, param+".parameters"); err != nil {
+				return err
+			}
 		}
 	case "web_search", "web_search_preview", "code_interpreter":
 	case "file_search":
@@ -204,6 +246,146 @@ func validateTool(index int, tool Tool) error {
 		}
 	default:
 		return invalid(param+".type", "unsupported_tool", "unsupported tool type %q in contract snapshot %s", tool.Type, ContractSnapshot)
+	}
+	return nil
+}
+
+func validateUniqueFunctionNames(tools []Tool) error {
+	seen := make(map[string]struct{}, len(tools))
+	for index, tool := range tools {
+		if tool.Type != "function" {
+			continue
+		}
+		if _, exists := seen[tool.Name]; exists {
+			return invalid(fmt.Sprintf("tools[%d].name", index), "invalid_value", "function tool names must be unique")
+		}
+		seen[tool.Name] = struct{}{}
+	}
+	return nil
+}
+
+func validateToolChoice(raw json.RawMessage, tools []Tool) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	available := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		if tool.Type == "function" {
+			available[tool.Name] = struct{}{}
+		}
+	}
+	var mode string
+	if err := json.Unmarshal(raw, &mode); err == nil {
+		switch mode {
+		case "none", "auto":
+			return nil
+		case "required":
+			if len(tools) == 0 {
+				return invalid("tool_choice", "invalid_parameter_combination", "tool_choice required requires at least one tool")
+			}
+			return nil
+		default:
+			return invalid("tool_choice", "invalid_value", "tool_choice must be none, auto, required, a named function, or allowed_tools")
+		}
+	}
+	var choice struct {
+		Type  string `json:"type"`
+		Name  string `json:"name"`
+		Mode  string `json:"mode"`
+		Tools []struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&choice); err != nil {
+		return invalid("tool_choice", "invalid_value", "tool_choice has an invalid shape")
+	}
+	switch choice.Type {
+	case "function":
+		if choice.Name == "" {
+			return invalid("tool_choice.name", "missing_required_parameter", "named function tool_choice requires name")
+		}
+		if _, ok := available[choice.Name]; !ok {
+			return invalid("tool_choice.name", "invalid_value", "tool_choice references an unavailable function")
+		}
+	case "allowed_tools":
+		if choice.Mode != "auto" && choice.Mode != "required" {
+			return invalid("tool_choice.mode", "invalid_value", "allowed_tools mode must be auto or required")
+		}
+		if len(choice.Tools) == 0 {
+			return invalid("tool_choice.tools", "missing_required_parameter", "allowed_tools requires at least one tool")
+		}
+		seen := map[string]struct{}{}
+		for index, tool := range choice.Tools {
+			if tool.Type != "function" {
+				return invalid(fmt.Sprintf("tool_choice.tools[%d].type", index), "unsupported_tool", "only function tools are enabled")
+			}
+			if _, ok := available[tool.Name]; !ok {
+				return invalid(fmt.Sprintf("tool_choice.tools[%d].name", index), "invalid_value", "allowed_tools references an unavailable function")
+			}
+			if _, duplicate := seen[tool.Name]; duplicate {
+				return invalid(fmt.Sprintf("tool_choice.tools[%d].name", index), "invalid_value", "allowed_tools entries must be unique")
+			}
+			seen[tool.Name] = struct{}{}
+		}
+	default:
+		return invalid("tool_choice.type", "invalid_value", "unsupported tool_choice type")
+	}
+	return nil
+}
+
+func schemaDepth(value any) int {
+	maxChild := 0
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if depth := schemaDepth(child); depth > maxChild {
+				maxChild = depth
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if depth := schemaDepth(child); depth > maxChild {
+				maxChild = depth
+			}
+		}
+	default:
+		return 0
+	}
+	return maxChild + 1
+}
+
+func validateStrictSchema(schema map[string]any, param string) error {
+	if schemaType, _ := schema["type"].(string); schemaType == "object" {
+		additional, ok := schema["additionalProperties"].(bool)
+		if !ok || additional {
+			return invalid(param+".additionalProperties", "invalid_json_schema", "strict object schemas require additionalProperties=false")
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		requiredValues, _ := schema["required"].([]any)
+		required := make(map[string]struct{}, len(requiredValues))
+		for _, value := range requiredValues {
+			name, ok := value.(string)
+			if !ok {
+				return invalid(param+".required", "invalid_json_schema", "strict schema required entries must be strings")
+			}
+			required[name] = struct{}{}
+		}
+		for name, child := range properties {
+			if _, ok := required[name]; !ok {
+				return invalid(param+".required", "invalid_json_schema", "strict schemas must require every property")
+			}
+			if childSchema, ok := child.(map[string]any); ok {
+				if err := validateStrictSchema(childSchema, param+".properties."+name); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if items, ok := schema["items"].(map[string]any); ok {
+		return validateStrictSchema(items, param+".items")
 	}
 	return nil
 }

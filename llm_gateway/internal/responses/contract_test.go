@@ -120,6 +120,12 @@ func TestCreateRequestValidation(t *testing.T) {
 		{"stream options", `{"model":"gpt-5.1","input":"hello","stream_options":{"include_obfuscation":false}}`, "stream_options", "invalid_parameter_combination"},
 		{"background stream", `{"model":"gpt-5.1","input":"hello","background":true,"stream":true}`, "background", "unsupported_parameter_combination"},
 		{"tool", `{"model":"gpt-5.1","input":"hello","tools":[{"type":"function","name":"weather"}]}`, "tools[0].parameters", "missing_required_parameter"},
+		{"tool name", `{"model":"gpt-5.1","input":"hello","tools":[{"type":"function","name":"bad name","parameters":{"type":"object"}}]}`, "tools[0].name", "invalid_value"},
+		{"duplicate tool name", `{"model":"gpt-5.1","input":"hello","tools":[{"type":"function","name":"weather","parameters":{"type":"object"}},{"type":"function","name":"weather","parameters":{"type":"object"}}]}`, "tools[1].name", "invalid_value"},
+		{"strict schema", `{"model":"gpt-5.1","input":"hello","tools":[{"type":"function","name":"weather","strict":true,"parameters":{"type":"object","properties":{"city":{"type":"string"}}}}]}`, "tools[0].parameters.additionalProperties", "invalid_json_schema"},
+		{"named tool choice", `{"model":"gpt-5.1","input":"hello","tools":[{"type":"function","name":"weather","parameters":{"type":"object"}}],"tool_choice":{"type":"function","name":"missing"}}`, "tool_choice.name", "invalid_value"},
+		{"allowed tools", `{"model":"gpt-5.1","input":"hello","tools":[{"type":"function","name":"weather","parameters":{"type":"object"}}],"tool_choice":{"type":"allowed_tools","mode":"sometimes","tools":[{"type":"function","name":"weather"}]}}`, "tool_choice.mode", "invalid_value"},
+		{"invalid call arguments", `{"model":"gpt-5.1","input":[{"type":"function_call","call_id":"call_1","name":"weather","arguments":"{"}]}`, "input[0].arguments", "invalid_json"},
 		{"input item", `{"model":"gpt-5.1","input":[{"type":"message","role":"tool","content":"x"}]}`, "input[0].role", "invalid_value"},
 		{"include", `{"model":"gpt-5.1","input":"hello","include":["unknown"]}`, "include[0]", "invalid_value"},
 	}

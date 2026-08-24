@@ -60,7 +60,9 @@ For future translated routes, the gateway context assembler replays ordered stor
 
 Streaming and background creation are explicitly rejected until the Responses SSE state machine and durable background execution are installed. `GET`, `DELETE`, and cancellation resource operations, translated providers, conversations, prompts, MCP, computer use, image generation, remote shell, and newer item/tool variants remain deferred. They must be added with typed schemas, validation, capability gates, fixtures, and documentation before being accepted.
 
-Custom function tools are client-executed: the gateway will return a `function_call`, and the client will submit the matching `function_call_output`. Web search, file search, and code interpreter are server-managed and remain disabled until their security and ownership requirements are implemented.
+Custom function tools are client-executed: the gateway returns an ordered `function_call`, and the client submits the matching `function_call_output`, normally in a new request linked with the gateway `previous_response_id`. The gateway does not execute that function. It validates function names, bounded object JSON Schemas, strict-schema requirements, named/required/auto/none/allowed tool choices, and JSON arguments before provider work. Submitted outputs must match an unresolved `call_id` in the same tenant-owned predecessor chain; unknown and duplicate outputs are rejected. Native parallel calls preserve provider order and receive gateway-owned item IDs.
+
+Streamed function arguments and gateway orchestration round/call/time/token limits remain part of Step 23. Web search, file search, and code interpreter are server-managed and remain disabled until their security and ownership requirements are implemented.
 
 ## Testing
 

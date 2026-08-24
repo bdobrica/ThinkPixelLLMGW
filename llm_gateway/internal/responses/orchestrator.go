@@ -24,6 +24,7 @@ type TransportResponse struct {
 type StateStore interface {
 	Create(context.Context, CreateRecord, []Item) error
 	Get(context.Context, uuid.UUID, string) (*Record, error)
+	LoadChain(context.Context, uuid.UUID, string) ([]Record, []Item, error)
 	MarkInProgress(context.Context, uuid.UUID, string) error
 	SetProviderCorrelationID(context.Context, uuid.UUID, string, string) error
 	Complete(context.Context, uuid.UUID, string, TerminalUpdate) error
@@ -64,6 +65,9 @@ func (o *Orchestrator) CreateNative(ctx context.Context, request CreateRequest, 
 			return nil, 0, invalid("previous_response_id", "invalid_value", "previous response cannot be continued on the selected provider")
 		}
 		request.PreviousResponseID = *predecessor.ProviderCorrelationID
+	}
+	if err := o.validateFunctionOutputs(ctx, options.Owner, publicPrevious, request.Input.Items); err != nil {
+		return nil, 0, err
 	}
 	request.Model = options.ProviderModel
 	providerPayload, err := json.Marshal(request)
@@ -121,6 +125,11 @@ func (o *Orchestrator) CreateNative(ctx context.Context, request CreateRequest, 
 		failure := json.RawMessage(`{"code":"invalid_provider_response","message":"provider response omitted id"}`)
 		_ = o.Store.Complete(ctx, options.Owner, responseID, TerminalUpdate{Status: StatusFailed, Error: failure})
 		return nil, 0, errors.New("provider Responses response omitted id")
+	}
+	if err := normalizeFunctionCalls(&result, request.ParallelToolCalls == nil || *request.ParallelToolCalls); err != nil {
+		failure := json.RawMessage(`{"code":"invalid_provider_response","message":"provider returned invalid function calls"}`)
+		_ = o.Store.Complete(ctx, options.Owner, responseID, TerminalUpdate{Status: StatusFailed, Error: failure})
+		return nil, 0, fmt.Errorf("validate provider function calls: %w", err)
 	}
 	if err := o.Store.SetProviderCorrelationID(ctx, options.Owner, responseID, upstreamID); err != nil {
 		return nil, 0, err
