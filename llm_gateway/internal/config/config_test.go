@@ -94,6 +94,43 @@ func TestLoadRejectsInvalidAuditPrivacyPolicy(t *testing.T) {
 	}
 }
 
+func TestLoadResponsesStatePolicy(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("RESPONSES_RETENTION", "48h")
+	t.Setenv("RESPONSES_TRANSIENT_RETENTION", "30m")
+	t.Setenv("RESPONSES_ORPHANED_AFTER", "5m")
+	t.Setenv("RESPONSES_MAX_CHAIN_DEPTH", "12")
+	t.Setenv("RESPONSES_MAX_CHAIN_ITEMS", "100")
+	t.Setenv("RESPONSES_MAX_CHAIN_BYTES", "2048")
+	t.Setenv("RESPONSES_MAX_CHAIN_TOKENS", "512")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Responses.Retention != 48*time.Hour || cfg.Responses.TransientRetention != 30*time.Minute ||
+		cfg.Responses.OrphanedAfter != 5*time.Minute || cfg.Responses.MaxChainDepth != 12 ||
+		cfg.Responses.MaxChainItems != 100 || cfg.Responses.MaxChainBytes != 2048 || cfg.Responses.MaxChainTokens != 512 {
+		t.Fatalf("unexpected Responses config: %#v", cfg.Responses)
+	}
+}
+
+func TestLoadRejectsInvalidResponsesStatePolicy(t *testing.T) {
+	for key, value := range map[string]string{
+		"RESPONSES_RETENTION": "0", "RESPONSES_TRANSIENT_RETENTION": "invalid",
+		"RESPONSES_ORPHANED_AFTER": "-1s", "RESPONSES_MAX_CHAIN_DEPTH": "0",
+		"RESPONSES_MAX_CHAIN_ITEMS": "-1", "RESPONSES_MAX_CHAIN_BYTES": "0", "RESPONSES_MAX_CHAIN_TOKENS": "0",
+	} {
+		t.Run(key, func(t *testing.T) {
+			setRequiredConfig(t)
+			t.Setenv(key, value)
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected %s validation error", key)
+			}
+		})
+	}
+}
+
 func setRequiredConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")

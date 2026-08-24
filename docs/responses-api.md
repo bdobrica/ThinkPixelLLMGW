@@ -3,7 +3,7 @@
 **Contract snapshot:** August 24, 2026
 **Authoritative reference:** [OpenAI create response API](https://developers.openai.com/api/reference/resources/responses/methods/create)
 
-The gateway is implementing `/v1/responses` as a separate, item-oriented protocol. The typed contract and validation foundation exists, but the route is not registered yet. Until Phase 7 Step 22 is complete, clients receive the normal not-found response and must continue using `/v1/chat/completions`.
+The gateway is implementing `/v1/responses` as a separate, item-oriented protocol. The typed contract, validation, and tenant-owned persistence foundation exist, but the route is not registered yet. Until Phase 7 Step 22 is complete, clients receive the normal not-found response and must continue using `/v1/chat/completions`.
 
 The snapshot is intentionally explicit. A future OpenAI field or item type is not automatically supported merely because the gateway can decode JSON. Unsupported top-level fields, input variants, tools, includes, and incompatible parameter combinations fail validation before a provider request can become billable.
 
@@ -42,9 +42,19 @@ The contract requires `model` and `input` for this gateway. `truncation` accepts
 
 Model capability resolution intersects these provider capabilities with existing catalog flags such as reasoning, function calling, parallel function calling, streaming, and web search. A catalog flag can narrow support but cannot enable a provider feature marked unavailable.
 
+## Stored state and retention
+
+Step 21 adds PostgreSQL records for response envelopes, ordered input/output items, predecessor links, tool execution records, terminal usage/errors, and provider correlation IDs. Public response, item, call, and tool-execution IDs use independent cryptographically random namespaces; they are not derived from internal request UUIDs.
+
+Every lookup includes the authenticated API-key owner. Missing, foreign-owned, expired, deleted, and `store: false` records all produce the same not-found result. Only completed or incomplete stored responses may be predecessors. Queued, in-progress, failed, and cancelled responses are rejected as continuation roots without disclosing whether a foreign ID exists. New instructions remain properties of the new response; persistence does not copy predecessor instructions.
+
+`store: true` records default to 30 days and `store: false` orchestration records default to one hour. Operators can change these durations and bounded-chain limits with the `RESPONSES_*` settings documented in `docs/env-variables.md`. Soft deletion makes a response immediately unavailable; the bounded cleanup operation physically removes expired rows and cascades to items/tools. Encrypted provider reasoning state is stored only in the opaque ciphertext column using the gateway encryption key, never in audit-visible JSON.
+
+Terminalization locks the response, inserts final output items, and writes terminal status/usage/error in one transaction. Repeating the same terminal state is idempotent; a conflicting terminal transition fails. Startup orchestration can reconcile stale `in_progress` rows to a failed terminal state, while cleanup and reconciliation use bounded `SKIP LOCKED` batches for multi-instance safety.
+
 ## Explicitly deferred
 
-This snapshot does not register any Responses resource route, persist response state, call providers, execute tools, or emit Responses SSE events. Conversations, prompts, MCP, computer use, image generation, remote shell, and newer item/tool variants are outside the first supported subset. They must be added with typed schemas, validation, capability gates, fixtures, and documentation before being accepted.
+This snapshot does not register any Responses resource route, call providers, execute tools, or emit Responses SSE events. The Step 21 repository exists but is not initialized by the router until Step 22 owns startup/shutdown and handler orchestration. Conversations, prompts, MCP, computer use, image generation, remote shell, and newer item/tool variants are outside the first supported subset. They must be added with typed schemas, validation, capability gates, fixtures, and documentation before being accepted.
 
 Custom function tools are client-executed: the gateway will return a `function_call`, and the client will submit the matching `function_call_output`. Web search, file search, and code interpreter are server-managed and remain disabled until their security and ownership requirements are implemented.
 

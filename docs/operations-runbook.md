@@ -101,6 +101,8 @@ For a UTC interval and API key/model/provider grouping:
 
 Follow [Audit Logging Privacy and Retention](logging-privacy.md). The deployment record must name the data owner, region, body mode, sample rate, local rotation, Redis persistence expiry, S3 lifecycle duration, backup expiry, deletion-request procedure, and authorized readers. Test lifecycle expiry and one identifier-based deletion before launch and after policy changes.
 
+Responses state has a separate PostgreSQL retention policy. Record the `RESPONSES_RETENTION` and transient-retention values, schedule the repository cleanup in bounded batches, and alert if expired rows accumulate. After restart, run orphan reconciliation before accepting new Responses work and investigate every interrupted row. A response deletion is immediately hidden but remains in PostgreSQL until cleanup; backups retain it until their own expiry. Map erasure requests to both API-key ownership and response IDs, and verify removal from replicas and backup expiry schedules. Restores must preserve response/item/tool foreign keys and encrypted opaque payloads; test retrieval with the matching `ENCRYPTION_KEY` only in an isolated environment.
+
 ## Incident evidence
 
 Preserve timestamps, request IDs, image/config revisions, dependency status, readiness transitions, queue/DLQ depth, and redacted provider responses. Never copy API keys, authorization headers, cookies, raw prompts, encryption material, or unreviewed audit bodies into incident systems.

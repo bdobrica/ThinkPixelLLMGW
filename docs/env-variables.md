@@ -99,6 +99,22 @@ Overrides are held in memory, reapplied on registry reload, and never persisted.
 
 Review [Audit logging privacy and retention](logging-privacy.md) before retaining request or response bodies.
 
+### Responses state (pre-release)
+
+These settings configure the durable state repository added for the forthcoming Responses API. The route remains disabled until Phase 7 Step 22.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `RESPONSES_RETENTION` | `720h` | TTL for responses created with `store: true` |
+| `RESPONSES_TRANSIENT_RETENTION` | `1h` | Recovery TTL for internal `store: false` lifecycle rows; they are never retrievable or valid predecessors |
+| `RESPONSES_ORPHANED_AFTER` | `15m` | Age after which startup reconciliation terminalizes stale `in_progress` rows |
+| `RESPONSES_MAX_CHAIN_DEPTH` | `64` | Maximum predecessor hops loaded for continuation |
+| `RESPONSES_MAX_CHAIN_ITEMS` | `4096` | Maximum persisted items across a loaded chain |
+| `RESPONSES_MAX_CHAIN_BYTES` | `16777216` | Maximum JSON/ciphertext bytes across a loaded chain |
+| `RESPONSES_MAX_CHAIN_TOKENS` | `128000` | Maximum recorded tokens across a loaded chain |
+
+Durations and limits must be positive. `ENCRYPTION_KEY` also protects opaque provider reasoning state; rotating it requires the maintenance procedure in the operations runbook.
+
 ## S3 audit sink
 
 | Variable | Default | Description |

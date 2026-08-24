@@ -21,6 +21,7 @@ type Config struct {
 	Provider         ProviderConfig
 	RequestLogger    RequestLoggerConfig
 	LoggingSink      LoggingSinkConfig
+	Responses        ResponsesConfig
 }
 
 type HTTPServerConfig struct {
@@ -89,6 +90,16 @@ type LoggingSinkConfig struct {
 	S3Region      string        // AWS region
 	S3Prefix      string        // Prefix for S3 keys (e.g., "logs/")
 	PodName       string        // Pod identifier for multi-pod deployments
+}
+
+type ResponsesConfig struct {
+	Retention          time.Duration
+	TransientRetention time.Duration
+	OrphanedAfter      time.Duration
+	MaxChainDepth      int
+	MaxChainItems      int
+	MaxChainBytes      int
+	MaxChainTokens     int
 }
 
 func getEnvInt(key string, defaultValue int) int {
@@ -210,6 +221,18 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	responseRetention, err := requiredPositiveDuration("RESPONSES_RETENTION", 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	responseTransientRetention, err := requiredPositiveDuration("RESPONSES_TRANSIENT_RETENTION", time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	responseOrphanedAfter, err := requiredPositiveDuration("RESPONSES_ORPHANED_AFTER", 15*time.Minute)
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		HTTPPort:         port,
@@ -271,6 +294,15 @@ func Load() (*Config, error) {
 			S3Prefix:      getEnvString("LOGGING_SINK_S3_PREFIX", "logs/"),
 			PodName:       getEnvString("POD_NAME", "gateway-0"),
 		},
+		Responses: ResponsesConfig{
+			Retention:          responseRetention,
+			TransientRetention: responseTransientRetention,
+			OrphanedAfter:      responseOrphanedAfter,
+			MaxChainDepth:      getEnvInt("RESPONSES_MAX_CHAIN_DEPTH", 64),
+			MaxChainItems:      getEnvInt("RESPONSES_MAX_CHAIN_ITEMS", 4096),
+			MaxChainBytes:      getEnvInt("RESPONSES_MAX_CHAIN_BYTES", 16<<20),
+			MaxChainTokens:     getEnvInt("RESPONSES_MAX_CHAIN_TOKENS", 128000),
+		},
 	}
 	if cfg.RequestLogger.BodyMode != "none" && cfg.RequestLogger.BodyMode != "hash" && cfg.RequestLogger.BodyMode != "redacted" {
 		return nil, fmt.Errorf("AUDIT_BODY_MODE must be none, hash, or redacted")
@@ -291,6 +323,9 @@ func Load() (*Config, error) {
 		if cfg.LoggingSink.BufferSize <= 0 || cfg.LoggingSink.FlushSize <= 0 || cfg.LoggingSink.FlushInterval <= 0 {
 			return nil, fmt.Errorf("logging sink buffer, flush size, and flush interval must be positive")
 		}
+	}
+	if cfg.Responses.MaxChainDepth <= 0 || cfg.Responses.MaxChainItems <= 0 || cfg.Responses.MaxChainBytes <= 0 || cfg.Responses.MaxChainTokens <= 0 {
+		return nil, fmt.Errorf("Responses chain limits must be positive")
 	}
 
 	return cfg, nil

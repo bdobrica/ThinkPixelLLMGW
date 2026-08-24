@@ -226,4 +226,6 @@ The exact-currency down migration is structurally reversible but converts alread
 
 ## Backup, retention, and scaling
 
+Migration `20260824000006_responses_state` adds `responses`, `response_items`, and `response_tool_executions`. Ownership indexes begin with `api_key_id`; predecessor, active-status, and expiry indexes support bounded continuation, recovery, and cleanup. Deleting an API key or response cascades to its items/tool executions. Response deletion is initially soft so API retrieval immediately returns not found; TTL cleanup performs physical deletion. Backups containing these tables may contain prompts, outputs, tool data, metadata, and encrypted reasoning payloads and must follow the same access, encryption, regional, expiry, and deletion policy as production state.
+
 Use the tested backup/restore procedure in the [Operations runbook](operations-runbook.md). `usage_records` is not partitioned and no archive table is created by migrations. If volume requires partitioning or retention deletion, introduce it through reviewed migrations and update repositories, backups, and reconciliation procedures rather than running the illustrative DDL from old design documents.

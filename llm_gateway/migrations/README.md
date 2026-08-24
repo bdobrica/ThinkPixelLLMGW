@@ -10,6 +10,10 @@ During a rolling deployment, new gateway instances accept legacy decimal-dollar 
 
 Adds status/time and model-name/time indexes used by the bounded administrative usage filters. On a large production `usage_records` table, schedule this migration in a maintenance window or adapt it to an operator-managed `CREATE INDEX CONCURRENTLY` procedure.
 
+## Responses state (20260824000006)
+
+Adds tenant-owned response envelopes, ordered items, predecessor links, and tool execution records. The migration is additive and its down migration removes all Responses state. Apply it before deploying a binary that enables `/v1/responses`. Back up and restore these tables with PostgreSQL; opaque reasoning state remains encrypted and requires the matching gateway encryption key after restore.
+
 This directory contains SQL migrations for the ThinkPixelLLMGW database schema.
 
 ## Tools

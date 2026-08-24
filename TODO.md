@@ -29,7 +29,7 @@ Last reconciled with the code review, release qualification, and Responses API p
 - [ ] Implement the OpenAI-compatible Responses API as a first-class, item-oriented protocol (detailed execution plan: `PLAN.md`, Steps 20–27).
   - [x] Freeze a dated OpenAI contract snapshot and capability matrix; add typed discriminated schemas for requests, response envelopes, content parts, output items, statuses, usage, errors, and supported SSE events.
   - [ ] Add `POST /v1/responses` plus authenticated `GET`/`DELETE /v1/responses/{response_id}` and cancellation/background resource operations; generate stable `resp_` and item/call IDs.
-  - [ ] Persist tenant-owned response state, ordered items, predecessor links, lifecycle transitions, usage, tool executions, and event journals with migrations, retention, encryption/redaction, cleanup, and orphan recovery.
+  - [x] Persist tenant-owned response state, ordered items, predecessor links, lifecycle transitions, usage, tool executions, retention, opaque-payload encryption, cleanup, and orphan recovery. Event journals remain part of the streaming/background step.
   - [ ] Implement `previous_response_id` continuation without implicitly inheriting prior instructions; reject missing, expired, deleted, non-stored, or cross-tenant predecessors safely.
   - [ ] Implement context limits with `truncation: "disabled"` as the default error behavior and deterministic `"auto"` removal of oldest eligible items while preserving instructions, current input, and tool call/output pairs.
   - [ ] Track provider-supplied reasoning items/summaries/encrypted content separately from visible text, never synthesize or log hidden chain-of-thought, and account for reasoning tokens without double counting.
