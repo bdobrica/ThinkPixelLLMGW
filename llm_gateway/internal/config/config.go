@@ -93,6 +93,7 @@ type LoggingSinkConfig struct {
 }
 
 type ResponsesConfig struct {
+	Enabled            bool
 	Retention          time.Duration
 	TransientRetention time.Duration
 	OrphanedAfter      time.Duration
@@ -100,6 +101,18 @@ type ResponsesConfig struct {
 	MaxChainItems      int
 	MaxChainBytes      int
 	MaxChainTokens     int
+}
+
+func getEnvBool(key string, defaultValue bool) (bool, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return value, nil
 }
 
 func getEnvInt(key string, defaultValue int) int {
@@ -233,6 +246,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	responsesEnabled, err := getEnvBool("RESPONSES_API_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		HTTPPort:         port,
@@ -295,6 +312,7 @@ func Load() (*Config, error) {
 			PodName:       getEnvString("POD_NAME", "gateway-0"),
 		},
 		Responses: ResponsesConfig{
+			Enabled:            responsesEnabled,
 			Retention:          responseRetention,
 			TransientRetention: responseTransientRetention,
 			OrphanedAfter:      responseOrphanedAfter,

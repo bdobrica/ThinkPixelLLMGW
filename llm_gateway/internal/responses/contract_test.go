@@ -9,6 +9,46 @@ import (
 	"testing"
 )
 
+type compatibilitySnapshot struct {
+	SnapshotDate string            `json:"snapshot_date"`
+	ReleaseStage string            `json:"release_stage"`
+	Operations   map[string]bool   `json:"operations"`
+	Providers    map[string]string `json:"providers"`
+	OutputItems  []string          `json:"output_item_types"`
+	StreamEvents []string          `json:"advertised_stream_events"`
+}
+
+func TestDatedCompatibilitySnapshotMatchesExecutableGates(t *testing.T) {
+	body, err := os.ReadFile("testdata/compatibility_snapshot.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot compatibilitySnapshot
+	if err := json.Unmarshal(body, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.SnapshotDate != "2026-08-25" || snapshot.ReleaseStage != "experimental" {
+		t.Fatalf("unexpected compatibility baseline: %#v", snapshot)
+	}
+	if !snapshot.Operations["create"] || !snapshot.Operations["retrieve"] || !snapshot.Operations["delete"] ||
+		snapshot.Operations["stream"] || snapshot.Operations["cancel"] || snapshot.Operations["background"] {
+		t.Fatalf("operation claims exceed the qualified surface: %#v", snapshot.Operations)
+	}
+	for _, providerType := range []string{"vertexai", "bedrock"} {
+		capabilities, _ := ProviderCapabilities(providerType)
+		if snapshot.Providers[providerType] != "disabled" || capabilities.ResponsesEnabled {
+			t.Fatalf("%s translation was advertised before qualification", providerType)
+		}
+	}
+	openAI, _ := ProviderCapabilities("openai")
+	if snapshot.Providers["openai"] != "native_non_streaming" || openAI.StreamingEvents != SupportUnavailable {
+		t.Fatal("OpenAI streaming must remain outside the advertised baseline")
+	}
+	if len(snapshot.StreamEvents) != 0 {
+		t.Fatal("typed but unwired stream events must not be advertised")
+	}
+}
+
 func TestStreamEventGoldenSequence(t *testing.T) {
 	file, err := os.Open("testdata/stream_events.jsonl")
 	if err != nil {
@@ -173,11 +213,40 @@ func TestProviderCapabilityMatrix(t *testing.T) {
 	}
 
 	model := ResolveModelCapabilities(openAI, true, true, true, true, true)
-	if !model.Responses || !model.Reasoning || !model.FunctionTools || !model.ParallelFunctionCalls || !model.Streaming {
+	if !model.Responses || !model.Reasoning || !model.FunctionTools || !model.ParallelFunctionCalls || model.Streaming {
 		t.Fatalf("unexpected resolved model capabilities: %#v", model)
 	}
 	if model.WebSearch {
 		t.Fatal("model catalog flag must not override unavailable provider feature")
+	}
+}
+
+func TestProviderConformanceRejectsUnqualifiedWorkBeforeExecution(t *testing.T) {
+	tests := []struct {
+		name, provider, body, param string
+	}{
+		{"OpenAI streaming", "openai", `{"model":"test","input":"hello","stream":true}`, "stream"},
+		{"OpenAI hosted web search", "openai", `{"model":"test","input":"hello","tools":[{"type":"web_search"}]}`, "tools[0]"},
+		{"Vertex translation", "vertexai", `{"model":"test","input":"hello"}`, "model"},
+		{"Bedrock translation", "bedrock", `{"model":"test","input":"hello"}`, "model"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := DecodeCreateRequest([]byte(test.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider, ok := ProviderCapabilities(test.provider)
+			if !ok {
+				t.Fatalf("missing provider %q", test.provider)
+			}
+			capabilities := ResolveModelCapabilities(provider, true, true, true, true, true)
+			err = ValidateCapabilities(*request, capabilities)
+			var validationError *ValidationError
+			if !errors.As(err, &validationError) || validationError.Param != test.param {
+				t.Fatalf("ValidateCapabilities() = %v, want rejection for %q", err, test.param)
+			}
+		})
 	}
 }
 

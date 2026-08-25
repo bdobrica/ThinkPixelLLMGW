@@ -32,7 +32,9 @@ var providerCapabilities = map[string]Capabilities{
 		Provider: "openai", ResponsesEnabled: true, ResponsesTransport: SupportNative, StateStorage: SupportNative,
 		ReasoningItems: SupportNative, FunctionTools: SupportNative, ParallelFunctionCalls: SupportNative,
 		WebSearch: SupportUnavailable, FileSearch: SupportUnavailable, CodeInterpreter: SupportUnavailable,
-		StreamingEvents: SupportNative,
+		// Native frame translation is not wired into the HTTP path yet. Keep the
+		// executable gate closed even though the upstream provider supports it.
+		StreamingEvents: SupportUnavailable,
 	},
 	"vertexai": {
 		Provider: "vertexai", ResponsesTransport: SupportTranslated, StateStorage: SupportGateway,

@@ -1,9 +1,9 @@
 # Responses API compatibility
 
-**Contract snapshot:** August 24, 2026
+**Contract snapshot:** August 25, 2026
 **Authoritative reference:** [OpenAI create response API](https://developers.openai.com/api/reference/resources/responses/methods/create)
 
-The gateway implements `/v1/responses` as a separate, item-oriented protocol. `POST /v1/responses` currently accepts non-streaming requests for models routed to a native OpenAI provider. Stored responses can be retrieved with `GET /v1/responses/{response_id}` and soft-deleted with `DELETE /v1/responses/{response_id}`. These routes use the same API-key authentication and tenant boundary as creation.
+The gateway implements `/v1/responses` as a separate, item-oriented protocol. The entire route family is experimental and absent by default; operators must set `RESPONSES_API_ENABLED=true` for a controlled canary. When enabled, `POST /v1/responses` accepts non-streaming requests for models routed to a native OpenAI provider. Stored responses can be retrieved with `GET /v1/responses/{response_id}` and soft-deleted with `DELETE /v1/responses/{response_id}`. These routes use the same API-key authentication and tenant boundary as creation.
 
 The snapshot is intentionally explicit. A future OpenAI field or item type is not automatically supported merely because the gateway can decode JSON. Unsupported top-level fields, input variants, tools, includes, and incompatible parameter combinations fail validation before a provider request can become billable.
 
@@ -83,6 +83,12 @@ No production executor is registered or wired into response orchestration yet, s
 Step 25 begins with a gateway-owned SSE encoder/state machine. It emits one named `event:` line and one JSON `data:` line per frame, assigns every event a monotonically increasing `sequence_number`, and flushes after each complete frame. It rejects deltas before their item/content add events, mismatched indices, duplicate items, events after item or response completion, and usage on non-terminal response snapshots. JSON framing preserves valid UTF-8 and escapes embedded newlines without leaking provider-specific frames or Chat Completions `[DONE]` markers.
 
 This foundation is not yet connected to `POST /v1/responses`; `stream: true` continues to fail explicitly. Native provider frame parsing and ID rewriting, translated-provider event production, request-cancellation propagation, terminal persistence/billing, hosted-tool events, journal replay, and HTTP/SDK compatibility tests remain required before streaming is enabled.
+
+## Step 27 qualification baseline
+
+The machine-readable `testdata/compatibility_snapshot.json` manifest is the release claim boundary, not a list of everything represented by internal types. Contract tests keep that dated manifest aligned with executable provider gates: OpenAI native non-streaming create/retrieve/delete are experimental, Vertex AI and Bedrock Responses translations are disabled, and no SSE events, cancellation, background execution, or hosted tools are advertised yet.
+
+Promotion requires the remaining Step 27 SDK, provider, state/recovery, security, billing, load/soak, and drift suites. A typed implementation or upstream capability alone is not sufficient to expand the manifest. Roll back a canary by setting `RESPONSES_API_ENABLED=false` and restarting the gateway; existing state remains subject to its configured retention policy.
 
 ## Testing
 

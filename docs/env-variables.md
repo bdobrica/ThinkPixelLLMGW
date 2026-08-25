@@ -101,10 +101,11 @@ Review [Audit logging privacy and retention](logging-privacy.md) before retainin
 
 ### Responses state (pre-release)
 
-These settings configure the durable state repository added for the forthcoming Responses API. The route remains disabled until Phase 7 Step 22.
+These settings configure the durable state repository and experimental Responses API rollout. The route is absent unless the feature flag is explicitly enabled.
 
 | Variable | Default | Purpose |
 |---|---:|---|
+| `RESPONSES_API_ENABLED` | `false` | Registers the experimental `/v1/responses` routes; enable only for a qualified canary provider/model set |
 | `RESPONSES_RETENTION` | `720h` | TTL for responses created with `store: true` |
 | `RESPONSES_TRANSIENT_RETENTION` | `1h` | Recovery TTL for internal `store: false` lifecycle rows; they are never retrievable or valid predecessors |
 | `RESPONSES_ORPHANED_AFTER` | `15m` | Age after which startup reconciliation terminalizes stale `in_progress` rows |

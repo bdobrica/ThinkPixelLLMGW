@@ -386,8 +386,10 @@ func registerRoutes(mux *http.ServeMux, deps *Dependencies, cfg *config.Config) 
 	// OpenAI-compatible proxy endpoint - protected with API key middleware
 	apiKeyMiddleware := middleware.APIKeyMiddleware(deps.APIKeys)
 	mux.Handle("/v1/chat/completions", apiKeyMiddleware(http.HandlerFunc(deps.handleChat)))
-	mux.Handle("/v1/responses", apiKeyMiddleware(http.HandlerFunc(deps.handleResponses)))
-	mux.Handle("/v1/responses/", apiKeyMiddleware(http.HandlerFunc(deps.handleResponseResource)))
+	if cfg.Responses.Enabled {
+		mux.Handle("/v1/responses", apiKeyMiddleware(http.HandlerFunc(deps.handleResponses)))
+		mux.Handle("/v1/responses/", apiKeyMiddleware(http.HandlerFunc(deps.handleResponseResource)))
+	}
 
 	// Health check endpoint - public
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

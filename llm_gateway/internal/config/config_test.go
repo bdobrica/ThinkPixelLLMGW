@@ -96,6 +96,7 @@ func TestLoadRejectsInvalidAuditPrivacyPolicy(t *testing.T) {
 
 func TestLoadResponsesStatePolicy(t *testing.T) {
 	setRequiredConfig(t)
+	t.Setenv("RESPONSES_API_ENABLED", "true")
 	t.Setenv("RESPONSES_RETENTION", "48h")
 	t.Setenv("RESPONSES_TRANSIENT_RETENTION", "30m")
 	t.Setenv("RESPONSES_ORPHANED_AFTER", "5m")
@@ -107,10 +108,25 @@ func TestLoadResponsesStatePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Responses.Retention != 48*time.Hour || cfg.Responses.TransientRetention != 30*time.Minute ||
+	if !cfg.Responses.Enabled || cfg.Responses.Retention != 48*time.Hour || cfg.Responses.TransientRetention != 30*time.Minute ||
 		cfg.Responses.OrphanedAfter != 5*time.Minute || cfg.Responses.MaxChainDepth != 12 ||
 		cfg.Responses.MaxChainItems != 100 || cfg.Responses.MaxChainBytes != 2048 || cfg.Responses.MaxChainTokens != 512 {
 		t.Fatalf("unexpected Responses config: %#v", cfg.Responses)
+	}
+}
+
+func TestLoadResponsesAPIDefaultsDisabledAndRejectsInvalidFlag(t *testing.T) {
+	setRequiredConfig(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Responses.Enabled {
+		t.Fatal("Responses API must default disabled during staged rollout")
+	}
+	t.Setenv("RESPONSES_API_ENABLED", "sometimes")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "RESPONSES_API_ENABLED") {
+		t.Fatalf("expected invalid feature flag error, got %v", err)
 	}
 }
 
