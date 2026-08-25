@@ -9,6 +9,31 @@ import (
 	"time"
 )
 
+func TestOpenAILiveChat(t *testing.T) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("set OPENAI_API_KEY to run the live OpenAI smoke test")
+	}
+	provider, err := NewOpenAIProvider(ProviderConfig{
+		ID: "live-openai", Name: "Live OpenAI",
+		Credentials: map[string]string{"api_key": apiKey},
+		Config:      map[string]any{"request_timeout": "60s"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	response, err := provider.Chat(ctx, ChatRequest{Model: envOrDefault("OPENAI_TEST_MODEL", "gpt-4o-mini"), Payload: liveSmokePayload()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		t.Fatalf("OpenAI status=%d body=%s", response.StatusCode, response.Body)
+	}
+}
+
 func TestVertexAILiveChat(t *testing.T) {
 	projectID := os.Getenv("VERTEX_TEST_PROJECT_ID")
 	model := os.Getenv("VERTEX_TEST_MODEL")

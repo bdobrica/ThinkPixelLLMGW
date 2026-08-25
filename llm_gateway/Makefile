@@ -21,6 +21,7 @@ test-unit: ## Run hermetic unit tests (no external services)
 
 LOAD_DURATION ?= 15s
 SOAK_DURATION ?= 10m
+TEST_PYTHON ?= python3
 
 test-load: ## Measure the parallel in-process response/accounting baseline
 	go test -run '^$$' -bench '^BenchmarkNonStreamingResponse$$' -benchmem -benchtime=$(LOAD_DURATION) ./internal/httpapi
@@ -158,7 +159,8 @@ test-init-admin: ## Run init-admin integration test (bootstrap → login → cre
 	@echo "Building Docker image with init-admin binary..."
 	cd .. && docker compose build gateway
 	@echo ""
-	cd .. && python3 tests/test_init_admin.py
+	@$(TEST_PYTHON) -c 'import requests' || { echo "Install test dependencies: $(TEST_PYTHON) -m pip install -r ../tests/requirements.txt"; exit 1; }
+	cd .. && $(TEST_PYTHON) tests/test_init_admin.py
 
 test-e2e-setup: ## Start services for manual e2e testing
 	@echo "Starting all services for e2e testing..."

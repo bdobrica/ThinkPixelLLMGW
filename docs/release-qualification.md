@@ -22,7 +22,7 @@ go vet ./...
 go test -short -race ./...
 make test-integration-all
 make test-migrations
-go test -tags=integration -run 'Test(VertexAI|Bedrock)LiveChat' ./internal/providers
+go test -tags=integration -count=1 -run 'Test(OpenAI|VertexAI|Bedrock)LiveChat' ./internal/providers
 make test-init-admin
 make docker-build
 
@@ -37,7 +37,7 @@ python3 -m compileall -q app
 python3 -m pytest -q
 ```
 
-The provider command compiles in every environment and skips calls whose documented credential/model variables are absent. A release enabling Vertex AI or Bedrock must attach a passing, non-skipped canary from the target identity and region.
+The provider command compiles in every environment and skips calls whose documented credential/model variables are absent. A release must attach a passing, non-skipped canary from the target identity, region, and model for every enabled provider. Each canary makes one short request capped at eight output tokens; never use live providers for load or soak qualification.
 
 Scan the tracked filesystem and built image with the organization's approved, current vulnerability database. This repository can use Trivy when installed:
 

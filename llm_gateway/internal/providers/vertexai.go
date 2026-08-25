@@ -47,11 +47,12 @@ func NewVertexAIProvider(config ProviderConfig) (Provider, error) {
 		return nil, err
 	}
 
-	baseURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/endpoints/openapi", location, projectID, location)
+	apiHost := vertexAPIHost(location)
+	baseURL := fmt.Sprintf("https://%s/v1/projects/%s/locations/%s/endpoints/openapi", apiHost, projectID, location)
 	if configured, _ := config.Config["base_url"].(string); configured != "" {
 		baseURL = strings.TrimRight(configured, "/")
 	}
-	validationURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models?pageSize=1", location, projectID, location)
+	validationURL := fmt.Sprintf("https://%s/v1/projects/%s/locations/%s/publishers/google/models?pageSize=1", apiHost, projectID, location)
 	if configured, _ := config.Config["validation_url"].(string); configured != "" {
 		validationURL = configured
 	}
@@ -68,6 +69,13 @@ func NewVertexAIProvider(config ProviderConfig) (Provider, error) {
 		baseURL:       baseURL,
 		validationURL: validationURL,
 	}, nil
+}
+
+func vertexAPIHost(location string) string {
+	if location == "global" {
+		return "aiplatform.googleapis.com"
+	}
+	return location + "-aiplatform.googleapis.com"
 }
 
 func vertexTokenSource(credentials map[string]string) (oauth2.TokenSource, error) {

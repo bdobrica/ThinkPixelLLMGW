@@ -127,6 +127,47 @@ func TestVertexAIConfigurationValidation(t *testing.T) {
 	}
 }
 
+func TestVertexAIEndpointConstruction(t *testing.T) {
+	tests := []struct {
+		name               string
+		location           string
+		expectedBaseURL    string
+		expectedValidation string
+	}{
+		{
+			name:               "regional",
+			location:           "europe-west4",
+			expectedBaseURL:    "https://europe-west4-aiplatform.googleapis.com/v1/projects/project/locations/europe-west4/endpoints/openapi",
+			expectedValidation: "https://europe-west4-aiplatform.googleapis.com/v1/projects/project/locations/europe-west4/publishers/google/models?pageSize=1",
+		},
+		{
+			name:               "global",
+			location:           "global",
+			expectedBaseURL:    "https://aiplatform.googleapis.com/v1/projects/project/locations/global/endpoints/openapi",
+			expectedValidation: "https://aiplatform.googleapis.com/v1/projects/project/locations/global/publishers/google/models?pageSize=1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider, err := NewVertexAIProvider(ProviderConfig{
+				Credentials: map[string]string{"access_token": "vertex-token"},
+				Config:      map[string]any{"project_id": "project", "location": test.location},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			vertex := provider.(*VertexAIProvider)
+			if vertex.baseURL != test.expectedBaseURL {
+				t.Fatalf("unexpected base URL %q", vertex.baseURL)
+			}
+			if vertex.validationURL != test.expectedValidation {
+				t.Fatalf("unexpected validation URL %q", vertex.validationURL)
+			}
+		})
+	}
+}
+
 func newTestVertexProvider(t *testing.T, baseURL string, extra map[string]any) *VertexAIProvider {
 	t.Helper()
 	config := map[string]any{"project_id": "project", "base_url": baseURL}

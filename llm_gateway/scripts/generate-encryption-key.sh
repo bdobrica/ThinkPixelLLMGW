@@ -1,27 +1,24 @@
 #!/bin/bash
 
-# Script to generate encryption keys for provider credentials
-# Usage: ./generate-encryption-key.sh [key-size]
-# Key size can be 16 (AES-128), 24 (AES-192), or 32 (AES-256, default)
+# Generate the AES-256 key required by the gateway's ENCRYPTION_KEY setting.
+# Usage: ./generate-encryption-key.sh [32]
 
 KEY_SIZE=${1:-32}
 
-if [ "$KEY_SIZE" != "16" ] && [ "$KEY_SIZE" != "24" ] && [ "$KEY_SIZE" != "32" ]; then
-    echo "Error: Key size must be 16, 24, or 32 bytes"
-    echo "Usage: $0 [16|24|32]"
+if [ "$KEY_SIZE" != "32" ]; then
+    echo "Error: the gateway requires a 32-byte AES-256 key"
+    echo "Usage: $0 [32]"
     exit 1
 fi
 
-# Generate random bytes and encode as base64
-ENCRYPTION_KEY=$(openssl rand -base64 $KEY_SIZE | tr -d '\n')
+# Gateway configuration decodes ENCRYPTION_KEY as hexadecimal, so 32 random
+# bytes must be represented by exactly 64 hexadecimal characters.
+ENCRYPTION_KEY=$(openssl rand -hex "$KEY_SIZE")
 
-echo "Generated AES-$((KEY_SIZE * 8)) encryption key:"
+echo "Generated AES-256 encryption key (64 hexadecimal characters):"
 echo ""
 echo "$ENCRYPTION_KEY"
 echo ""
 echo "Add this to your environment variables or .env file:"
 echo "ENCRYPTION_KEY=$ENCRYPTION_KEY"
 echo ""
-echo "Or use with Go code:"
-echo ""
-echo "  encryption, err := storage.NewEncryptionFromBase64(\"$ENCRYPTION_KEY\")"

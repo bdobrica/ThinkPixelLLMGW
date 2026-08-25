@@ -15,7 +15,7 @@ The provider-specific Responses API transport and tool decisions are tracked sep
 
 - Type: `vertexai`
 - Required configuration: `project_id`
-- Optional configuration: `location` (default `us-central1`), `request_timeout`, `base_url`
+- Optional configuration: `location` (default `us-central1`; `global` uses Google's global control-plane hostname), `request_timeout`, `base_url`
 - Authentication, in priority order: encrypted `access_token`; encrypted `service_account_json` (or `credentials_json`); Google Application Default Credentials (ADC)
 - Runtime-only overrides for a provider row named `vertexai`: `VERTEX_AI_ACCESS_TOKEN` and `VERTEX_AI_SERVICE_ACCOUNT_JSON`
 
@@ -75,11 +75,13 @@ The adapter translates OpenAI system/developer, user, and assistant text message
 
 ## Live provider qualification
 
-The default tests use deterministic local cloud fakes and require no provider credentials. To make real, potentially billable smoke requests, set `VERTEX_TEST_PROJECT_ID` and `VERTEX_TEST_MODEL` (optionally `VERTEX_TEST_LOCATION`) with ADC configured, and/or set `BEDROCK_TEST_MODEL` (optionally `BEDROCK_TEST_REGION`) with AWS SDK credentials configured, then run:
+The default tests use deterministic local cloud fakes and require no provider credentials. To make one small, potentially billable smoke request per configured provider, set `OPENAI_API_KEY` (optionally `OPENAI_TEST_MODEL`, default `gpt-4o-mini`), `VERTEX_TEST_PROJECT_ID` and `VERTEX_TEST_MODEL` (optionally `VERTEX_TEST_LOCATION`) with ADC configured, and `BEDROCK_TEST_MODEL` (optionally `BEDROCK_TEST_REGION`) with AWS SDK credentials configured, then run:
 
 ```bash
 cd llm_gateway
-go test -tags=integration -run 'Test(VertexAI|Bedrock)LiveChat' ./internal/providers
+go test -tags=integration -count=1 -run 'Test(OpenAI|VertexAI|Bedrock)LiveChat' ./internal/providers
 ```
+
+The shared prompt requests one word and caps each output at eight tokens. Missing credentials skip only the corresponding provider. A release must record a non-skipped pass for every enabled provider and must not run load or soak traffic against paid providers.
 
 Never place credential JSON in `config`; only values in `credentials` receive field-level encryption.
