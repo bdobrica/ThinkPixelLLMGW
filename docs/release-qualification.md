@@ -50,7 +50,7 @@ Triage every result against reachable code and the deployed image. Time-bounded 
 
 ## Load and soak profiles
 
-The committed Go benchmark measures only the parallel in-process non-streaming response/accounting path. It excludes authentication, routing, provider/network time, PostgreSQL, Redis, S3, and TLS, so its result is useful for regression detection but must not be presented as gateway capacity.
+The committed Go benchmark and wall-clock soak test measure only the parallel in-process non-streaming response/accounting path. They exclude authentication, routing, provider/network time, PostgreSQL, Redis, S3, and TLS, so their results are useful for regression detection but must not be presented as gateway capacity. The soak target uses an explicit deadline rather than Go benchmark calibration, so `SOAK_DURATION` bounds its measurement phase; keep `SOAK_TIMEOUT` longer than that duration to leave time for test cleanup and reporting.
 
 ```bash
 cd llm_gateway

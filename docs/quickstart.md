@@ -8,7 +8,7 @@ This guide starts the development stack, creates the first administrator, and se
 - Git
 - An OpenAI API key for the seeded OpenAI provider
 
-Go 1.26.5 or newer is needed only when running the gateway or its tests outside Docker.
+Go 1.26.6 or newer is needed only when running the gateway or its tests outside Docker.
 
 ## 1. Configure secrets
 

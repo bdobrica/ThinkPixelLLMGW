@@ -21,13 +21,14 @@ test-unit: ## Run hermetic unit tests (no external services)
 
 LOAD_DURATION ?= 15s
 SOAK_DURATION ?= 10m
+SOAK_TIMEOUT ?= 12m
 TEST_PYTHON ?= python3
 
 test-load: ## Measure the parallel in-process response/accounting baseline
 	go test -run '^$$' -bench '^BenchmarkNonStreamingResponse$$' -benchmem -benchtime=$(LOAD_DURATION) ./internal/httpapi
 
 test-soak: ## Run the response/accounting baseline for an extended duration
-	go test -run '^$$' -bench '^BenchmarkNonStreamingResponse$$' -benchmem -benchtime=$(SOAK_DURATION) ./internal/httpapi
+	RESPONSE_SOAK_DURATION=$(SOAK_DURATION) go test -timeout=$(SOAK_TIMEOUT) -count=1 -run '^TestNonStreamingResponseSoak$$' -v ./internal/httpapi
 
 test-integration-setup: ## Start integration test services (Postgres, Minio, Redis)
 	@echo "Starting integration test services..."
