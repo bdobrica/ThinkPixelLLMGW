@@ -68,4 +68,4 @@ The BFF is stateless and has no database. It signs the gateway JWT before storin
 - `bash -n webui/start-prod.sh`: passed
 - Runtime login/proxy flow: not exercised because the review environment did not run the dependency stack
 
-For prioritized remediation, see [../CODE_REVIEW.md](../CODE_REVIEW.md) and [../TODO.md](../TODO.md).
+For the design rationale and remaining release boundaries, see the [architecture decisions](../docs/adr/README.md) and [release qualification checklist](../docs/release-qualification.md).

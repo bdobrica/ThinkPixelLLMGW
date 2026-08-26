@@ -120,4 +120,4 @@ Before a release, run `pnpm run lint`, `pnpm run test`, and `pnpm run build`; th
 
 **Billing totals lag recent requests:** check billing/usage worker readiness and dead-letter queues; the page reports persisted acknowledged records.
 
-See [README.md](README.md), [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md), and [../CODE_REVIEW.md](../CODE_REVIEW.md).
+See [README.md](README.md), [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md), and the [architecture decisions](../docs/adr/README.md).

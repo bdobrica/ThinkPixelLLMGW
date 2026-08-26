@@ -2,7 +2,7 @@
 
 ThinkPixelLLMGW is an OpenAI-compatible LLM gateway written in Go. It centralizes API-key authentication, model routing, provider credentials, per-key rate limits and budgets, usage accounting, audit logging, and administration.
 
-> Project status (reviewed July 13, 2026): active MVP/release candidate. OpenAI, Vertex AI, and AWS Bedrock chat-completions paths and the core admin API are implemented. Local qualification is recorded, but live-provider and staging resilience evidence is incomplete; the project is not yet production-ready. See the [release checklist](docs/release-qualification.md) and [TODO.md](TODO.md).
+> Project status (reviewed August 26, 2026): Chat Completions release candidate. OpenAI, Vertex AI, and AWS Bedrock chat-completions paths and the core admin API are implemented and locally qualified. Staging resilience evidence remains incomplete, so the project is not yet production-ready. See the [release checklist](docs/release-qualification.md), [RC evidence](docs/release-evidence-2026-08-26.md), and [architecture decisions](docs/adr/README.md).
 
 Release qualification is deployment-specific. Use the [release checklist](docs/release-qualification.md) and [operations runbook](docs/operations-runbook.md); a passing local suite does not replace live-provider canaries, dependency-failure exercises, restore evidence, or staging capacity tests.
 
@@ -149,8 +149,8 @@ Read operations require the `viewer` role; mutations require `admin`. There is n
 - [Release qualification](docs/release-qualification.md)
 - [Operations runbook](docs/operations-runbook.md)
 - [Web UI](webui/README.md)
-- [Code review](CODE_REVIEW.md)
-- [Development backlog](TODO.md)
+- [Architecture decisions](docs/adr/README.md)
+- [Release-candidate evidence](docs/release-evidence-2026-08-26.md)
 
 ## Continuous integration
 
