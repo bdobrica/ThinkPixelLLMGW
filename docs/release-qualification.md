@@ -117,3 +117,5 @@ Revision under qualification was tested on WSL2 Linux with an Intel Core i5-9300
 - Vertex AI and Bedrock live tests compiled but skipped because their test project/model/credentials were absent.
 
 This is partial release-candidate evidence, not sign-off. Live provider canaries, the 10-minute soak, staging dependency loss/recovery, rolling restart with active streams/queued records, isolated backup restore, and provider billing reconciliation remain required.
+
+The newer Chat Completions RC run is recorded in [release-candidate evidence for August 26, 2026](release-evidence-2026-08-26.md). It supersedes the local canary, soak, vulnerability-scan, and isolated-restore gaps in this historical section, while retaining the staging-only blockers listed in that record.
