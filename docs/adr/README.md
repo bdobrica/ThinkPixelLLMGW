@@ -27,3 +27,4 @@ An ADR is not a release checklist. Current operational qualification belongs in 
 | [ADR-0009: Responses API state and routing](0009-responses-api-state-and-routing.md) | Accepted |
 | [ADR-0010: Responses tools and streaming boundaries](0010-responses-tools-and-streaming-boundaries.md) | Accepted |
 | [ADR-0011: Release-candidate scope and deferred work](0011-release-candidate-scope-and-deferred-work.md) | Accepted |
+| [ADR-0012: Optional guardrails evaluator boundary](0012-optional-guardrails-boundary.md) | Accepted |
